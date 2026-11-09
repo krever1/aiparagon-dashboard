@@ -1,9 +1,13 @@
-// A stand-in for Supabase Auth (GoTrue) for the browser tests: password sign-in, refresh, the user check, sign-out
-// and password reset, with made-up accounts. It never talks to the real project.
-// Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset,
-// POST /__as {email} (from now on /user answers as that account, to test a session that is not the team's).
+// A stand-in for Supabase for the browser tests, with made-up accounts and rows. It never talks to the real project.
+// Auth (GoTrue): password sign-in, refresh, the user check, sign-out and password reset.
+// Data (PostgREST, /rest/v1): see rest.mjs; the starting rows are in fixtures.mjs.
+// Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
+// override and the rows back to the start), POST /__as {email} (from now on /user answers as that account, to test a
+// session that is not the team's), POST /__seed {table: rows[]} (a test's own rows), GET /__rows?table=<name>.
 import http from 'node:http'
 import crypto from 'node:crypto'
+import { createRest } from './rest.mjs'
+import { fixtures } from './fixtures.mjs'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -54,6 +58,12 @@ function session(email) {
   return { access_token, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token, user: userJson(email) }
 }
 
+/** The caller's verified claims from `Authorization: Bearer <token>`, or null (the public key alone is not a session). */
+function claimsOf(req) {
+  return verify(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''))
+}
+const rest = createRest(fixtures, claimsOf)
+
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' })
   res.end(body === undefined ? '' : JSON.stringify(body))
@@ -70,11 +80,13 @@ http
       try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
       if (url.pathname === '/health') return send(res, 200, { ok: true })
       if (url.pathname === '/__calls') return send(res, 200, calls)
-      if (url.pathname === '/__reset') { calls = []; actAs = null; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__reset') { calls = []; actAs = null; rest.reset(); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
 
-      const seen = { ...body }
-      delete seen.password
+      const seen = Array.isArray(body) ? body : { ...body }
+      if (!Array.isArray(seen)) delete seen.password
       calls.push({ method: req.method, path: url.pathname, query: url.search, body: seen })
 
       if (req.method === 'POST' && url.pathname === '/auth/v1/token') {
@@ -99,7 +111,8 @@ http
       }
       if (req.method === 'POST' && url.pathname === '/auth/v1/logout') return send(res, 204)
       if (req.method === 'POST' && url.pathname === '/auth/v1/recover') return send(res, 200, {})
+      if (url.pathname.startsWith('/rest/v1/')) return rest.handle(req, res, url, raw)
       return fail(res, 404, 'not_found', 'Not found in the stub: ' + req.method + ' ' + url.pathname)
     })
   })
-  .listen(PORT, '127.0.0.1', () => console.log('supabase auth stub on ' + PORT))
+  .listen(PORT, '127.0.0.1', () => console.log('supabase stub on ' + PORT))
