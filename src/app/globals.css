@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* The current dashboard's palette and type (its --nw-* tokens), so the two look the same while pages move over. */
+@theme {
+  --color-bg: #edeff4;
+  --color-panel: #ffffff;
+  --color-sunk: #f5f6f9;
+  --color-line: #e1e4ec;
+  --color-line-2: #cfd4e0;
+  --color-ink: #141a2e;
+  --color-ink-2: #525a72;
+  --color-ink-3: #7f8599;
+  --color-action: #1c2647;
+  --color-action-ink: #ffffff;
+  --color-action-hover: #2a3765;
+  --color-accent: #b08a3e;
+  --color-accent-soft: #f4ecda;
+  --color-accent-text: #7a5e1e;
+  --color-good: #1d7a4c;
+  --color-good-soft: #e2f2e9;
+  --color-warn: #9c5f08;
+  --color-warn-soft: #fbeed6;
+  --color-bad: #b33a3a;
+  --color-bad-soft: #fbe6e5;
+  --color-info: #2f4a8a;
+  --color-info-soft: #e7ecf7;
+  --color-art: #131a35;
+  --color-art-gold: #d9b66c;
+
+  --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-instrument-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+
+  --shadow-card: 0 1px 2px rgba(20, 26, 46, 0.05), 0 10px 26px -18px rgba(20, 26, 46, 0.26);
+  --shadow-pop: 0 4px 12px rgba(20, 26, 46, 0.08), 0 26px 50px -22px rgba(20, 26, 46, 0.38);
+}
+
+html {
+  background: var(--color-bg);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* the brand mark: the logo once it has loaded, else the P (as in the current dashboard) */
+.brand-mark img {
+  display: none;
+}
+.brand-mark.has-logo img {
+  display: block;
+}
+.brand-mark.has-logo .brand-p {
+  display: none;
+}
