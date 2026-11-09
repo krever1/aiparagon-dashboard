@@ -58,6 +58,10 @@ cookies and dynamic routes work). The matching docs are in `node_modules/next/di
 `NEXT_PUBLIC_TEAM_EMAIL_DOMAIN` (see `.env.example`). Set in Vercel; locally in `.env.local`. NEXT_PUBLIC_ values are
 built into the page, so nothing secret goes in them. Server-only secrets (n8n, when pages call it) get names without
 the prefix and are read only in server code.
+- The two Supabase values are required. Without them (a new deployment before its variables are set) the proxy sends
+  every page to sign-in, which says the settings are missing; creating a Supabase client without them throws, which
+  would fail every request. The other two default to the current dashboard's address and aiparagonconsulting.com.
+- NEXT_PUBLIC_ values are read at build time: after changing one in Vercel, redeploy.
 
 ## How it is put together
 - `src/lib/nav.ts`: every page (address, sidebar label, heading, icon, product, and its address word in the current

@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { SUPABASE_ANON_KEY, SUPABASE_URL, isTeamEmail } from '@/lib/config'
+import { SUPABASE_ANON_KEY, SUPABASE_URL, isTeamEmail, supabaseConfigured } from '@/lib/config'
 import { safeNext } from '@/lib/nav'
 
 const PUBLIC_PATHS = ['/login']
@@ -25,6 +25,18 @@ function redirectFrom(from: NextResponse, url: URL) {
  * This is the first check, not the only one: data reads check the user again (see src/lib/auth.ts).
  */
 export async function updateSession(request: NextRequest) {
+  // Without the Supabase settings there is no session to check, and creating the client would throw on every request.
+  // The sign-in page opens and says what is missing; every other page is sent there.
+  if (!supabaseConfigured()) {
+    const { pathname, search } = request.nextUrl
+    if (isPublic(pathname)) return NextResponse.next({ request })
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.search = ''
+    url.searchParams.set('next', pathname + search)
+    return NextResponse.redirect(url)
+  }
+
   let response = NextResponse.next({ request })
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {

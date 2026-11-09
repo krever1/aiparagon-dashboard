@@ -18,6 +18,10 @@ export function isTeamEmail(email: string | null | undefined): boolean {
   return e.endsWith('@' + TEAM_EMAIL_DOMAIN) && e.length > TEAM_EMAIL_DOMAIN.length + 1
 }
 
+/** Both Supabase values are set. A deployment without them (a new Vercel project before its environment variables)
+ * shows only the sign-in page, with NOT_SET_UP; creating a Supabase client without them throws. */
 export function supabaseConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 }
+
+export const NOT_SET_UP = 'Sign-in is not set up yet (the Supabase settings are missing).'

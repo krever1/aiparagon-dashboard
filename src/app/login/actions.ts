@@ -1,7 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
-import { TEAM_EMAIL_DOMAIN, isTeamEmail, supabaseConfigured } from '@/lib/config'
+import { NOT_SET_UP, TEAM_EMAIL_DOMAIN, isTeamEmail, supabaseConfigured } from '@/lib/config'
 import { safeNext } from '@/lib/nav'
 import { createClient } from '@/lib/supabase/server'
 
@@ -27,7 +27,7 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   const next = safeNext(String(formData.get('next') ?? ''))
   if (!email || !password) return { error: 'Enter your email and password.', email }
   if (!isTeamEmail(email)) return { error: ONLY_TEAM, email }
-  if (!supabaseConfigured()) return { error: 'Sign-in is not set up yet (the Supabase settings are missing).', email }
+  if (!supabaseConfigured()) return { error: NOT_SET_UP, email }
 
   const supabase = await createClient()
   const { error } = await supabase.auth.signInWithPassword({ email, password })

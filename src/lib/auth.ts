@@ -1,6 +1,6 @@
 import 'server-only'
 import { connection } from 'next/server'
-import { isTeamEmail } from '@/lib/config'
+import { isTeamEmail, supabaseConfigured } from '@/lib/config'
 import { createClient } from '@/lib/supabase/server'
 
 export type CurrentUser = {
@@ -18,6 +18,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   // Only on a real request: the check asks Supabase Auth and reads the clock (token expiry), which must not run
   // while Next.js prerenders or prefetches.
   await connection()
+  if (!supabaseConfigured()) return null
   const supabase = await createClient()
   const {
     data: { user },

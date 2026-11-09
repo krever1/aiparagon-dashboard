@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { LEGACY_DASHBOARD_URL, TEAM_EMAIL_DOMAIN } from '@/lib/config'
+import { LEGACY_DASHBOARD_URL, NOT_SET_UP, TEAM_EMAIL_DOMAIN, supabaseConfigured } from '@/lib/config'
 import { type AuthState, sendReset, signIn } from './actions'
 
 const field =
@@ -17,7 +17,12 @@ export function LoginForm() {
   const [signInState, signInAction, signingIn] = useActionState<AuthState, FormData>(signIn, {})
   const [resetState, resetAction, resetting] = useActionState<AuthState, FormData>(sendReset, {})
 
-  const error = signInState.error || resetState.error || (denied ? `This workspace is for the AI Paragon team. Sign in with your @${TEAM_EMAIL_DOMAIN} account.` : '')
+  // The settings are built into the page, so a deployment without them says so before anyone tries.
+  const error =
+    signInState.error ||
+    resetState.error ||
+    (supabaseConfigured() ? '' : NOT_SET_UP) ||
+    (denied ? `This workspace is for the AI Paragon team. Sign in with your @${TEAM_EMAIL_DOMAIN} account.` : '')
   const ok = !signInState.error ? resetState.ok : ''
 
   return (
