@@ -17,11 +17,13 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   every current page address. No page is ported yet: each opens a card that links to it in the current dashboard.
 - Next, in this order: Catalyst (Lead pipeline board, a lead's page, stage runs, HubSpot contacts, Calls), then
   Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
-- Vercel (Nov 9): project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two Supabase values set
-  for Production, Preview and Development. `dev` deploys to aiparagon-dashboard-git-dev-kaesers-projects.vercel.app,
-  behind Vercel's sign-in (Vercel Authentication on everything but custom domains). Production builds from `main`,
-  which holds only the README until the first pull request from `dev`.
-- Not set up yet: a domain, branch protection on `main`.
+- Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
+  custom domain can come later). Vercel project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two
+  Supabase values set for Production, Preview and Development. Production builds from `main`; `dev` deploys to
+  aiparagon-dashboard-git-dev-kaesers-projects.vercel.app.
+- Access: Standard Protection, as on the aiparagon project. Previews and per-deployment URLs need a Vercel login; the
+  production domain aiparagon-dashboard.vercel.app is open, guarded by the app's own sign-in.
+- Not set up yet: branch protection on `main`.
 
 | Product | Pages | Status |
 |---|---|---|
@@ -53,7 +55,7 @@ cookies and dynamic routes work). The matching docs are in `node_modules/next/di
 ## Branches and releases
 - `main`: production, what the team uses. Changes arrive only by pull request from `dev`.
 - `dev`: staging. Each change gets its own branch and a pull request into `dev`.
-- Vercel (once set up): production from `main`, a preview link for every other branch.
+- Vercel: production from `main` (aiparagon-dashboard.vercel.app), a preview link for every other branch.
 - CI (`.github/workflows/ci.yml`): lint, type check and the browser tests on every pull request and every push to
   `dev` and `main`.
 
