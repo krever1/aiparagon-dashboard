@@ -1,7 +1,8 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { leadId } from './lead-id'
-import { type Lead, type LeadRow, type OutRow, buildLeads, docCount, docOf, derivedStage, leadEmails } from './leads'
+import { type Lead, type LeadRow, type OutRow, buildLeads, docCount, docIds, docOf, derivedStage, leadEmails } from './leads'
+import { type RunEntry, runOf, runsFromSetting } from './plan'
 import { STAGES, type StageKey, type StageNames, isStageKey, namesFromSetting } from './stages'
 import type { LeadView, PipelineData } from './view'
 
@@ -18,30 +19,34 @@ export type CatalystRows = {
   rows: LeadRow[]
   outs: OutRow[]
   names: StageNames
+  /** runs started from the dashboard (ai_settings `catalyst_runs`) */
+  runs: Record<string, RunEntry>
   error: string | null
 }
 
 export async function readCatalyst(): Promise<CatalystRows> {
   const supabase = await createClient()
-  const [leads, outs, prep, names] = await Promise.all([
+  const [leads, outs, prep, settings] = await Promise.all([
     supabase.from('e1_leads').select('*').order('updated_at', { ascending: false }).limit(300),
     supabase.from('agent_outputs').select(OUT_COLS).in('agent', DOC_AGENTS).order('created_at', { ascending: false }).limit(1000),
     // Onboarding plans and client review briefs (Catalyst · Meeting Prep). A failed read only hides them, as before.
     supabase.from('agent_outputs').select(OUT_COLS).eq('agent', 'meeting_prep').order('created_at', { ascending: false }).limit(300),
-    supabase.from('ai_settings').select('value').eq('key', 'catalyst_stages').maybeSingle(),
+    supabase.from('ai_settings').select('key,value').in('key', ['catalyst_stages', 'catalyst_runs']),
   ])
+  const setting = (key: string) => (settings.data ?? []).find((r: { key: string }) => r.key === key)?.value
   let error: string | null = null
   if (leads.error) error = 'Couldn’t load e1_leads. ' + leads.error.message
   else if (outs.error) error = 'Couldn’t load the documents (agent_outputs). ' + outs.error.message
   return {
     rows: (leads.data ?? []) as LeadRow[],
     outs: [...((outs.data ?? []) as OutRow[]), ...((prep.data ?? []) as OutRow[])],
-    names: names.error ? {} : namesFromSetting(names.data?.value),
+    names: settings.error ? {} : namesFromSetting(setting('catalyst_stages')),
+    runs: settings.error ? {} : runsFromSetting(setting('catalyst_runs')),
     error,
   }
 }
 
-export function toView(lead: Lead, outs: OutRow[]): LeadView {
+export function toView(lead: Lead, outs: OutRow[], runs: Record<string, RunEntry> = {}, now = Date.now()): LeadView {
   const docs: Partial<Record<StageKey, number>> = {}
   for (const s of STAGES) {
     const d = docOf(lead, s, outs)
@@ -49,11 +54,13 @@ export function toView(lead: Lead, outs: OutRow[]): LeadView {
   }
   const name = String(lead.prospect_name ?? '').trim()
   const company = String(lead.company_name ?? '').trim()
+  const ids = docIds(lead, outs)
+  const emails = leadEmails(lead)
   return {
     id: leadId(lead),
     name: name || lead.email,
     email: lead.email,
-    emails: leadEmails(lead),
+    emails,
     company,
     firmType: String(lead.firm_type ?? '').trim(),
     title: String(lead.prospect_title ?? '').trim(),
@@ -63,6 +70,8 @@ export function toView(lead: Lead, outs: OutRow[]): LeadView {
     derived: derivedStage(lead, outs),
     docs,
     docCount: docCount(lead, outs),
+    ids: { research: !!ids.researchDocId, interview: !!ids.interviewDocId, anonymized: !!ids.anonymizedDocId },
+    run: runOf({ emails, docs }, runs, now),
     anonEmail: lead.anonEmail ?? '',
     anonCompany: lead.anonCompany ?? '',
     search: [name, company, lead.email].join(' ').toLowerCase(),
@@ -73,5 +82,6 @@ export function toView(lead: Lead, outs: OutRow[]): LeadView {
 export async function loadPipeline(): Promise<PipelineData> {
   const read = await readCatalyst()
   const { leads, outs } = buildLeads(read.rows, read.outs)
-  return { leads: leads.map((l) => toView(l, outs)), names: read.names, error: read.error }
+  const now = Date.now()
+  return { leads: leads.map((l) => toView(l, outs, read.runs, now)), names: read.names, error: read.error }
 }

@@ -3,8 +3,15 @@
 import { refresh } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
 import { DOC_ID } from '@/lib/catalyst/doc-format'
-import { STAGES, type StageNames, cleanName, namesFromSetting } from '@/lib/catalyst/stages'
-import { callN8n } from '@/lib/n8n'
+import { buildLeads } from '@/lib/catalyst/leads'
+import { findLead, readCatalyst, toView } from '@/lib/catalyst/load'
+import { ENTRY, RUN_HOOKS, type ReadRow, composeNote, planFor } from '@/lib/catalyst/plan'
+import {
+  type Gathered, fathomList, fathomTranscript, fileUsed, gather, readRows, recordRun, setStage, startStage,
+} from '@/lib/catalyst/run'
+import { STAGES, type StageNames, cleanName, isStageKey, namesFromSetting, stageOfKey } from '@/lib/catalyst/stages'
+import { viewStage } from '@/lib/catalyst/view'
+import { callN8n, startN8n } from '@/lib/n8n'
 import { createClient } from '@/lib/supabase/server'
 
 export type SaveNamesResult = { ok: true; names: StageNames } | { ok: false; error: string }
@@ -67,5 +74,191 @@ export async function readDocument(id: string): Promise<ReadDocResult> {
     return { ok: true, kind: j.kind === 'pdf' ? 'pdf' : 'doc', text: String(j.text ?? '') }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Could not read that document.' }
+  }
+}
+
+// ---------- running a stage ----------
+
+export type ReadsResult =
+  | { ok: true; rows: ReadRow[]; found: { calls: number; emails: number } }
+  | { ok: false; error: string }
+
+/** The question's Reads list: the template, the calls, the emails and the CRM record a stage's run would read. */
+export async function stageReads(leadId: string, stage: string): Promise<ReadsResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  if (!isStageKey(stage)) return { ok: false, error: 'That is not a stage.' }
+  const read = await readCatalyst()
+  const { leads } = buildLeads(read.rows, read.outs)
+  const lead = findLead(leads, leadId)
+  if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
+  const g = await gather(await createClient(), lead, stage, false)
+  return { ok: true, rows: readRows(g), found: { calls: g.calls.length, emails: g.emails.length } }
+}
+
+export type GoResult = { ok: true; toast: string } | { ok: false; error: string }
+
+const msgOf = (e: unknown) => (e instanceof Error ? e.message : String(e)) || 'something went wrong'
+
+/**
+ * The question's answer (v136Go): move the lead to the stage, run the stage's document, or both. The lead is read
+ * again first; a run reads what the stage reads (the call transcripts, the emails, the CRM record), starts only that
+ * stage's workflow, files the calls it read and is kept for the team until its document lands.
+ */
+export async function goStage(input: { leadId: string; stage: string; move: boolean; run: boolean; notes: string }): Promise<GoResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  if (!isStageKey(input?.stage)) return { ok: false, error: 'That is not a stage.' }
+  const stage = input.stage
+  const supabase = await createClient()
+  const read = await readCatalyst()
+  const { leads, outs } = buildLeads(read.rows, read.outs)
+  const lead = findLead(leads, String(input.leadId))
+  if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
+  const view = toView(lead, outs, read.runs)
+  const st = stageOfKey(stage, read.names)
+  if (view.run) return { ok: false, error: `Catalyst is still writing for ${view.name}. It shows on the card when it is done.` }
+  const was = viewStage(view)
+  const moving = !!input.move && stage !== was
+  const run = !!input.run
+  if (!moving && !run) return { ok: false, error: `${view.name} is in ${st.name} already.` }
+  const notes = String(input.notes ?? '').trim().slice(0, 200_000)
+
+  let g: Gathered | null = null
+  if (run) {
+    const plan = planFor(view, stage)
+    if (plan.blocked) return { ok: false, error: plan.blocked }
+    try {
+      g = await gather(supabase, lead, stage, true)
+    } catch {
+      g = null
+    }
+    const has = !!notes || !!g?.calls.some((c) => c.text) || !!g?.emails.length
+    if (plan.need && !has) {
+      return { ok: false, error: `Paste the meeting transcript or your notes first. This lead has no ${plan.need} to work from yet, and no recorded call with it.` }
+    }
+  }
+  if (moving) {
+    try {
+      await setStage(supabase, lead, stage)
+    } catch (e) {
+      return { ok: false, error: `Could not move the lead: ${msgOf(e)}. Try again in a minute.` }
+    }
+  }
+  if (run) {
+    const note = stage === 'research' ? '' : composeNote({ typed: notes, crm: g?.crm ?? null, calls: g?.calls ?? [], emails: g?.emails ?? [], names: read.names })
+    try {
+      await startStage(lead, outs, stage, note, g, read.names)
+    } catch (e) {
+      if (moving) refresh()
+      return { ok: false, error: (moving ? `Moved to ${st.name}, but it could not start: ` : 'Could not start it: ') + msgOf(e) + '. Try again in a minute.' }
+    }
+    try {
+      await recordRun(supabase, lead, outs, stage, user.email)
+    } catch {
+      // the run is under way; only its "Writing" line on the board is missing
+    }
+    await fileUsed(supabase, lead, g, moving ? was : stage, user.email)
+  }
+  refresh()
+  return { ok: true, toast: run ? `Started. ${st.doc} shows up on the card when it is done.` : `Moved to ${st.name}.` }
+}
+
+// ---------- New run (the older form: a lead that is not on the board yet) ----------
+
+export type NewRunInput = {
+  entry: 'research' | 'consultation' | 'assessment'
+  firstName: string
+  lastName: string
+  title: string
+  company: string
+  link: string
+  email: string
+  phone: string
+  firmType: string
+  firmSize: string
+  transcript: string
+  doc: string
+}
+
+/**
+ * New run: the lead's details and the stage the client is at; only that stage runs (the prospect brief through the
+ * full run, the consultation guide or the assessment through the custom run), then the lead is put in that stage.
+ */
+export async function newRun(input: NewRunInput): Promise<GoResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  const t = (v: unknown) => String(v ?? '').trim()
+  const entry = input?.entry === 'consultation' || input?.entry === 'assessment' ? input.entry : 'research'
+  const email = t(input?.email)
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: 'Email is required: it is the run ID across the pipeline.' }
+  const transcript = entry === 'research' ? '' : t(input.transcript).slice(0, 120_000)
+  const doc = entry === 'research' ? '' : t(input.doc).slice(0, 400_000)
+  if (entry !== 'research' && !transcript && !doc) return { ok: false, error: 'Add a transcript or document: Catalyst works from it for this stage.' }
+  const name = [t(input.firstName), t(input.lastName)].filter(Boolean).join(' ')
+  const base = {
+    firstName: t(input.firstName), lastName: t(input.lastName), prospectName: name, prospectTitle: t(input.title),
+    firmName: t(input.company), companyName: t(input.company), companyUrl: t(input.link), emailAddress: email, email,
+    website: t(input.link), phone: t(input.phone), firmType: t(input.firmType), firmSize: t(input.firmSize),
+    hearAboutUs: 'Dashboard run', whatBringsYouHere: '', aiInterests: [] as string[], currentAIStage: '', preferredFollowUp: '',
+  }
+  try {
+    if (entry === 'research') await startN8n(RUN_HOOKS.full, { ...base, only: true, stage: 'research' })
+    else await startN8n(RUN_HOOKS.custom, { ...base, entry: ENTRY[entry]!, transcript, extraDoc: doc, only: true, stage: entry })
+  } catch (e) {
+    return { ok: false, error: `Couldn’t start the run: ${msgOf(e)}. Check the workflow is published in n8n.` }
+  }
+  const supabase = await createClient()
+  // the lead goes in the stage it is at (a row is made when it has none); a failure here leaves the run going
+  try {
+    const now = new Date().toISOString()
+    const { data } = await supabase.from('e1_leads').update({ stage: entry, updated_at: now }).eq('email', email).select('email')
+    if (!data?.length) {
+      await supabase
+        .from('e1_leads')
+        .upsert({ email, prospect_name: name || null, company_name: t(input.company) || null, stage: entry }, { onConflict: 'email' })
+    }
+    const read = await readCatalyst()
+    const { leads, outs } = buildLeads(read.rows, read.outs)
+    const lead = leads.find((l) => l.emails.includes(email))
+    if (lead) await recordRun(supabase, lead, outs, entry, user.email)
+  } catch {
+    // the run is under way
+  }
+  refresh()
+  return { ok: true, toast: 'Started. The document lands on the lead when it is done.' }
+}
+
+export type CallPick = { id: string; title: string; start: string; minutes: number; guest: { name: string; email: string } | null }
+
+/** New run's "Use a Fathom call": the newest recorded calls. */
+export async function recentCalls(): Promise<{ ok: true; calls: CallPick[] } | { ok: false; error: string }> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  try {
+    const list = await fathomList()
+    return {
+      ok: true,
+      calls: list.slice(0, 40).map((c) => {
+        const a = Date.parse(c.start)
+        const b = Date.parse(c.end)
+        const g = c.invitees.find((i) => i.email && i.email.toLowerCase() !== c.recorder) ?? null
+        return { id: c.id, title: c.title, start: c.start, minutes: a && b && b > a ? Math.round((b - a) / 60000) : 0, guest: g }
+      }),
+    }
+  } catch (e) {
+    return { ok: false, error: msgOf(e) }
+  }
+}
+
+/** A call's transcript for New run's box. */
+export async function callText(id: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  if (!/^[\w-]{1,80}$/.test(String(id))) return { ok: false, error: 'That is not a Fathom call.' }
+  try {
+    return { ok: true, text: (await fathomTranscript(String(id))).slice(0, 120_000) }
+  } catch (e) {
+    return { ok: false, error: msgOf(e) }
   }
 }

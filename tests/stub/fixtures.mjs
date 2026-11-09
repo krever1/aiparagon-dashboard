@@ -150,8 +150,66 @@ export function fixtures() {
         created_at: '2026-10-06T09:00:00Z',
       },
     ],
-    call_meta: [],
+    call_meta: [
+      // Robin's intro call is filed under Prospect research; Pat's call was set aside
+      { call_id: '9002', lead_email: 'robin.sample@example.com', lead_stage: 'research', meeting_type: 'sales', created_at: '2026-10-21T10:00:00Z' },
+      { call_id: '9004', lead_email: PAT, lead_stage: 'none', created_at: '2026-10-31T10:00:00Z' },
+    ],
+    catalyst_sources: [
+      {
+        id: '30000000-0000-4000-8000-000000000001', kind: 'discovery_template', file_name: 'Our discovery questions.docx', active: true,
+        sections: ['Opening', 'Questions'], created_at: '2026-10-01T10:00:00Z',
+      },
+    ],
     agent_feedback: [],
+  }
+}
+
+const TEAM = { name: 'QA Teammate', email: 'qa.teammate@aiparagonconsulting.com' }
+
+/** Fathom's newest calls, as Dashboard · Fathom Proxy lists them (made up). */
+export function fathomCalls() {
+  return [
+    {
+      id: 9001, title: 'Discovery consultation with Robin', start: '2026-11-04T17:00:00Z', end: '2026-11-04T17:45:00Z', recorded_by: TEAM,
+      invitees: [TEAM, { name: 'Robin Sample', email: 'robin.sample@example.com', external: true }],
+    },
+    {
+      id: 9004, title: 'Catch-up with Pat', start: '2026-10-30T16:00:00Z', end: '2026-10-30T16:20:00Z', recorded_by: TEAM,
+      invitees: [TEAM, { name: 'Pat Example', email: PAT, external: true }],
+    },
+    { id: 9003, title: 'Team sync', start: '2026-10-25T16:00:00Z', end: '2026-10-25T16:30:00Z', recorded_by: TEAM, invitees: [TEAM] },
+    {
+      id: 9002, title: 'Intro call with Robin', start: '2026-10-20T16:00:00Z', end: '2026-10-20T16:30:00Z', recorded_by: TEAM,
+      invitees: [TEAM, { name: 'Robin Sample', email: 'robin.sample@example.com', external: true }],
+    },
+  ]
+}
+
+/** What each call's transcript says. */
+export function fathomTranscripts() {
+  return {
+    9001: [
+      { speaker: 'Robin Sample', t: '00:01', text: 'We spend hours on onboarding paperwork.' },
+      { speaker: 'QA Teammate', t: '00:12', text: 'What would you stop doing first?' },
+    ],
+    9002: [{ speaker: 'Robin Sample', t: '00:01', text: 'We heard about you from a friend.' }],
+    9003: [{ speaker: 'QA Teammate', t: '00:01', text: 'Team things.' }],
+    9004: [{ speaker: 'Pat Example', t: '00:01', text: 'Just checking in.' }],
+  }
+}
+
+/** The emails logged in HubSpot for each lead (Dashboard · HubSpot Emails Proxy), newest first. */
+export function hubspotEmails() {
+  return {
+    'robin.sample@example.com': [
+      { id: 'e1', at: '2026-11-05T15:00:00Z', incoming: true, subject: 'Notes from our call', from: 'robin.sample@example.com', to: [TEAM.email], text: 'Thanks for the call. The paperwork is the worst part.' },
+      { id: 'e2', at: '2026-11-03T15:00:00Z', incoming: false, subject: 'Agenda', from: TEAM.email, to: ['robin.sample@example.com'], text: 'Here is the agenda for Tuesday.' },
+    ],
+    [PAT]: [1, 2, 3, 4].map((n) => ({
+      id: 'p' + n, at: `2026-11-0${n}T15:00:00Z`, incoming: n % 2 === 0, subject: 'Follow-up ' + n,
+      from: n % 2 === 0 ? PAT : TEAM.email, to: n % 2 === 0 ? [TEAM.email] : [PAT], text: 'Email number ' + n + '.',
+    })).reverse(),
   }
 }
 

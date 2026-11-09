@@ -15,6 +15,8 @@ import {
   type LeadView, type PipelineData, type PipelineTab, hasDoc, leadHref, matchesSearch, pipelineTab, stripCounts, viewStage,
 } from '@/lib/catalyst/view'
 import { Banner, ErrorNotice, FitPill, StageDot, StripTile, Tabs, plural } from './bits'
+import { useCheckBack } from './check-back'
+import { type Ask, StageQuestion, stillWriting } from './stage-question'
 
 /**
  * Lead pipeline: every prospect and client, by meeting stage. The Board tab shows a column per stage; All and the
@@ -25,8 +27,13 @@ export function PipelineView({ data }: { data: PipelineData }) {
   const tab = pipelineTab(useSearchParams().get('tab'))
   const [listQ, setListQ] = useState('')
   const [renaming, setRenaming] = useState(false)
+  const [ask, setAsk] = useState<Ask | null>(null)
   const stages = useMemo(() => stagesNamed(data.names), [data.names])
   const c = useMemo(() => stripCounts(data.leads), [data.leads])
+  useCheckBack(data.leads.some((l) => l.run))
+  const onAsk = (lead: LeadView, stage: StageKey, move: boolean) => {
+    if (!stillWriting(lead)) setAsk({ lead, stage, move })
+  }
 
   const go = (t: PipelineTab) => {
     const u = new URL(window.location.href)
@@ -64,11 +71,12 @@ export function PipelineView({ data }: { data: PipelineData }) {
       />
       {data.error ? <ErrorNotice>{data.error}</ErrorNotice> : null}
       {tab === 'board' ? (
-        <Board leads={data.leads} stages={stages} onRename={() => setRenaming(true)} />
+        <Board leads={data.leads} stages={stages} onRename={() => setRenaming(true)} onAsk={onAsk} />
       ) : (
         <LeadList leads={data.leads} stages={stages} tab={tab} q={listQ} setQ={setListQ} />
       )}
       {renaming ? <RenameStages stages={stages} onClose={() => setRenaming(false)} /> : null}
+      {ask ? <StageQuestion key={ask.lead.id + ask.stage} ask={ask} stages={stages} onClose={() => setAsk(null)} /> : null}
     </>
   )
 }
@@ -89,11 +97,25 @@ function SearchBox({ value, onChange, label }: { value: string; onChange: (v: st
   )
 }
 
-function Board({ leads, stages, onRename }: { leads: LeadView[]; stages: Stage[]; onRename: () => void }) {
+function Board({
+  leads,
+  stages,
+  onRename,
+  onAsk,
+}: {
+  leads: LeadView[]
+  stages: Stage[]
+  onRename: () => void
+  onAsk: (lead: LeadView, stage: StageKey, move: boolean) => void
+}) {
   const router = useRouter()
   const [q, setQ] = useState('')
+  const [drag, setDrag] = useState<LeadView | null>(null)
+  const [over, setOver] = useState<StageKey | null>(null)
   const shown = leads.filter((l) => matchesSearch(l, q))
   const open = (l: LeadView) => router.push(leadHref(l.id))
+  // a lead can go to any other stage; its own column takes no drop, and a lead being written takes no move
+  const canDrop = (l: LeadView | null, s: StageKey) => !!l && !l.run && viewStage(l) !== s
   return (
     <section aria-label="Board">
       <p className="mb-3 text-[14.5px] text-ink-2">
@@ -114,16 +136,37 @@ function Board({ leads, stages, onRename }: { leads: LeadView[]; stages: Stage[]
         </button>
       </div>
       <div className="@container">
-        <div className="grid grid-cols-1 gap-3 @min-[600px]:grid-cols-3 @min-[1000px]:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 @min-[600px]:grid-cols-3 @min-[940px]:grid-cols-6">
           {stages.map((s) => {
             const col = shown.filter((l) => viewStage(l) === s.key)
+            const no = !!drag && !canDrop(drag, s.key)
             return (
               <div
                 key={s.key}
                 role="group"
                 data-s={s.key}
+                data-over={over === s.key ? 'yes' : undefined}
                 aria-label={`${s.name}, ${plural(col.length, 'lead')}`}
-                className="flex flex-col gap-2.5 rounded-md bg-[#e5e8ef] p-2.5 @min-[600px]:max-h-[72vh] @min-[600px]:min-h-[220px] @min-[600px]:overflow-y-auto @min-[1000px]:min-h-[320px]"
+                onDragOver={(e) => {
+                  if (!canDrop(drag, s.key)) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (over !== s.key) setOver(s.key)
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((o) => (o === s.key ? null : o))
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const id = e.dataTransfer.getData('text/plain')
+                  const lead = drag ?? leads.find((l) => l.id === id) ?? null
+                  setDrag(null)
+                  setOver(null)
+                  if (lead && canDrop(lead, s.key)) onAsk(lead, s.key, true)
+                }}
+                className={`flex flex-col gap-2.5 rounded-md p-2.5 transition-[opacity,background-color] @min-[600px]:max-h-[72vh] @min-[600px]:min-h-[220px] @min-[600px]:overflow-y-auto @min-[940px]:min-h-[320px] ${
+                  over === s.key ? 'bg-info-soft outline-2 outline-dashed outline-info/60' : 'bg-[#e5e8ef]'
+                } ${no ? 'opacity-50' : ''}`}
               >
                 <div className="flex items-start gap-2 px-1 pt-1">
                   <StageDot color={s.color} className="mt-[7px]" />
@@ -131,7 +174,21 @@ function Board({ leads, stages, onRename }: { leads: LeadView[]; stages: Stage[]
                   <span className="rounded-full bg-panel px-2 py-0.5 text-[11.5px] font-semibold text-ink-2">{col.length}</span>
                 </div>
                 {col.length ? (
-                  col.map((l) => <Card key={l.id} l={l} s={s} onOpen={open} />)
+                  col.map((l) => (
+                    <Card
+                      key={l.id}
+                      l={l}
+                      s={s}
+                      stages={stages}
+                      onOpen={open}
+                      onRun={() => onAsk(l, s.key, false)}
+                      dragging={drag?.id === l.id}
+                      onDrag={(on) => {
+                        setDrag(on ? l : null)
+                        if (!on) setOver(null)
+                      }}
+                    />
+                  ))
                 ) : (
                   <p className="py-6 text-center text-[13.5px] text-ink-3">No leads here</p>
                 )}
@@ -144,16 +201,40 @@ function Board({ leads, stages, onRename }: { leads: LeadView[]; stages: Stage[]
   )
 }
 
-function Card({ l, s, onOpen }: { l: LeadView; s: Stage; onOpen: (l: LeadView) => void }) {
+function Card({
+  l,
+  s,
+  stages,
+  onOpen,
+  onRun,
+  dragging,
+  onDrag,
+}: {
+  l: LeadView
+  s: Stage
+  stages: Stage[]
+  onOpen: (l: LeadView) => void
+  onRun: () => void
+  dragging: boolean
+  onDrag: (on: boolean) => void
+}) {
   const ready = hasDoc(l, s.key)
+  const writing = l.run ? stages.find((x) => x.key === l.run!.s) : null
   const meta = [l.company, firmTypeLabel(l.firmType)].filter(Boolean).join(' · ')
-  const label = `${l.name}, ${s.name}${ready ? `, ${s.doc} ready` : ''}. Open the lead`
+  const label = `${l.name}, ${s.name}${writing ? `, writing ${writing.what}` : ready ? `, ${s.doc} ready` : ''}. Open the lead`
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={label}
       data-lead={l.id}
+      draggable={!l.run}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', l.id)
+        e.dataTransfer.effectAllowed = 'move'
+        onDrag(true)
+      }}
+      onDragEnd={() => onDrag(false)}
       onClick={() => onOpen(l)}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return
@@ -162,7 +243,9 @@ function Card({ l, s, onOpen }: { l: LeadView; s: Stage; onOpen: (l: LeadView) =
           onOpen(l)
         }
       }}
-      className="cursor-pointer rounded-[10px] border border-t-[3px] border-line bg-panel p-3 shadow-card transition-shadow hover:shadow-pop"
+      className={`cursor-pointer rounded-[10px] border border-t-[3px] border-line bg-panel p-3 shadow-card transition-[box-shadow,opacity] hover:shadow-pop ${
+        dragging ? 'opacity-45' : ''
+      }`}
       style={{ borderTopColor: s.color }}
     >
       <b className="block break-words text-[15px] font-semibold leading-snug text-ink">{l.name}</b>
@@ -172,7 +255,12 @@ function Card({ l, s, onOpen }: { l: LeadView; s: Stage; onOpen: (l: LeadView) =
         <FitPill fit={l.fit} />
       </div>
       <div className="mt-2.5">
-        {ready ? (
+        {writing ? (
+          <div role="status" className="flex items-center gap-2 text-[13px] font-semibold text-accent-text">
+            <span aria-hidden="true" className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
+            Writing {writing.what}
+          </div>
+        ) : ready ? (
           <Link
             href={leadHref(l.id, s.key)}
             title={`Open the ${s.doc.toLowerCase()}`}
@@ -186,10 +274,12 @@ function Card({ l, s, onOpen }: { l: LeadView; s: Stage; onOpen: (l: LeadView) =
         ) : (
           <button
             type="button"
-            disabled
-            title="Runs move to this dashboard in the next update. Until then, run it from the current dashboard."
-            onClick={(e) => e.stopPropagation()}
-            className="rounded-sm border border-line-2 bg-panel px-2.5 py-1.5 text-[13px] font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRun()
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="rounded-sm border border-line-2 bg-panel px-2.5 py-1.5 text-[13px] font-semibold text-ink hover:border-action"
           >
             {runLabel(s)}
           </button>

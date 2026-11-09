@@ -62,7 +62,7 @@ test.describe('the Lead pipeline', () => {
     await expect(page.getByTestId('board-count')).toHaveText('6 leads')
   })
 
-  test('a card offers only its own stage’s document: ready opens the lead on it, Run comes with the next update', async ({ page }) => {
+  test('a card offers only its own stage’s document: ready opens the lead on it, otherwise Run', async ({ page }) => {
     await signIn(page, '/lead-pipeline')
     const pat = card(page, 'proposal', 'pat-example')
     const ready = pat.getByRole('link', { name: 'Proposal ready' })
@@ -76,7 +76,7 @@ test.describe('the Lead pipeline', () => {
       ['research', 'jordan-merge', 'Run prospect brief'],
       ['review', 'casey-review', 'Run review brief'],
     ]) {
-      await expect(card(page, stage, name).getByRole('button', { name: run })).toBeDisabled()
+      await expect(card(page, stage, name).getByRole('button', { name: run })).toBeEnabled()
     }
     await ready.click()
     await expect(page).toHaveURL(new RegExp(`/lead-pipeline/${PAT}\\?tab=proposal$`))
@@ -504,7 +504,7 @@ test.describe('a lead’s page', () => {
     await expect(page.getByRole('tab', { name: 'Client review brief' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('tab', { name: /Onboarding plan/ })).toHaveCount(0)
     await expect(page.getByText('This lead is in Client review, and its prep has not been written yet.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Run review brief' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Run review brief' })).toBeEnabled()
   })
 
   test('Files and HubSpot', async ({ page }) => {

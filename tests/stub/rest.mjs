@@ -15,6 +15,7 @@ const KEYS = {
   hubspot_contacts: 'email',
   agent_feedback: 'id',
   lead_files: 'id',
+  catalyst_sources: 'id',
 }
 
 const clone = (v) => JSON.parse(JSON.stringify(v))

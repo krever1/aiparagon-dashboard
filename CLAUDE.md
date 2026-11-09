@@ -20,8 +20,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   and Calls, with a lead's Calls tab; 4. the client proposal (view, edit, print, write), the meeting prep charts, What
   should change?, file uploads. `dev` goes to `main` once parts 1 and 2 are in, so production never has a board that
   cannot run anything.
-- Part 1 (Nov 9, branch `catalyst/pipeline-read`): see Catalyst below. The cards' Run buttons and the prep tabs' Run
-  are shown but off ("Runs move to this dashboard in the next update") until part 2.
+- Part 1 (Nov 9, branch `catalyst/pipeline-read`) and part 2 (Nov 9, branch `catalyst/pipeline-runs`, on top of part
+  1): see Catalyst below.
 - Next: Catalyst parts 2 to 4, then Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
   custom domain can come later). Vercel project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two
@@ -34,7 +34,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Product | Pages | Status |
 |---|---|---|
 | Touchpoint | Today, Approvals, Tasks | current dashboard |
-| Catalyst | Overview, Lead pipeline (board, list, a lead's page) | here (reading; runs in part 2) |
+| Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here |
 | Catalyst | HubSpot contacts, Calls | current dashboard |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Overview, Intel Tracker, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
@@ -129,10 +129,27 @@ signed-in teammate's token, as the current dashboard's do.
   facts, a part per heading; JSON documents as cards) or Full text, remembered in this browser. Markdown goes through
   react-markdown with raw HTML left out and unsafe links as plain text (the current dashboard passed raw HTML through).
 - Rename stages (`saveStageNames`): reads the row fresh, merges, stores '' for a usual name and `by`/`at` per stage.
+- Runs (part 2): a card's Run, a drop on another column, a lead page's Stage picker or a prep tab's Run opens the
+  question (`stage-question.tsx`, v136Ask): what the stage writes and works from, what the run reads (`stageReads`:
+  the template, the lead's Fathom calls, its HubSpot emails, the CRM record, the discovery questions), the meeting
+  notes, and Just move it / Move and run it. `goStage` (a Server Action) reads the lead again, checks the plan
+  (`planFor`: the proposal needs the assessment, a stage with nothing to work from needs notes or a call), moves it
+  (e1_leads.stage on every row of the person, not the anonymizer's shared placeholder row), builds the notes
+  (`composeNote`: the team's notes, the CRM record, the emails, then the transcripts, within 44,000 characters), starts
+  only that stage (`plan.ts` `RUN_HOOKS`: the full run, the custom run with `entry`, or Meeting Prep; `only: true`),
+  files the calls it read under the stage the lead was in, and keeps the run for the team in ai_settings
+  `catalyst_runs` ({lead email: {s, t0, seen, by}}). A card says "Writing …" until a newer document of the stage lands
+  or for 45 minutes (`runOf`), and the page checks back every 30 seconds while one runs (`useCheckBack`).
+- New run (`new-run.tsx`, `newRun`): the older form for a lead not on the board yet, with the Fathom call picker
+  (`recentCalls`, `callText`); the lead goes in the stage it picked, and its run shows on the board.
+- n8n calls for runs go through `startN8n` (`src/lib/n8n.ts`): any 2xx is started, anything else "Webhook returned
+  <status>", and the token goes out with at least 20 minutes left (renewed first), since the run hands it on.
 - Changed on purpose from the current dashboard (reported to Kser): the list's rows open the lead's page (its v60 side
   panel saved a column e1_leads does not have); the Overview's Recent leads and Documents count the six stages, not the
   older five documents; a lead opens on the tab of its stage; the Documents tile counts documents, not PDF links; the
-  list says 0 shown, not 1, when nothing matches.
+  list says 0 shown, not 1, when nothing matches; a run in progress is kept for the team and survives a reload (the
+  current dashboard kept it in one tab's memory); a move leaves the anonymizer's shared placeholder row alone; New run
+  runs show on the board.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -175,6 +192,11 @@ signed-in teammate's token, as the current dashboard's do.
 - An absolutely placed element (Tailwind's `sr-only`) inside a sideways-scrolling box escapes it, and the whole page
   scrolls sideways on a phone, unless the box is `relative`.
 - Chromium reads a `<th>` as a plain cell unless it has `scope="col"`; tests find column headers by role.
+- Chromium starts no native drag from a `<button>` inside a draggable card, and Playwright's `dragTo` starts at the
+  centre (often the card's Run button): the tests start drags on the card's name (`sourcePosition`) and use a 1440
+  window, where the board's six columns sit in one row.
+- The old dashboard does not read `catalyst_runs`: a run started here shows "Writing …" here only, and the other way
+  round, until the cutover.
 - A Supabase session check reads the clock (token expiry). Call `connection()` before it, as `getCurrentUser()` does,
   or prerendering logs "encountered the unstable value Date.now()".
 - Next.js adds a hidden `role="alert"` route announcer to every page: in tests, scope alert checks (for example to the

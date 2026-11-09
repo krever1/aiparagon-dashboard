@@ -8,11 +8,13 @@ import { PageHeader } from '@/components/moving-page'
 import { LocalDate, LocalDateTime } from '@/components/ui/local-date'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import type { E1Doc, FileRow, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
-import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
+import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
 import { type LeadTab, hasDoc, leadTab, safeUrl } from '@/lib/catalyst/view'
 import { pageBySlug } from '@/lib/nav'
 import { Banner, ErrorNotice, StripTile, type TabDef, Tabs } from './bits'
+import { useCheckBack } from './check-back'
 import { DocReader } from './doc-reader'
+import { type Ask, StageQuestion, stillWriting } from './stage-question'
 import { Md } from './markdown'
 import { mdClean } from '@/lib/catalyst/doc-format'
 
@@ -61,6 +63,11 @@ export function LeadView({ data }: { data: Found }) {
   // the address's tab when this lead has it, else the tab of the stage the lead is in
   const tab: LeadTab = asked && tabs.some((t) => t.key === asked) ? asked : home
   const [reading, setReading] = useState<string | null>(null)
+  const [ask, setAsk] = useState<Ask | null>(null)
+  useCheckBack(!!lead.run)
+  const askFor = (stage: StageKey, move: boolean) => {
+    if (!stillWriting(lead)) setAsk({ lead, stage, move })
+  }
 
   const go = (t: LeadTab) => {
     const u = new URL(window.location.href)
@@ -101,10 +108,30 @@ export function LeadView({ data }: { data: Found }) {
         text={`Stage: ${st.name} · ${st.doc} ${ready ? 'ready' : 'not written yet'}`}
         tip={firm}
         right={
-          <Link href="/lead-pipeline" className={btn}>
-            <ArrowLeft size={15} aria-hidden="true" />
-            Lead pipeline
-          </Link>
+          <>
+            <label className="inline-flex items-center gap-2 text-[13.5px] font-semibold text-ink-2">
+              Stage
+              <select
+                aria-label="Move this lead to another stage"
+                value={data.stage}
+                onChange={(e) => {
+                  const s = e.target.value
+                  if (isStageKey(s) && s !== data.stage) askFor(s, true)
+                }}
+                className="h-9 max-w-[220px] rounded-sm border border-line bg-panel px-2 text-[14px] font-medium text-ink focus:border-accent focus:outline-none"
+              >
+                {stages.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link href="/lead-pipeline" className={btn}>
+              <ArrowLeft size={15} aria-hidden="true" />
+              Lead pipeline
+            </Link>
+          </>
         }
       />
       <div className="mb-4 flex flex-wrap gap-2" data-testid="strip">
@@ -115,12 +142,19 @@ export function LeadView({ data }: { data: Found }) {
       <Tabs<LeadTab> label="This lead’s documents" tabs={tabs} active={tab} onPick={go} />
       {data.error ? <ErrorNotice>{data.error}</ErrorNotice> : null}
 
-      {doc ? <DocPanel d={doc} reading={reading} setReading={setReading} /> : null}
+      {doc ? <DocPanel d={doc} reading={reading} setReading={setReading} writing={lead.run?.s === doc.key ? byKey[doc.key as StageKey] : null} /> : null}
       {tab === 'onboarding' || tab === 'review' ? (
-        <PrepPanel prep={data.prep[tab]} stage={byKey[tab]} leadStage={st} />
+        <PrepPanel
+          prep={data.prep[tab]}
+          stage={byKey[tab]}
+          leadStage={st}
+          writing={lead.run?.s === tab}
+          onRun={() => askFor(tab as StageKey, false)}
+        />
       ) : null}
       {tab === 'files' ? <FilesPanel rows={data.files.rows} error={data.files.error} /> : null}
       {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} /> : null}
+      {ask ? <StageQuestion key={ask.stage} ask={ask} stages={stages} onClose={() => setAsk(null)} /> : null}
     </>
   )
 }
@@ -140,7 +174,18 @@ function Panel({ kicker, title, extra, children, id }: { kicker?: string; title:
 
 const notRun = <span className="rounded-full bg-sunk px-2.5 py-0.5 font-sans text-[12.5px] font-semibold text-ink-3">not run yet</span>
 
-function DocPanel({ d, reading, setReading }: { d: E1Doc; reading: string | null; setReading: (k: string | null) => void }) {
+function DocPanel({
+  d,
+  reading,
+  setReading,
+  writing,
+}: {
+  d: E1Doc
+  reading: string | null
+  setReading: (k: string | null) => void
+  /** the stage, while a run writes its document */
+  writing: Stage | null
+}) {
   const open = reading === d.key
   const canRead = !!(d.md || d.readDocId || d.readPdfId)
   const pdf = safeUrl(d.url)
@@ -157,6 +202,12 @@ function DocPanel({ d, reading, setReading }: { d: E1Doc; reading: string | null
         )
       }
     >
+      {writing ? (
+        <p role="status" className="mb-3 flex items-center gap-2 rounded-md bg-accent-soft px-4 py-3 text-[14.5px] text-accent-text">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
+          Catalyst is writing {writing.what}. It shows here when it is done.
+        </p>
+      ) : null}
       {d.done ? (
         <div className="rounded-md border border-line bg-sunk/50 p-4" data-testid="doc-card">
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -205,15 +256,39 @@ function DocPanel({ d, reading, setReading }: { d: E1Doc; reading: string | null
   )
 }
 
-function PrepPanel({ prep, stage, leadStage }: { prep: PrepDoc | null; stage: Stage; leadStage: Stage }) {
+function PrepPanel({
+  prep,
+  stage,
+  leadStage,
+  writing,
+  onRun,
+}: {
+  prep: PrepDoc | null
+  stage: Stage
+  leadStage: Stage
+  writing: boolean
+  onRun: () => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <Panel
       id={'prep-' + stage.key}
       title={stage.doc}
-      extra={prep ? <span className="font-sans text-[13.5px] font-normal text-ink-3">{prep.at ? <LocalDate iso={prep.at} /> : null}</span> : notRun}
+      extra={
+        writing ? (
+          <span className="rounded-full bg-accent-soft px-2.5 py-0.5 font-sans text-[12.5px] font-semibold text-accent-text">writing</span>
+        ) : prep ? (
+          <span className="font-sans text-[13.5px] font-normal text-ink-3">{prep.at ? <LocalDate iso={prep.at} /> : null}</span>
+        ) : (
+          notRun
+        )
+      }
     >
-      {prep ? (
+      {writing ? (
+        <p role="status" className="rounded-md bg-sunk px-4 py-5 text-[14.5px] text-ink-2">
+          Catalyst is writing {stage.what}. It shows here when it is done.
+        </p>
+      ) : prep ? (
         <div className="rounded-md border border-line bg-sunk/50 p-4" data-testid="prep-card">
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <b className="text-[15.5px] font-semibold text-ink">{prep.title || stage.doc}</b>
@@ -237,12 +312,7 @@ function PrepPanel({ prep, stage, leadStage }: { prep: PrepDoc | null; stage: St
       ) : (
         <div className="rounded-md bg-sunk px-4 py-5 text-[14.5px] text-ink-2">
           This lead is in {leadStage.name}, and its prep has not been written yet.{' '}
-          <button
-            type="button"
-            disabled
-            title="Runs move to this dashboard in the next update. Until then, run it from the current dashboard."
-            className={btn + ' ml-1 disabled:cursor-not-allowed disabled:opacity-60'}
-          >
+          <button type="button" onClick={onRun} className={btn + ' ml-1'}>
             {runLabel(stage)}
           </button>
         </div>

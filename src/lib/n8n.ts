@@ -15,10 +15,39 @@ export class N8nError extends Error {
   }
 }
 
-async function accessToken(): Promise<string | null> {
+/** The signed-in teammate's access token; renewed first when it has less than `minLeftSec` to live. */
+async function accessToken(minLeftSec = 0): Promise<string | null> {
   const supabase = await createClient()
   const { data } = await supabase.auth.getSession()
-  return data.session?.access_token ?? null
+  let session = data.session
+  if (session && minLeftSec > 0 && (session.expires_at ?? 0) - Date.now() / 1000 < minLeftSec) {
+    const fresh = await supabase.auth.refreshSession()
+    if (fresh.data.session) session = fresh.data.session
+  }
+  return session?.access_token ?? null
+}
+
+/**
+ * Starts a workflow that answers at once and works on (a stage run). Its answer is not read: any 2xx is started, and
+ * anything else is "Webhook returned <status>", the current dashboard's words. The token goes out with at least 20
+ * minutes left, since the run hands it on to the workflows it calls.
+ */
+export async function startN8n(path: string, body: Record<string, unknown>): Promise<void> {
+  const auth = await accessToken(20 * 60)
+  if (!auth) throw new N8nError('You are signed out. Sign in again', 'unauthorized')
+  let res: Response
+  try {
+    res = await fetch(BASE + '/' + path.replace(/^\/+/, ''), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...body, auth }),
+      signal: AbortSignal.timeout(30_000),
+      cache: 'no-store',
+    })
+  } catch {
+    throw new N8nError('Could not reach n8n', 'network')
+  }
+  if (!res.ok) throw new N8nError('Webhook returned ' + res.status, 'status')
 }
 
 /**

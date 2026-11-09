@@ -24,6 +24,11 @@ export type LeadView = {
   docs: Partial<Record<StageKey, number>>
   /** documents the lead has (the follow-up guide included) */
   docCount: number
+  /** whether the agents saved a Google Doc of the prospect brief, the consultation guide and the assessment (what the
+   * later stages work from) */
+  ids: { research: boolean; interview: boolean; anonymized: boolean }
+  /** a run in progress: the stage it writes and when it started */
+  run: { s: StageKey; t0: string } | null
   anonEmail: string
   anonCompany: string
   /** lowercase name, company and email, for the search box */
@@ -37,9 +42,10 @@ export type PipelineData = {
   error: string | null
 }
 
-/** Where a lead sits on the board. */
-export function viewStage(l: Pick<LeadView, 'stored' | 'derived'>): StageKey {
-  return l.stored ?? l.derived
+/** Where a lead sits on the board: the stage of a run in progress, else where the team moved it, else the furthest
+ * stage with a document. */
+export function viewStage(l: Pick<LeadView, 'stored' | 'derived' | 'run'>): StageKey {
+  return l.run?.s ?? l.stored ?? l.derived
 }
 
 export function hasDoc(l: Pick<LeadView, 'docs'>, s: StageKey): boolean {

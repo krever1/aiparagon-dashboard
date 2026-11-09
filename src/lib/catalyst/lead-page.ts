@@ -227,7 +227,7 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
       }
     : null
 
-  const view = toView(lead, outs)
+  const view = toView(lead, outs, read.runs)
   return {
     found: true,
     lead: view,

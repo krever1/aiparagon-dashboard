@@ -2,7 +2,8 @@
 // Auth (GoTrue): password sign-in, refresh, the user check, sign-out and password reset.
 // Data (PostgREST, /rest/v1): see rest.mjs; the starting rows are in fixtures.mjs.
 // n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
-// doc-reader answers from the documents in fixtures.mjs; any webhook can be given a canned answer.
+// doc-reader, fathom-proxy (list, transcript) and catalyst-emails answer from fixtures.mjs; the three stage runs (the
+// full run, the custom run, Meeting Prep) answer started; any webhook can be given a canned answer.
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
@@ -11,7 +12,7 @@
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
-import { fixtures, docs as docFixtures } from './fixtures.mjs'
+import { fixtures, docs as docFixtures, fathomCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -137,6 +138,19 @@ http
           const d = docs[body.id]
           if (!d) return send(res, 200, { ok: false, message: 'Could not read that document.' })
           return send(res, 200, d.ok === false ? d : { ok: true, ...d })
+        }
+        if (name === 'fathom-proxy') {
+          if (body.action === 'list') return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: null })
+          if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
+          return send(res, 200, { ok: false, code: 'bad_action', message: 'stub: unknown action' })
+        }
+        if (name === 'catalyst-emails') {
+          const all = hubspotEmails()
+          const items = (body.emails || []).flatMap((e) => all[String(e).toLowerCase()] || []).slice(0, body.limit || 8)
+          return send(res, 200, { ok: true, items, total: items.length })
+        }
+        if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
+          return send(res, 200, { ok: true, started: true })
         }
         return send(res, 404, { code: 404, message: 'stub: the requested webhook "' + name + '" is not registered.' })
       }

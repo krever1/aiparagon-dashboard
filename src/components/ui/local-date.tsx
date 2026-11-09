@@ -77,3 +77,19 @@ export function LocalDateTime({ iso, className }: { iso: string | null | undefin
     </time>
   )
 }
+
+/** "Nov 4", with the year when it is not this year (the run question's Reads list, as the current dashboard says it). */
+export function usDayText(iso: string | null | undefined, timeZone?: string): string {
+  const d = parse(iso)
+  if (!d) return ''
+  const year = (x: Date) => x.toLocaleDateString('en-US', { year: 'numeric', timeZone })
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone }
+  if (year(d) !== year(new Date())) opts.year = 'numeric'
+  return d.toLocaleDateString('en-US', opts)
+}
+
+export function LocalUsDay({ iso }: { iso: string | null | undefined }) {
+  const hydrated = useHydrated()
+  const text = usDayText(iso, hydrated ? undefined : 'UTC')
+  return text ? <time dateTime={iso ?? undefined}>{text}</time> : null
+}

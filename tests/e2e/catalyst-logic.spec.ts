@@ -8,6 +8,9 @@ import {
   STAGES, cleanName, firmSizeLabel, firmTypeLabel, fitTone, labelCase, namesFromSetting, runLabel, stagesNamed,
 } from '../../src/lib/catalyst/stages'
 import { jsonStruct, mdClean, mdStruct, parseDocText, parseSaved, pdfToMd } from '../../src/lib/catalyst/doc-format'
+import {
+  baseFields, composeNote, crmLine, customBody, mailBlock, planFor, prepBody, researchBody, runOf, runsFromSetting, setupOf,
+} from '../../src/lib/catalyst/plan'
 
 // Catalyst's rules, checked without a browser: which rows make a lead, which document is a stage's, where a lead sits,
 // and how a document is read. The rows are the stand-in's made-up ones (tests/stub/fixtures.mjs).
@@ -181,4 +184,101 @@ test('PDF text: lines in capitals read as headings', () => {
   expect(pdfToMd('PROPOSAL PRESENTATION\nSome text.\nWHAT WE WILL DO:\nMore.\nOK\nNot A Heading Line')).toBe(
     '\n## PROPOSAL PRESENTATION\n\nSome text.\n\n## WHAT WE WILL DO\n\nMore.\nOK\nNot A Heading Line',
   )
+})
+
+// ---------- running a stage (src/lib/catalyst/plan.ts) ----------
+
+test('what each stage reads by default, and the team’s choices over it', () => {
+  expect(setupOf('research', null)).toEqual({ type: 'sales', calls: false, crm: true, questions: null, emails: false, charts: null })
+  expect(setupOf('assessment', null)).toEqual({ type: '', calls: true, crm: false, questions: false, emails: true, charts: null })
+  expect(setupOf('proposal', null)).toEqual({ type: 'proposal', calls: true, crm: false, questions: null, emails: true, charts: true })
+  const saved = { assessment: { calls: false, crm: true, questions: true, emails: false, type: 'Deep dive' }, research: { calls: true, crm: false, emails: true } }
+  expect(setupOf('assessment', saved)).toEqual({ type: 'Deep dive', calls: false, crm: true, questions: true, emails: false, charts: null })
+  // the prospect brief never reads calls or emails and always the CRM record, whatever is saved
+  expect(setupOf('research', saved)).toEqual({ type: 'sales', calls: false, crm: true, questions: null, emails: false, charts: null })
+  expect(setupOf('onboarding', { onboarding: { charts: false } }).charts).toBe(false)
+})
+
+test('what a stage needs: the proposal works from the assessment, the others ask for notes', () => {
+  const none = { docs: {}, ids: { research: false, interview: false, anonymized: false } }
+  expect(planFor(none, 'research')).toEqual({ doneAt: null, blocked: '', need: '', notes: false })
+  expect(planFor(none, 'consultation').need).toBe('prospect brief')
+  expect(planFor(none, 'assessment').need).toBe('consultation guide')
+  expect(planFor({ ...none, ids: { research: false, interview: true, anonymized: false } }, 'assessment').need).toBe('prospect brief')
+  expect(planFor(none, 'proposal').blocked).toBe('The proposal works from the assessment report, and this lead has none yet. Run the assessment first.')
+  expect(planFor(none, 'onboarding').need).toBe('documents')
+  expect(planFor({ docs: { research: 5 }, ids: none.ids }, 'review').need).toBe('')
+  const all = { docs: { research: 0, proposal: 1700000000000 }, ids: { research: true, interview: true, anonymized: true } }
+  expect(planFor(all, 'proposal')).toEqual({ doneAt: 1700000000000, blocked: '', need: '', notes: true })
+  expect(planFor(all, 'research').doneAt).toBe(0)
+})
+
+test('the notes a run sends: the team’s notes, the CRM record, the emails, then the calls, within 44,000 characters', () => {
+  const names = { assessment: 'Deep dive' }
+  expect(composeNote({ typed: '  just this  ', crm: null, calls: [], emails: [], names })).toBe('just this')
+  const crm = { email: 'r@example.com', first_name: 'Robin', last_name: 'Sample', company: 'Sample Peak', lifecycle_stage: 'lead', website: 'example.com' }
+  expect(crmLine(crm)).toBe('Robin Sample · Sample Peak · lifecycle stage: lead · website: example.com')
+  const note = composeNote({
+    typed: 'We met.',
+    crm,
+    calls: [
+      { id: '1', start: '2026-11-04T17:00:00Z', title: 'Kickoff', stage: 'assessment', text: 'A: hello' },
+      { id: '2', start: '2026-11-01T17:00:00Z', title: '', stage: 'none', text: 'B: hi' },
+      { id: '3', start: '2026-10-01T17:00:00Z', title: 'No text', stage: '', text: '' },
+    ],
+    emails: [{ at: '2026-11-05T15:00:00Z', incoming: true, subject: 'Notes', from: 'r@example.com', to: ['us@example.com'], text: 'Thanks.' }],
+    names,
+  })
+  expect(note).toBe(
+    'NOTES FROM THE TEAM\nWe met.\n\nTHE CRM RECORD (HubSpot)\nRobin Sample · Sample Peak · lifecycle stage: lead · website: example.com\n\n' +
+      'EMAILS WITH THE CLIENT (HubSpot, newest first)\n\nEmail on Nov 5, 2026 from r@example.com to us@example.com: Notes\nThanks.\n\n' +
+      'WHAT WAS SAID IN THE MEETINGS (call transcripts, newest first)\n\nCall on Nov 4, 2026: Kickoff (filed under Deep dive)\nA: hello\n\nCall on Nov 1, 2026: untitled\nB: hi',
+  )
+  // a long transcript is cut so the whole stays within the budget, and says so
+  const long = composeNote({ typed: 'x', crm: null, calls: [{ id: '1', start: '2026-11-04T17:00:00Z', title: 'Long', stage: '', text: 'y'.repeat(60_000) }], emails: [], names })
+  expect(long.length).toBeLessThanOrEqual(44_000)
+  expect(long.endsWith('\n[the rest of this call is left out]')).toBe(true)
+  // an email is cut at 3,000 characters, and all the emails stay within 8,000
+  const mails = Array.from({ length: 5 }, (_, i) => ({ at: '2026-11-0' + (i + 1) + 'T10:00:00Z', incoming: false, subject: 'S' + i, from: '', to: ['a@example.com'], text: 'z'.repeat(5_000) }))
+  const block = mailBlock(mails)
+  expect(block.length).toBeLessThanOrEqual(8_000 + 60)
+  expect(block.split('[the rest of this email is left out]').length - 1).toBeGreaterThanOrEqual(2)
+  expect(mailBlock([{ ...mails[0], text: '   ' }])).toBe('')
+})
+
+test('the requests: the prospect brief, the custom run’s three stages and Meeting Prep', () => {
+  const l = { email: 'pat@example.com', prospect_name: 'Pat  Van Example', prospect_title: 'Partner', company_name: 'Ridge', firm_type: 'ria', firm_size: '10m-50m' }
+  expect(baseFields(l)).toEqual({
+    firstName: 'Pat', lastName: 'Van Example', prospectName: 'Pat  Van Example', prospectTitle: 'Partner', firmName: 'Ridge', companyName: 'Ridge',
+    companyUrl: '', website: '', emailAddress: 'pat@example.com', email: 'pat@example.com', phone: '', firmType: 'ria', firmSize: '10m-50m',
+  })
+  const r = researchBody(l)
+  expect(r).toMatchObject({ hearAboutUs: 'Dashboard run', whatBringsYouHere: '', aiInterests: [], only: true, stage: 'research' })
+  expect(r).not.toHaveProperty('entry')
+  expect(r).not.toHaveProperty('transcript')
+  const ids = { researchDocId: 'r1', interviewDocId: 'i1', anonymizedDocId: 'a1' }
+  expect(customBody(l, 'consultation', 'notes', ids)).toMatchObject({ entry: 'interview_script', transcript: 'notes', extraDoc: '', from: 'board', only: true, stage: 'consultation', ...ids })
+  expect(customBody(l, 'assessment', '', ids).entry).toBe('anonymizer')
+  expect(customBody(l, 'proposal', '', ids).entry).toBe('growth_plan')
+  expect(prepBody(l, ['pat@example.com', 'old@example.com'], 'review', { review: 'Quarterly review' }, 'n')).toEqual({
+    leadEmail: 'pat@example.com', email: 'pat@example.com', emails: ['pat@example.com', 'old@example.com'], prospectName: 'Pat  Van Example',
+    prospectTitle: 'Partner', companyName: 'Ridge', firmType: 'ria', firmSize: '10m-50m', stage: 'review', stageName: 'Quarterly review',
+    docName: 'Client review brief', transcript: 'n', from: 'board',
+  })
+})
+
+test('a run in progress: until its document lands, for 45 minutes at most', () => {
+  const now = Date.parse('2026-11-09T12:00:00Z')
+  const runs = runsFromSetting({
+    'a@example.com': { s: 'assessment', t0: '2026-11-09T11:30:00Z', seen: 100 },
+    'old@example.com': { s: 'research', t0: '2026-11-09T11:10:00Z', seen: 0 },
+    'bad@example.com': { s: 'nope', t0: '2026-11-09T11:50:00Z', seen: 0 },
+  })
+  expect(Object.keys(runs)).toEqual(['a@example.com', 'old@example.com'])
+  const lead = { emails: ['x@example.com', 'a@example.com'], docs: {} }
+  expect(runOf(lead, runs, now)).toEqual({ s: 'assessment', t0: '2026-11-09T11:30:00Z' })
+  expect(runOf({ ...lead, docs: { assessment: 100 } }, runs, now)).not.toBeNull()
+  expect(runOf({ ...lead, docs: { assessment: 101 } }, runs, now)).toBeNull()
+  expect(runOf({ emails: ['old@example.com'], docs: {} }, runs, now)).toBeNull()
+  expect(runOf({ emails: ['nobody@example.com'], docs: {} }, runs, now)).toBeNull()
 })

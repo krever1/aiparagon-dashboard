@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { PageHeader, pageMetadata } from '@/components/moving-page'
+import { NewRunButton } from '@/components/catalyst/new-run'
 import { OverviewView } from '@/components/catalyst/overview-view'
 import { PipelineSkeleton } from '@/components/catalyst/skeletons'
 import { getCurrentUser } from '@/lib/auth'
@@ -16,6 +17,7 @@ export default function Page() {
         page={pageBySlug('engine-1')}
         title={HEADINGS['engine-1']}
         sub="Prep for every meeting, from the first research to the client review."
+        actions={<NewRunButton />}
       />
       <Suspense fallback={<PipelineSkeleton label="Loading Catalyst…" />}>
         <Overview />

@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { PageHeader, pageMetadata } from '@/components/moving-page'
+import { NewRunButton } from '@/components/catalyst/new-run'
 import { PipelineView } from '@/components/catalyst/pipeline-view'
 import { PipelineSkeleton } from '@/components/catalyst/skeletons'
 import { getCurrentUser } from '@/lib/auth'
@@ -12,7 +13,11 @@ export const metadata = pageMetadata('lead-pipeline')
 export default function Page() {
   return (
     <>
-      <PageHeader page={pageBySlug('lead-pipeline')} sub="Every prospect and client, by meeting stage, with the prep for each meeting." />
+      <PageHeader
+        page={pageBySlug('lead-pipeline')}
+        sub="Every prospect and client, by meeting stage, with the prep for each meeting."
+        actions={<NewRunButton />}
+      />
       <Suspense fallback={<PipelineSkeleton />}>
         <Pipeline />
       </Suspense>
