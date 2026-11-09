@@ -7,16 +7,39 @@ export function pageMetadata(slug: string): Metadata {
   return { title: pageBySlug(slug).title }
 }
 
-/** A page's heading: its product (and what the product is for) above its name, as in the current dashboard. */
-export function PageHeader({ page, children }: { page: PageDef; children?: React.ReactNode }) {
+/**
+ * A page's heading: its product (and what the product is for) above its name, as in the current dashboard, then a
+ * line saying what the page is for and the page's main buttons on the right.
+ */
+export function PageHeader({
+  page,
+  eyebrow,
+  title,
+  sub,
+  actions,
+  children,
+}: {
+  page: PageDef
+  /** the small line above the heading, when it is not the product's ("Catalyst · Lead pipeline" on a lead's page) */
+  eyebrow?: string
+  /** the heading, when it is not the page's title (the Catalyst overview is headed Overview) */
+  title?: string
+  sub?: React.ReactNode
+  actions?: React.ReactNode
+  children?: React.ReactNode
+}) {
   const product = productOf(page.product)
   return (
-    <header className="mb-6">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent-text">
-        {product.name} · {product.sub}
-      </p>
-      <h1 className="mt-1 font-display text-[34px] font-semibold leading-tight text-ink sm:text-[38px]">{page.title}</h1>
-      {children}
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent-text">
+          {eyebrow ?? `${product.name} · ${product.sub}`}
+        </p>
+        <h1 className="mt-1 break-words font-display text-[34px] font-semibold leading-tight text-ink sm:text-[38px]">{title ?? page.title}</h1>
+        {sub ? <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">{sub}</p> : null}
+        {children}
+      </div>
+      {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
     </header>
   )
 }

@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { type ReactNode, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
@@ -10,12 +9,20 @@ import { PRODUCTS, type ProductDef, type ProductKey, SETTINGS, pageForPath } fro
 
 /**
  * The sidebar by product, as in the current dashboard: all five products stay on screen, the one you click opens its
- * pages, and the product of the page you are on opens when you get there.
+ * pages, and the product of the page you are on opens when you get there. `pathname` is null while the address is not
+ * known yet (the static shell of a page whose address is only known at request time): nothing is open then.
  */
-export function Sidebar({ userCard, onNavigate }: { userCard: ReactNode; onNavigate?: () => void }) {
-  const pathname = usePathname()
-  const current = pageForPath(pathname)
-  const [openKey, setOpenKey] = useState<ProductKey | null>(current?.product ?? 'touchpoint')
+export function Sidebar({
+  userCard,
+  pathname,
+  onNavigate,
+}: {
+  userCard: ReactNode
+  pathname: string | null
+  onNavigate?: () => void
+}) {
+  const current = pathname === null ? null : pageForPath(pathname)
+  const [openKey, setOpenKey] = useState<ProductKey | null>(pathname === null ? null : (current?.product ?? 'touchpoint'))
   const [seenPath, setSeenPath] = useState(pathname)
   if (pathname !== seenPath) {
     // a new page: open its product (state adjusted while rendering, not in an effect)

@@ -29,6 +29,8 @@ export default defineConfig({
         NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${STUB}`,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'stub-anon-key',
         NEXT_PUBLIC_LEGACY_DASHBOARD_URL: 'https://aiparagon.vercel.app/dashboard',
+        // n8n's webhooks, answered by the same stand-in (read on the server at run time)
+        N8N_WEBHOOK_URL: `http://127.0.0.1:${STUB}/webhook`,
         NEXT_TELEMETRY_DISABLED: '1',
       },
     },

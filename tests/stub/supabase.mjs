@@ -1,13 +1,17 @@
 // A stand-in for Supabase for the browser tests, with made-up accounts and rows. It never talks to the real project.
 // Auth (GoTrue): password sign-in, refresh, the user check, sign-out and password reset.
 // Data (PostgREST, /rest/v1): see rest.mjs; the starting rows are in fixtures.mjs.
+// n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
+// doc-reader answers from the documents in fixtures.mjs; any webhook can be given a canned answer.
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
-// override and the rows back to the start), POST /__as {email} (from now on /user answers as that account, to test a
-// session that is not the team's), POST /__seed {table: rows[]} (a test's own rows), GET /__rows?table=<name>.
+// override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
+// answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
+// GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>).
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
-import { fixtures } from './fixtures.mjs'
+import { fixtures, docs as docFixtures } from './fixtures.mjs'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -19,6 +23,8 @@ const USERS = {
 
 let calls = []
 let actAs = null
+let docs = docFixtures()
+let hooks = {}
 const refresh = new Map() // refresh token -> email
 
 const b64url = (b) => Buffer.from(b).toString('base64url')
@@ -80,7 +86,16 @@ http
       try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
       if (url.pathname === '/health') return send(res, 200, { ok: true })
       if (url.pathname === '/__calls') return send(res, 200, calls)
-      if (url.pathname === '/__reset') { calls = []; actAs = null; rest.reset(); return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__reset') {
+        calls = []
+        actAs = null
+        rest.reset()
+        docs = docFixtures()
+        hooks = {}
+        return send(res, 200, { ok: true })
+      }
+      if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
@@ -112,6 +127,19 @@ http
       if (req.method === 'POST' && url.pathname === '/auth/v1/logout') return send(res, 204)
       if (req.method === 'POST' && url.pathname === '/auth/v1/recover') return send(res, 200, {})
       if (url.pathname.startsWith('/rest/v1/')) return rest.handle(req, res, url, raw)
+      if (req.method === 'POST' && url.pathname.startsWith('/webhook/')) {
+        const name = url.pathname.slice('/webhook/'.length)
+        // Check Dashboard User: the body's `auth` must be a signed-in session.
+        if (!verify(body.auth)) return send(res, 401, { code: 'unauthorized', message: 'stub: the request carries no signed-in user' })
+        const canned = hooks[name]
+        if (canned) return send(res, canned.status, canned.body)
+        if (name === 'doc-reader') {
+          const d = docs[body.id]
+          if (!d) return send(res, 200, { ok: false, message: 'Could not read that document.' })
+          return send(res, 200, d.ok === false ? d : { ok: true, ...d })
+        }
+        return send(res, 404, { code: 404, message: 'stub: the requested webhook "' + name + '" is not registered.' })
+      }
       return fail(res, 404, 'not_found', 'Not found in the stub: ' + req.method + ' ' + url.pathname)
     })
   })

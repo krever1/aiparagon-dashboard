@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { GROUPS, PAGES, PRODUCTS, SETTINGS } from '../../src/lib/nav'
+import { GROUPS, HEADINGS, PAGES, PORTED, PRODUCTS, SETTINGS } from '../../src/lib/nav'
 import { LEGACY, TEAM, serveLogo, signIn, stubReset } from './helpers'
 
 test.beforeEach(async ({ page }) => {
@@ -7,17 +7,18 @@ test.beforeEach(async ({ page }) => {
   await serveLogo(page)
 })
 
-test('every page has its address, heading, tab title and a link to it in the current dashboard', async ({ page }) => {
+test('every page has its address, heading and tab title; a page not moved yet links to it in the current dashboard', async ({ page }) => {
   await signIn(page, '/today')
   expect(PAGES).toHaveLength(25)
   for (const p of PAGES) {
     await page.goto('/' + p.slug)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(p.title)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADINGS[p.slug] ?? p.title)
     await expect(page).toHaveTitle(p.title + ' · AI Paragon')
     const product = GROUPS.find((g) => g.key === p.product)!
     await expect(page.getByText(product.name + ' · ' + product.sub, { exact: true })).toBeVisible()
     const open = page.getByRole('link', { name: 'Open ' + p.label + ' in the current dashboard' })
-    await expect(open).toHaveAttribute('href', LEGACY + '/' + p.legacy)
+    if (PORTED.has(p.slug)) await expect(open).toHaveCount(0)
+    else await expect(open).toHaveAttribute('href', LEGACY + '/' + p.legacy)
   }
 })
 
