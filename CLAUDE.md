@@ -17,7 +17,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   every current page address. No page is ported yet: each opens a card that links to it in the current dashboard.
 - Next, in this order: Catalyst (Lead pipeline board, a lead's page, stage runs, HubSpot contacts, Calls), then
   Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
-- Not set up yet: the Vercel project, its environment variables, a domain, branch protection on `main`.
+- Vercel (Nov 9): project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two Supabase values set
+  for Production, Preview and Development. `dev` deploys to aiparagon-dashboard-git-dev-kaesers-projects.vercel.app,
+  behind Vercel's sign-in (Vercel Authentication on everything but custom domains). Production builds from `main`,
+  which holds only the README until the first pull request from `dev`.
+- Not set up yet: a domain, branch protection on `main`.
 
 | Product | Pages | Status |
 |---|---|---|
@@ -124,3 +128,7 @@ the prefix and are read only in server code.
   Creating an account stays in the current dashboard for now.
 - The logo is on www.aiparagonconsulting.com, which cloud sessions cannot reach: the mark shows the P until it loads,
   and the tests serve a stand-in picture.
+- The Vercel project was imported while `main` held only the README, so Vercel picked the framework Other and the
+  first `dev` build failed after compiling ("No Output Directory named public"). It is set to Next.js now; keep it so.
+- Twice on Nov 9 a push that changed `.github/workflows/ci.yml` started a CI run with no jobs (failed in under a
+  minute); Re-run started it. Other pushes start CI normally.
