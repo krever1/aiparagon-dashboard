@@ -104,7 +104,9 @@ the prefix and are read only in server code.
 - `tests/e2e`: Playwright against a production build. `tests/stub/supabase-auth.mjs` stands in for Supabase Auth with
   made-up accounts (qa.teammate@aiparagonconsulting.com, outsider@example.org), so the tests never touch the real
   project. `npm run test:e2e` builds with the stand-in's address (NEXT_PUBLIC_ values are built in).
-- Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled.
+- Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
+  `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
+  no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
 
 ## Gotchas
 - With Cache Components, reading `cookies()` outside `<Suspense>` fails the build, `dynamicParams` is not supported,
