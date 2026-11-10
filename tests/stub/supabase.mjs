@@ -1,9 +1,18 @@
-// A stand-in for Supabase Auth (GoTrue) for the browser tests: password sign-in, refresh, the user check, sign-out
-// and password reset, with made-up accounts. It never talks to the real project.
-// Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset,
-// POST /__as {email} (from now on /user answers as that account, to test a session that is not the team's).
+// A stand-in for Supabase for the browser tests, with made-up accounts and rows. It never talks to the real project.
+// Auth (GoTrue): password sign-in, refresh, the user check, sign-out and password reset.
+// Data (PostgREST, /rest/v1): see rest.mjs; the starting rows are in fixtures.mjs.
+// n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
+// doc-reader, fathom-proxy (list, transcript) and catalyst-emails answer from fixtures.mjs; the three stage runs (the
+// full run, the custom run, Meeting Prep) answer started; any webhook can be given a canned answer.
+// Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
+// override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
+// answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
+// GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>).
 import http from 'node:http'
 import crypto from 'node:crypto'
+import { createRest } from './rest.mjs'
+import { fixtures, docs as docFixtures, fathomCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -15,6 +24,8 @@ const USERS = {
 
 let calls = []
 let actAs = null
+let docs = docFixtures()
+let hooks = {}
 const refresh = new Map() // refresh token -> email
 
 const b64url = (b) => Buffer.from(b).toString('base64url')
@@ -54,6 +65,12 @@ function session(email) {
   return { access_token, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token, user: userJson(email) }
 }
 
+/** The caller's verified claims from `Authorization: Bearer <token>`, or null (the public key alone is not a session). */
+function claimsOf(req) {
+  return verify(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''))
+}
+const rest = createRest(fixtures, claimsOf)
+
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' })
   res.end(body === undefined ? '' : JSON.stringify(body))
@@ -70,11 +87,22 @@ http
       try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
       if (url.pathname === '/health') return send(res, 200, { ok: true })
       if (url.pathname === '/__calls') return send(res, 200, calls)
-      if (url.pathname === '/__reset') { calls = []; actAs = null; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__reset') {
+        calls = []
+        actAs = null
+        rest.reset()
+        docs = docFixtures()
+        hooks = {}
+        return send(res, 200, { ok: true })
+      }
+      if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
 
-      const seen = { ...body }
-      delete seen.password
+      const seen = Array.isArray(body) ? body : { ...body }
+      if (!Array.isArray(seen)) delete seen.password
       calls.push({ method: req.method, path: url.pathname, query: url.search, body: seen })
 
       if (req.method === 'POST' && url.pathname === '/auth/v1/token') {
@@ -99,7 +127,34 @@ http
       }
       if (req.method === 'POST' && url.pathname === '/auth/v1/logout') return send(res, 204)
       if (req.method === 'POST' && url.pathname === '/auth/v1/recover') return send(res, 200, {})
+      if (url.pathname.startsWith('/rest/v1/')) return rest.handle(req, res, url, raw)
+      if (req.method === 'POST' && url.pathname.startsWith('/webhook/')) {
+        const name = url.pathname.slice('/webhook/'.length)
+        // Check Dashboard User: the body's `auth` must be a signed-in session.
+        if (!verify(body.auth)) return send(res, 401, { code: 'unauthorized', message: 'stub: the request carries no signed-in user' })
+        const canned = hooks[name]
+        if (canned) return send(res, canned.status, canned.body)
+        if (name === 'doc-reader') {
+          const d = docs[body.id]
+          if (!d) return send(res, 200, { ok: false, message: 'Could not read that document.' })
+          return send(res, 200, d.ok === false ? d : { ok: true, ...d })
+        }
+        if (name === 'fathom-proxy') {
+          if (body.action === 'list') return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: null })
+          if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
+          return send(res, 200, { ok: false, code: 'bad_action', message: 'stub: unknown action' })
+        }
+        if (name === 'catalyst-emails') {
+          const all = hubspotEmails()
+          const items = (body.emails || []).flatMap((e) => all[String(e).toLowerCase()] || []).slice(0, body.limit || 8)
+          return send(res, 200, { ok: true, items, total: items.length })
+        }
+        if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
+          return send(res, 200, { ok: true, started: true })
+        }
+        return send(res, 404, { code: 404, message: 'stub: the requested webhook "' + name + '" is not registered.' })
+      }
       return fail(res, 404, 'not_found', 'Not found in the stub: ' + req.method + ' ' + url.pathname)
     })
   })
-  .listen(PORT, '127.0.0.1', () => console.log('supabase auth stub on ' + PORT))
+  .listen(PORT, '127.0.0.1', () => console.log('supabase stub on ' + PORT))

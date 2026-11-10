@@ -37,3 +37,16 @@ export async function signIn(page: Page, next = '/today', email = TEAM.email, pa
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(new RegExp(next.replace(/[?]/g, '\\?') + '$'))
 }
+
+/** The stand-in's rows of a table, as the app left them. */
+export async function stubRows<T = Record<string, unknown>>(table: string): Promise<T[]> {
+  return (await fetch(STUB + '/__rows?table=' + encodeURIComponent(table))).json()
+}
+/** Replaces some of the stand-in's tables with a test's own rows. */
+export async function stubSeed(tables: Record<string, unknown[]>) {
+  await fetch(STUB + '/__seed', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(tables) })
+}
+/** A canned answer from the n8n stand-in for /webhook/<path>. */
+export async function stubHook(path: string, status: number, body: unknown) {
+  await fetch(STUB + '/__hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, status, body }) })
+}

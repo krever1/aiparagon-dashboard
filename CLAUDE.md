@@ -14,19 +14,28 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 ## Where it stands (as of 2026-11-09)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
-  every current page address. No page is ported yet: each opens a card that links to it in the current dashboard.
-- Next, in this order: Catalyst (Lead pipeline board, a lead's page, stage runs, HubSpot contacts, Calls), then
-  Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
-- Vercel (Nov 9): project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two Supabase values set
-  for Production, Preview and Development. `dev` deploys to aiparagon-dashboard-git-dev-kaesers-projects.vercel.app,
-  behind Vercel's sign-in (Vercel Authentication on everything but custom domains). Production builds from `main`,
-  which holds only the README until the first pull request from `dev`.
-- Not set up yet: a domain, branch protection on `main`.
+  every current page address. A page not ported yet opens a card that links to it in the current dashboard.
+- Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
+  page); 2. acting (moving cards, the run question, stage runs through n8n, run tracking, New run); 3. HubSpot contacts
+  and Calls, with a lead's Calls tab; 4. the client proposal (view, edit, print, write), the meeting prep charts, What
+  should change?, file uploads. `dev` goes to `main` once parts 1 and 2 are in, so production never has a board that
+  cannot run anything.
+- Part 1 (Nov 9, branch `catalyst/pipeline-read`) and part 2 (Nov 9, branch `catalyst/pipeline-runs`, on top of part
+  1): see Catalyst below.
+- Next: Catalyst parts 2 to 4, then Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
+- Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
+  custom domain can come later). Vercel project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two
+  Supabase values set for Production, Preview and Development. Production builds from `main`; `dev` deploys to
+  aiparagon-dashboard-git-dev-kaesers-projects.vercel.app.
+- Access: Standard Protection, as on the aiparagon project. Previews and per-deployment URLs need a Vercel login; the
+  production domain aiparagon-dashboard.vercel.app is open, guarded by the app's own sign-in.
+- Not set up yet: branch protection on `main`.
 
 | Product | Pages | Status |
 |---|---|---|
 | Touchpoint | Today, Approvals, Tasks | current dashboard |
-| Catalyst | Overview, Lead pipeline, HubSpot contacts, Calls | current dashboard |
+| Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here |
+| Catalyst | HubSpot contacts, Calls | current dashboard |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Overview, Intel Tracker, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
@@ -53,18 +62,21 @@ cookies and dynamic routes work). The matching docs are in `node_modules/next/di
 ## Branches and releases
 - `main`: production, what the team uses. Changes arrive only by pull request from `dev`.
 - `dev`: staging. Each change gets its own branch and a pull request into `dev`.
-- Vercel (once set up): production from `main`, a preview link for every other branch.
+- Vercel: production from `main` (aiparagon-dashboard.vercel.app), a preview link for every other branch.
 - CI (`.github/workflows/ci.yml`): lint, type check and the browser tests on every pull request and every push to
   `dev` and `main`.
 
 ## Environment
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_LEGACY_DASHBOARD_URL`,
-`NEXT_PUBLIC_TEAM_EMAIL_DOMAIN` (see `.env.example`). Set in Vercel; locally in `.env.local`. NEXT_PUBLIC_ values are
-built into the page, so nothing secret goes in them. Server-only secrets (n8n, when pages call it) get names without
-the prefix and are read only in server code.
+`NEXT_PUBLIC_TEAM_EMAIL_DOMAIN`, and the server-only `N8N_WEBHOOK_URL` (see `.env.example`). Set in Vercel; locally in
+`.env.local`. NEXT_PUBLIC_ values are built into the page, so nothing secret goes in them. Server-only settings get
+names without the prefix and are read only in server code. The n8n calls need no secret of their own: they carry the
+signed-in teammate's token, as the current dashboard's do.
 - The two Supabase values are required. Without them (a new deployment before its variables are set) the proxy sends
   every page to sign-in, which says the settings are missing; creating a Supabase client without them throws, which
   would fail every request. The other two default to the current dashboard's address and aiparagonconsulting.com.
+- `N8N_WEBHOOK_URL` is optional (default https://n8n.aiparagonconsulting.com/webhook) and read at run time, in server
+  code only; the tests point it at the stand-in.
 - NEXT_PUBLIC_ values are read at build time: after changing one in Vercel, redeploy.
 
 ## How it is put together
@@ -88,6 +100,56 @@ the prefix and are read only in server code.
   `text-accent-text`, `rounded-lg`, `shadow-card`), not raw hex.
 - `next.config.ts` redirects: `/` and `/home` to Today, a product's name to its first page, and
   `/dashboard/<page>` (an address copied from the current dashboard) to the same page here.
+- `PORTED` and `HEADINGS` in `src/lib/nav.ts`: the pages that have moved here (the shell test expects the "Still in
+  the current dashboard" card on every other page) and a page's h1 when it is not its title.
+- `src/lib/n8n.ts` `callN8n()`: a POST to an n8n webhook from server code, with the signed-in teammate's access token as
+  `auth`; errors in the current dashboard's words (a 404 says which workflow to switch on).
+- `src/components/ui`: dates in the viewer's own time zone (`LocalDay`, `LocalDate`, `LocalDateTime`: UTC while the
+  server renders, then the browser's zone, with no hydration mismatch), the toast, and the dialog (the browser's
+  `<dialog>`).
+
+## Catalyst
+- `src/lib/catalyst/stages.ts`: the six meeting stages (V136_STAGES): key, name (the team's, from `ai_settings`
+  `catalyst_stages`; only the name can change), short, doc, what, agent, link column, colour, from, role.
+- `src/lib/catalyst/leads.ts`: leads worked out as the current dashboard does: `relink` (discovery and growth plan rows
+  saved under the anonymizer's placeholder email go back to the lead of the same name), `synthesize` (a lead for
+  documents with no e1_leads row), `mergeLeads` (rows of the same person, real rows first), `docOf` (a stage's
+  document: the newest row of its agent, meeting prep by `data.stage`, else a link saved on the lead), `stageOf`
+  (e1_leads.stage, else the furthest stage with a document), `docIds`, `docCount`.
+- `src/lib/catalyst/load.ts` reads e1_leads, agent_outputs (no `content_md`) and the stage names as the teammate, fresh
+  on every visit (the current dashboard kept its first read for the session), into `LeadView`s (`view.ts`).
+  `lead-page.ts` adds one lead's documents with their text, its files (the agents' links, then uploads) and its HubSpot
+  contact.
+- A lead's address is `/lead-pipeline/<name>-<code>` (`lead-id.ts`): the code is 10 hex of a SHA-256 of an email, so
+  emails stay out of addresses and any of the lead's emails finds it. The board's "✓ … ready" opens `?tab=<stage>`.
+- Every Catalyst view keeps its tab in the address (`?tab=`), read with `useSearchParams` and changed with
+  `history.replaceState`, so a link opens the same view and the sidebar's link goes back to the first one.
+- Read here (`doc-reader.tsx`, `doc-format.ts`): the saved text (`content_md`), else the Google Doc through Dashboard ·
+  Doc Reader (`readDocument`, a Server Action), else the PDF in Drive when the Doc is empty; Structured (title, key
+  facts, a part per heading; JSON documents as cards) or Full text, remembered in this browser. Markdown goes through
+  react-markdown with raw HTML left out and unsafe links as plain text (the current dashboard passed raw HTML through).
+- Rename stages (`saveStageNames`): reads the row fresh, merges, stores '' for a usual name and `by`/`at` per stage.
+- Runs (part 2): a card's Run, a drop on another column, a lead page's Stage picker or a prep tab's Run opens the
+  question (`stage-question.tsx`, v136Ask): what the stage writes and works from, what the run reads (`stageReads`:
+  the template, the lead's Fathom calls, its HubSpot emails, the CRM record, the discovery questions), the meeting
+  notes, and Just move it / Move and run it. `goStage` (a Server Action) reads the lead again, checks the plan
+  (`planFor`: the proposal needs the assessment, a stage with nothing to work from needs notes or a call), moves it
+  (e1_leads.stage on every row of the person, not the anonymizer's shared placeholder row), builds the notes
+  (`composeNote`: the team's notes, the CRM record, the emails, then the transcripts, within 44,000 characters), starts
+  only that stage (`plan.ts` `RUN_HOOKS`: the full run, the custom run with `entry`, or Meeting Prep; `only: true`),
+  files the calls it read under the stage the lead was in, and keeps the run for the team in ai_settings
+  `catalyst_runs` ({lead email: {s, t0, seen, by}}). A card says "Writing …" until a newer document of the stage lands
+  or for 45 minutes (`runOf`), and the page checks back every 30 seconds while one runs (`useCheckBack`).
+- New run (`new-run.tsx`, `newRun`): the older form for a lead not on the board yet, with the Fathom call picker
+  (`recentCalls`, `callText`); the lead goes in the stage it picked, and its run shows on the board.
+- n8n calls for runs go through `startN8n` (`src/lib/n8n.ts`): any 2xx is started, anything else "Webhook returned
+  <status>", and the token goes out with at least 20 minutes left (renewed first), since the run hands it on.
+- Changed on purpose from the current dashboard (reported to Kser): the list's rows open the lead's page (its v60 side
+  panel saved a column e1_leads does not have); the Overview's Recent leads and Documents count the six stages, not the
+  older five documents; a lead opens on the tab of its stage; the Documents tile counts documents, not PDF links; the
+  list says 0 shown, not 1, when nothing matches; a run in progress is kept for the team and survives a reload (the
+  current dashboard kept it in one tab's memory); a move leaves the anonymizer's shared placeholder row alone; New run
+  runs show on the board.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -109,9 +171,14 @@ the prefix and are read only in server code.
   until those notes move here.
 
 ## Tests
-- `tests/e2e`: Playwright against a production build. `tests/stub/supabase-auth.mjs` stands in for Supabase Auth with
-  made-up accounts (qa.teammate@aiparagonconsulting.com, outsider@example.org), so the tests never touch the real
-  project. `npm run test:e2e` builds with the stand-in's address (NEXT_PUBLIC_ values are built in).
+- `tests/e2e`: Playwright against a production build. `tests/stub/supabase.mjs` stands in for Supabase (sign-in, and
+  the data API over in-memory tables in `rest.mjs`, which answers only a signed-in session) and for n8n (`/webhook/*`,
+  each checking the body's `auth`; Doc Reader answers from `docs()` in `fixtures.mjs`, and `/__hook` gives any webhook a
+  canned answer), with made-up accounts (qa.teammate@aiparagonconsulting.com, outsider@example.org) and made-up leads
+  at example.com (`fixtures.mjs` says where each one sits), so the tests never touch the real project.
+  `npm run test:e2e` builds with the stand-in's address (NEXT_PUBLIC_ values are built in).
+- `catalyst-logic.spec.ts` checks the lead rules without a browser; `catalyst.spec.ts` the pages. Helpers in
+  `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`.
 - Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
   `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
   no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
@@ -119,6 +186,17 @@ the prefix and are read only in server code.
 ## Gotchas
 - With Cache Components, reading `cookies()` outside `<Suspense>` fails the build, `dynamicParams` is not supported,
   and `generateStaticParams` must return at least one param.
+- A dynamic route (`/lead-pipeline/[lead]`) prerenders a shell without knowing its address, so `usePathname()` or
+  `useSearchParams()` outside `<Suspense>` fails the build. The shell's sidebar and top bar read the address inside
+  `<Suspense>` (`app-shell.tsx`); the sidebar's fallback has nothing open.
+- An absolutely placed element (Tailwind's `sr-only`) inside a sideways-scrolling box escapes it, and the whole page
+  scrolls sideways on a phone, unless the box is `relative`.
+- Chromium reads a `<th>` as a plain cell unless it has `scope="col"`; tests find column headers by role.
+- Chromium starts no native drag from a `<button>` inside a draggable card, and Playwright's `dragTo` starts at the
+  centre (often the card's Run button): the tests start drags on the card's name (`sourcePosition`) and use a 1440
+  window, where the board's six columns sit in one row.
+- The old dashboard does not read `catalyst_runs`: a run started here shows "Writing …" here only, and the other way
+  round, until the cutover.
 - A Supabase session check reads the clock (token expiry). Call `connection()` before it, as `getCurrentUser()` does,
   or prerendering logs "encountered the unstable value Date.now()".
 - Next.js adds a hidden `role="alert"` route announcer to every page: in tests, scope alert checks (for example to the
