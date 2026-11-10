@@ -369,7 +369,7 @@ test.describe('a lead’s page', () => {
       'RIA · $10M to $50M AUM · Source: Landing page · AI readiness High · Strong fit',
     )
     await expect(page.getByRole('tab')).toHaveText([
-      '✓ Prospect brief', '✓ Consultation guide', '✓ Assessment', '✓ Follow-up guide', '✓ Proposal', 'Files 8', 'HubSpot',
+      '✓ Prospect brief', '✓ Consultation guide', '✓ Assessment', '✓ Follow-up guide', '✓ Proposal', 'Files 8', 'HubSpot', 'Calls 1',
     ])
     await expect(page.getByRole('tab', { name: '✓ Proposal' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: /5\. Proposal presentation/ })).toBeVisible()
@@ -394,7 +394,7 @@ test.describe('a lead’s page', () => {
 
     // a lead that has no follow-up guide has no tab for it; a stage with no document says so
     await page.goto(`/lead-pipeline/${ROBIN}`)
-    await expect(page.getByRole('tab')).toHaveText(['✓ Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', 'Files 1', 'HubSpot'])
+    await expect(page.getByRole('tab')).toHaveText(['✓ Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', 'Files 1', 'HubSpot', 'Calls 2'])
     await expect(page.getByRole('tab', { name: 'Consultation guide' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByText('This stage hasn’t produced output for this lead yet.')).toBeVisible()
     await expect(page.getByText('not run yet')).toBeVisible()
@@ -484,7 +484,7 @@ test.describe('a lead’s page', () => {
 
   test('the onboarding plan reads inline; a stage with no prep yet says so', async ({ page }) => {
     await signIn(page, `/lead-pipeline/${LEE}`)
-    await expect(page.getByRole('tab')).toHaveText(['Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', '✓ Onboarding plan', 'Files 0', 'HubSpot'])
+    await expect(page.getByRole('tab')).toHaveText(['Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', '✓ Onboarding plan', 'Files 0', 'HubSpot', 'Calls'])
     await expect(page.getByRole('tab', { name: '✓ Onboarding plan' })).toHaveAttribute('aria-selected', 'true')
     const prep = page.getByTestId('prep-card')
     await expect(prep).toContainText('Onboarding plan: Lee Client')

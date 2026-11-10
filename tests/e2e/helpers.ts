@@ -50,3 +50,8 @@ export async function stubSeed(tables: Record<string, unknown[]>) {
 export async function stubHook(path: string, status: number, body: unknown) {
   await fetch(STUB + '/__hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, status, body }) })
 }
+
+/** The team's Fathom key as the Fathom proxy stand-in keeps it ({connected: false} disconnects it). */
+export async function stubFathom(state: Record<string, unknown>) {
+  await fetch(STUB + '/__fathom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(state) })
+}

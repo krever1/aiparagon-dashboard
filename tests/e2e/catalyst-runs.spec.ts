@@ -279,6 +279,8 @@ test('a run shows until its document lands, or for 45 minutes; the board checks 
   await page.clock.install()
   await page.reload()
   await expect(card(page, 'research', 'jordan-merge').getByRole('status')).toHaveText('Writing the pre-meeting prospect brief')
+  // the card is drawn on the server, so wait until the page has set its timer before moving the clock on
+  await expect(page.locator('html[data-check-back="on"]')).toHaveCount(1)
   // the brief lands; the board finds it on its next check, 30 seconds on
   await stubSeed({
     agent_outputs: [

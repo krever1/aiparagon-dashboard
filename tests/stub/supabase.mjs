@@ -2,17 +2,19 @@
 // Auth (GoTrue): password sign-in, refresh, the user check, sign-out and password reset.
 // Data (PostgREST, /rest/v1): see rest.mjs; the starting rows are in fixtures.mjs.
 // n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
-// doc-reader, fathom-proxy (list, transcript) and catalyst-emails answer from fixtures.mjs; the three stage runs (the
+// doc-reader, fathom-proxy (status, list a page at a time, transcript, access, connect, disconnect), catalyst-emails,
+// call-actions, slack-proxy and call-to-crm answer from fixtures.mjs or as the workflows would; the three stage runs (the
 // full run, the custom run, Meeting Prep) answer started; any webhook can be given a canned answer.
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
 // GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
-// POST /__hook {path, status, body} (a canned answer for /webhook/<path>).
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, ...} (the
+// team's Fathom key as the Fathom proxy keeps it).
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
-import { fixtures, docs as docFixtures, fathomCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
+import { fixtures, docs as docFixtures, fathomCalls, fathomOlderCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -26,6 +28,9 @@ let calls = []
 let actAs = null
 let docs = docFixtures()
 let hooks = {}
+// the team's Fathom key, as Dashboard · Fathom Proxy keeps it
+const FATHOM = () => ({ connected: true, hint: 'ab12', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z' })
+let fathom = FATHOM()
 const refresh = new Map() // refresh token -> email
 
 const b64url = (b) => Buffer.from(b).toString('base64url')
@@ -93,11 +98,13 @@ http
         rest.reset()
         docs = docFixtures()
         hooks = {}
+        fathom = FATHOM()
         return send(res, 200, { ok: true })
       }
       if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__fathom') { fathom = { ...body }; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
 
@@ -140,9 +147,42 @@ http
           return send(res, 200, d.ok === false ? d : { ok: true, ...d })
         }
         if (name === 'fathom-proxy') {
-          if (body.action === 'list') return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: null })
+          const off = { ok: false, code: 'not_connected', message: 'Fathom is not connected. Paste a Fathom API key to connect it.' }
+          if (body.action === 'status') return send(res, 200, fathom.connected ? { ok: true, ...fathom } : { ok: true, connected: false })
+          if (body.action === 'connect') {
+            const key = String(body.key || '')
+            if (key.startsWith('bad')) return send(res, 200, { ok: false, code: 'bad_key', message: 'Fathom did not accept that key.' })
+            fathom = { connected: true, hint: key.slice(-4), updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: new Date().toISOString() }
+            return send(res, 200, { ok: true, connected: true, hint: fathom.hint })
+          }
+          if (body.action === 'disconnect') {
+            fathom = { connected: false }
+            return send(res, 200, { ok: true, connected: false })
+          }
+          if (!fathom.connected) return send(res, 200, off)
+          if (body.action === 'list') {
+            if (body.cursor === 'page2') return send(res, 200, { ok: true, items: fathomOlderCalls(), next_cursor: null })
+            return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: 'page2' })
+          }
           if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
+          if (body.action === 'access') {
+            const access = Object.fromEntries((body.tokens || []).map((t) => [t, /TeamOnly/.test(t) ? 'team' : 'anyone']))
+            return send(res, 200, { ok: true, access })
+          }
           return send(res, 200, { ok: false, code: 'bad_action', message: 'stub: unknown action' })
+        }
+        // Meetings · Post-call Actions answers that it started; the test writes the row the workflow would save
+        if (name === 'call-actions') return send(res, 200, { ok: true, started: true })
+        if (name === 'slack-proxy') {
+          if (body.action === 'channels') {
+            return send(res, 200, { ok: true, channels: [{ id: 'C1', name: 'new-leads', member: true }, { id: 'C2', name: 'random', member: false }] })
+          }
+          if (body.action === 'post') return send(res, 200, { ok: true, ts: '1.2' })
+          return send(res, 200, { ok: false, message: 'stub: unknown action' })
+        }
+        if (name === 'call-to-crm') {
+          const contacts = (body.emails || []).map((e) => ({ email: e, name: e === 'robin.sample@example.com' ? 'Robin Sample' : '' }))
+          return send(res, 200, { ok: true, synced_at: '2026-11-05T12:00:00Z', engagement_id: 'E-1', contacts })
         }
         if (name === 'catalyst-emails') {
           const all = hubspotEmails()

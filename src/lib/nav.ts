@@ -126,7 +126,7 @@ export function safeNext(next: string | null | undefined, fallback = '/today'): 
 }
 
 /** Pages that have moved to this app; every other page shows a card that opens it in the current dashboard. */
-export const PORTED: ReadonlySet<string> = new Set(['engine-1', 'lead-pipeline'])
+export const PORTED: ReadonlySet<string> = new Set(['engine-1', 'lead-pipeline', 'hubspot', 'calls'])
 
 /** A page's heading when it is not its title (the browser tab says "Catalyst overview", the page "Overview"). */
 export const HEADINGS: Readonly<Record<string, string>> = { 'engine-1': 'Overview' }

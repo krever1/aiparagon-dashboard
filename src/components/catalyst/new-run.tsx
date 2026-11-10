@@ -7,7 +7,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { LocalDate } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 
-type Entry = 'research' | 'consultation' | 'assessment'
+export type Entry = 'research' | 'consultation' | 'assessment'
 
 const ENTRIES: { key: Entry; name: string; what: string; mode: string }[] = [
   { key: 'research', name: 'Prospect research', what: 'Writes the pre-meeting prospect brief from the lead’s details', mode: 'Prospect research · writes the prospect brief' },
@@ -31,7 +31,7 @@ const FIELDS = [
   ['firmSize', 'Firm size / AUM', 'e.g. $100M–$500M'],
 ] as const
 
-type Form = Record<(typeof FIELDS)[number][0], string>
+export type Form = Record<(typeof FIELDS)[number][0], string>
 const EMPTY: Form = { firstName: '', lastName: '', title: '', company: '', link: '', email: '', phone: '', firmType: '', firmSize: '' }
 
 const input = 'h-10 w-full rounded-sm border border-line bg-panel px-3 text-[14.5px] text-ink focus:border-accent focus:outline-none'
@@ -49,18 +49,22 @@ export function NewRunButton() {
         <Sparkles size={17} aria-hidden="true" className="text-art-gold" />
         New run
       </button>
-      {open ? <NewRun onClose={() => setOpen(false)} /> : null}
+      {open ? <NewRunDialog onClose={() => setOpen(false)} /> : null}
     </>
   )
 }
 
-function NewRun({ onClose }: { onClose: () => void }) {
-  const [entry, setEntry] = useState<Entry>('research')
-  const [f, setF] = useState<Form>(EMPTY)
-  const [transcript, setTranscript] = useState('')
+/** What the form opens with: a HubSpot contact's details, or a call's transcript and guest, and a line saying so. */
+export type NewRunPrefill = { form?: Partial<Form>; entry?: Entry; transcript?: string; note?: string }
+
+/** The New Catalyst run form, empty or prefilled. */
+export function NewRunDialog({ onClose, prefill }: { onClose: () => void; prefill?: NewRunPrefill }) {
+  const [entry, setEntry] = useState<Entry>(prefill?.entry ?? 'research')
+  const [f, setF] = useState<Form>(() => ({ ...EMPTY, ...prefill?.form }))
+  const [transcript, setTranscript] = useState(prefill?.transcript ?? '')
   const [doc, setDoc] = useState<{ name: string; text: string } | null>(null)
   const [docMsg, setDocMsg] = useState('')
-  const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null)
+  const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(prefill?.note ? { text: prefill.note } : null)
   const [busy, setBusy] = useState(false)
   const [started, setStarted] = useState(false)
   const [picker, setPicker] = useState<{ calls: CallPick[] | null; error: string; q: string } | null>(null)
