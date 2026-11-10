@@ -83,7 +83,8 @@ export function isHolder(email: unknown, company: unknown): boolean {
   return s !== '' && lower(email) === 'contact@' + s + '.com'
 }
 
-function isAnonRow(r: Pick<LeadRow, 'email' | 'company_name'> & { phone?: unknown }): boolean {
+/** An anonymizer row: the placeholder firm's email, phone or name, never a real lead. */
+export function isAnonRow(r: Pick<LeadRow, 'email' | 'company_name'> & { phone?: unknown }): boolean {
   return isHolder(r.email, r.company_name) || str(r.phone) === '555-000-0000' || /^delta advisory$/i.test(str(r.company_name).trim())
 }
 

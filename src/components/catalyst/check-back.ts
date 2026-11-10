@@ -9,6 +9,11 @@ export function useCheckBack(running: boolean) {
   useEffect(() => {
     if (!running) return
     const t = window.setInterval(() => router.refresh(), 30_000)
-    return () => window.clearInterval(t)
+    // marks the page while it checks back, so a test can wait until the timer is set before moving the clock on
+    document.documentElement.dataset.checkBack = 'on'
+    return () => {
+      window.clearInterval(t)
+      delete document.documentElement.dataset.checkBack
+    }
   }, [running, router])
 }

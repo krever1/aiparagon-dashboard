@@ -8,6 +8,8 @@ import {
   STAGES, cleanName, firmSizeLabel, firmTypeLabel, fitTone, labelCase, namesFromSetting, runLabel, stagesNamed,
 } from '../../src/lib/catalyst/stages'
 import { jsonStruct, mdClean, mdStruct, parseDocText, parseSaved, pdfToMd } from '../../src/lib/catalyst/doc-format'
+import { followFields, followedText, metaPageIdFrom } from '../../src/lib/catalyst/follow'
+import { hsName } from '../../src/lib/catalyst/names'
 import {
   baseFields, composeNote, crmLine, customBody, mailBlock, planFor, prepBody, researchBody, runOf, runsFromSetting, setupOf,
 } from '../../src/lib/catalyst/plan'
@@ -281,4 +283,39 @@ test('a run in progress: until its document lands, for 45 minutes at most', () =
   expect(runOf({ ...lead, docs: { assessment: 101 } }, runs, now)).toBeNull()
   expect(runOf({ emails: ['old@example.com'], docs: {} }, runs, now)).toBeNull()
   expect(runOf({ emails: ['nobody@example.com'], docs: {} }, runs, now)).toBeNull()
+})
+
+test('a HubSpot contact’s name: first and last, never the last name twice', () => {
+  expect(hsName('Pat', 'Example')).toBe('Pat Example')
+  expect(hsName('Jane Doe', 'Doe')).toBe('Jane Doe')
+  expect(hsName('Kim', 'kim')).toBe('Kim')
+  expect(hsName('', 'Solo')).toBe('Solo')
+  expect(hsName('Only', null)).toBe('Only')
+  expect(hsName(null, undefined)).toBe('')
+})
+
+test('Follow: the Meta page id comes out of whatever is pasted, and the checks say what to fix', () => {
+  expect(metaPageIdFrom('https://www.facebook.com/ads/library/?active_status=all&view_all_page_id=123456789&media_type=all')).toBe('123456789')
+  expect(metaPageIdFrom('https://facebook.com/somepage?ref=1')).toBe('somepage')
+  expect(metaPageIdFrom('https://www.facebook.com/pg/otherpage/posts')).toBe('otherpage')
+  expect(metaPageIdFrom('https://www.facebook.com/ads/library/?q=x')).toBe('https://www.facebook.com/ads/library/?q=x')
+  expect(metaPageIdFrom(' 987654 ')).toBe('987654')
+  expect(metaPageIdFrom('')).toBe('')
+
+  const base = { name: 'Acme', website: '', meta: '', x: '', li: '', priority: 'medium', notes: '' }
+  expect(followFields({ ...base, name: '  ' })).toEqual({ error: 'A company name is required.' })
+  expect(followFields(base)).toEqual({ error: 'Add at least one scrape target: Meta page, X handle, or LinkedIn.' })
+  for (const meta of ['<page_id>', 'page_id', 'your_page_id_here']) {
+    expect(followFields({ ...base, meta })).toEqual({ error: 'That is still a placeholder: paste the real Ad Library link, or leave it blank.' })
+  }
+  expect(followFields({ ...base, x: '@acme', li: 'https://www.linkedin.com/company/acme/', priority: 'urgent' })).toEqual({
+    name: 'Acme', website: '', meta: '', x: 'acme', li: 'company/acme', priority: 'medium', notes: '',
+  })
+  expect(followFields({ ...base, li: 'in/jane-doe', priority: 'HIGH' })).toMatchObject({ li: 'in/jane-doe', priority: 'high' })
+  expect(followedText({ name: 'Acme', meta: '1' })).toBe(
+    'Acme is followed now. The Intel Tracker picks them up on its next run, and the Ad Strategist pulls their Meta ads right after it.',
+  )
+  expect(followedText({ name: 'Acme', meta: '' })).toBe(
+    'Acme is followed now. The Intel Tracker picks them up on its next run. No Meta page ID was given, so no ads will be pulled for them.',
+  )
 })
