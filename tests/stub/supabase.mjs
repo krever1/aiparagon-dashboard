@@ -10,7 +10,12 @@
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
 // GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
 // POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, ...} (the
-// team's Fathom key as the Fathom proxy keeps it).
+// team's Fathom key as the Fathom proxy keeps it), GET /__storage (the files kept), POST /__storage {deny} (Storage
+// turns signed-in teammates away, as before its rules for them were added).
+// Storage (/storage/v1): an upload address signed for a signed-in session, the upload to it, public reads and removal,
+// for the lead-files bucket; it answers the browser's CORS checks. catalyst-proposal answers started;
+// file-ingest reads a stored file and saves its text on the row as Lead File Text Ingest does (a file named "scan..."
+// has none); hubspot-file-sync answers synced.
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
@@ -32,6 +37,15 @@ let hooks = {}
 const FATHOM = () => ({ connected: true, hint: 'ab12', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z' })
 let fathom = FATHOM()
 const refresh = new Map() // refresh token -> email
+// Storage: path -> {type, body (Buffer)}; signed upload tokens -> path
+let store = new Map()
+let signed = new Map()
+let denyStorage = false
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+  'access-control-allow-headers': 'authorization,apikey,content-type,x-upsert,cache-control,x-client-info',
+}
 
 const b64url = (b) => Buffer.from(b).toString('base64url')
 function jwt(payload) {
@@ -76,18 +90,68 @@ function claimsOf(req) {
 }
 const rest = createRest(fixtures, claimsOf)
 
-function send(res, status, body) {
-  res.writeHead(status, { 'content-type': 'application/json' })
+function send(res, status, body, headers = {}) {
+  res.writeHead(status, { 'content-type': 'application/json', ...headers })
   res.end(body === undefined ? '' : JSON.stringify(body))
+}
+
+/** Storage for the lead-files bucket, as the app and the browser use it. */
+function storage(req, res, url, buf, body) {
+  const p = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\//, ''))
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS)
+    return res.end()
+  }
+  let m
+  if (req.method === 'POST' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+    if (!claimsOf(req)) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'Invalid Compact JWS' }, CORS)
+    if (denyStorage) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, CORS)
+    const token = crypto.randomBytes(10).toString('hex')
+    signed.set(token, m[1])
+    return send(res, 200, { url: '/object/upload/sign/lead-files/' + m[1] + '?token=' + token }, CORS)
+  }
+  if (req.method === 'PUT' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+    const token = url.searchParams.get('token')
+    if (!token || signed.get(token) !== m[1]) return send(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'The signature does not match' }, CORS)
+    signed.delete(token)
+    store.set(m[1], { type: String(req.headers['content-type'] || 'application/octet-stream'), body: buf })
+    return send(res, 200, { Key: 'lead-files/' + m[1] }, CORS)
+  }
+  if (req.method === 'GET' && (m = p.match(/^object\/public\/lead-files\/(.+)$/))) {
+    const f = store.get(m[1])
+    if (!f) return send(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' }, CORS)
+    res.writeHead(200, { 'content-type': f.type, ...CORS })
+    return res.end(f.body)
+  }
+  if (req.method === 'DELETE' && p === 'object/lead-files') {
+    // without a rule for teammates, Storage removes nothing and says nothing
+    if (!claimsOf(req) || denyStorage) return send(res, 200, [], CORS)
+    const gone = (body.prefixes || []).filter((x) => store.delete(x)).map((name) => ({ name, bucket_id: 'lead-files' }))
+    return send(res, 200, gone, CORS)
+  }
+  return send(res, 400, { statusCode: '404', error: 'not_found', message: 'stub: storage route not supported' }, CORS)
+}
+
+/** Lead File Text Ingest: the file's text on its row (a file named "scan..." has none, as an image-only PDF). */
+function ingest(body) {
+  const key = String(body.fileUrl || '').replace(/^.*\/object\/public\/lead-files\//, '')
+  const f = store.get(decodeURIComponent(key))
+  const scan = /scan/i.test(String(body.fileName || ''))
+  const text = scan ? null : f ? f.body.toString('utf8').slice(0, 60000) : 'Text read from ' + body.fileName
+  rest.patch(body.table === 'guide_files' ? 'guide_files' : 'lead_files', body.fileId, { file_text: text, indexed_at: new Date().toISOString() })
+  return { ok: true, chars: text ? text.length : 0, extracted: !!text }
 }
 const fail = (res, status, code, msg) => send(res, status, { code: status, error_code: code, msg, error: code, error_description: msg })
 
 http
   .createServer((req, res) => {
-    let raw = ''
-    req.on('data', (c) => (raw += c))
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
     req.on('end', () => {
+      const buf = Buffer.concat(chunks)
       const url = new URL(req.url, 'http://stub')
+      const binary = url.pathname.startsWith('/storage/v1/object/upload/sign/') && req.method === 'PUT'
+      const raw = binary ? '' : buf.toString('utf8')
       let body = {}
       try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
       if (url.pathname === '/health') return send(res, 200, { ok: true })
@@ -99,7 +163,17 @@ http
         docs = docFixtures()
         hooks = {}
         fathom = FATHOM()
+        store = new Map()
+        signed = new Map()
+        denyStorage = false
         return send(res, 200, { ok: true })
+      }
+      if (url.pathname === '/__storage') {
+        if (req.method === 'POST') {
+          denyStorage = !!body.deny
+          return send(res, 200, { ok: true })
+        }
+        return send(res, 200, Object.fromEntries([...store].map(([k, v]) => [k, { type: v.type, size: v.body.length }])))
       }
       if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
@@ -110,7 +184,8 @@ http
 
       const seen = Array.isArray(body) ? body : { ...body }
       if (!Array.isArray(seen)) delete seen.password
-      calls.push({ method: req.method, path: url.pathname, query: url.search, body: seen })
+      calls.push({ method: req.method, path: url.pathname, query: url.search, body: seen, ...(binary ? { size: buf.length, type: req.headers['content-type'] } : {}) })
+      if (url.pathname.startsWith('/storage/v1/')) return storage(req, res, url, buf, body)
 
       if (req.method === 'POST' && url.pathname === '/auth/v1/token') {
         const grant = url.searchParams.get('grant_type')
@@ -173,6 +248,13 @@ http
         }
         // Meetings · Post-call Actions answers that it started; the test writes the row the workflow would save
         if (name === 'call-actions') return send(res, 200, { ok: true, started: true })
+        // Catalyst · Client Proposal answers once its caller check passes; the test writes the row it would save
+        if (name === 'catalyst-proposal') {
+          if (!body.leadEmail) return send(res, 400, { ok: false, code: 'bad_request', message: 'stub: leadEmail is required' })
+          return send(res, 200, { ok: true, started: true })
+        }
+        if (name === 'file-ingest') return send(res, 200, ingest(body))
+        if (name === 'hubspot-file-sync') return send(res, 200, { synced: true, hubspotFileId: 'HF-1', noteId: 'N-1' })
         if (name === 'slack-proxy') {
           if (body.action === 'channels') {
             return send(res, 200, { ok: true, channels: [{ id: 'C1', name: 'new-leads', member: true }, { id: 'C2', name: 'random', member: false }] })
