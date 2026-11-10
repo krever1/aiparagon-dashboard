@@ -269,5 +269,11 @@ export function createRest(initial, claimsOf) {
     dump(name) {
       return name ? clone(table(name)) : clone(tables)
     },
+    /** Changes one row by id, as a workflow with its own credentials does. */
+    patch(name, id, fields) {
+      const row = table(name).find((r) => String(r.id) === String(id))
+      if (row) Object.assign(row, fields)
+      return !!row
+    },
   }
 }

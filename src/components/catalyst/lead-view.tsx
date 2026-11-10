@@ -7,18 +7,22 @@ import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { type LeadCallRow, leadCallsFor } from '@/app/(app)/lead-pipeline/actions'
 import { PageHeader } from '@/components/moving-page'
 import { LocalDate, LocalDateTime, LocalUsDay } from '@/components/ui/local-date'
-import { LEGACY_DASHBOARD_URL } from '@/lib/config'
-import type { E1Doc, FileRow, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
+import type { E1Doc, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
 import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
 import { type LeadTab, hasDoc, leadTab, safeUrl } from '@/lib/catalyst/view'
 import { pageBySlug } from '@/lib/nav'
+import { INK, TXT, placeCharts } from '@/lib/catalyst/charts'
+import { mdClean } from '@/lib/catalyst/doc-format'
 import { Banner, ErrorNotice, StageDot, StripTile, type TabDef, Tabs } from './bits'
 import { CallQuestion } from './call-question'
+import { ChangeAsk } from './change-ask'
+import { ChartFigure } from './chart'
 import { useCheckBack } from './check-back'
 import { DocReader } from './doc-reader'
-import { type Ask, StageQuestion, stillWriting } from './stage-question'
+import { FilesPanel } from './files-panel'
 import { Md } from './markdown'
-import { mdClean } from '@/lib/catalyst/doc-format'
+import { ProposalCard } from './proposal-card'
+import { type Ask, StageQuestion, stillWriting } from './stage-question'
 
 type Found = Extract<LeadPageData, { found: true }>
 
@@ -159,7 +163,19 @@ export function LeadView({ data }: { data: Found }) {
       <Tabs<LeadTab> label="This lead’s documents" tabs={tabs} active={tab} onPick={go} />
       {data.error ? <ErrorNotice>{data.error}</ErrorNotice> : null}
 
-      {doc ? <DocPanel d={doc} reading={reading} setReading={setReading} writing={lead.run?.s === doc.key ? byKey[doc.key as StageKey] : null} /> : null}
+      {doc ? (
+        <DocPanel
+          d={doc}
+          reading={reading}
+          setReading={setReading}
+          writing={lead.run?.s === doc.key ? byKey[doc.key as StageKey] : null}
+          ask={{ leadId: lead.id, name: lead.name, count: data.asks[doc.agent] ?? 0 }}
+        >
+          {doc.key === 'proposal' && (data.proposal.view || data.proposal.run || data.docs.some((x) => x.key === 'assessment' && x.done)) ? (
+            <ProposalCard lead={lead} data={data.proposal} asks={data.asks.client_proposal ?? 0} />
+          ) : null}
+        </DocPanel>
+      ) : null}
       {tab === 'onboarding' || tab === 'review' ? (
         <PrepPanel
           prep={data.prep[tab]}
@@ -169,7 +185,7 @@ export function LeadView({ data }: { data: Found }) {
           onRun={() => askFor(tab as StageKey, false)}
         />
       ) : null}
-      {tab === 'files' ? <FilesPanel rows={data.files.rows} error={data.files.error} /> : null}
+      {tab === 'files' ? <FilesPanel leadId={lead.id} rows={data.files.rows} error={data.files.error} /> : null}
       {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} /> : null}
       {tab === 'calls' ? <CallsPanel name={lead.name} calls={calls} stages={byKey} onFile={setFileIt} /> : null}
       {fileIt ? <CallQuestion lead={lead} stages={stages} call={fileIt} onClose={() => setFileIt(null)} onDone={() => setCallsRead((n) => n + 1)} /> : null}
@@ -193,17 +209,32 @@ function Panel({ kicker, title, extra, children, id }: { kicker?: string; title:
 
 const notRun = <span className="rounded-full bg-sunk px-2.5 py-0.5 font-sans text-[12.5px] font-semibold text-ink-3">not run yet</span>
 
+/** What should change? calls each document this (V125_DOC). */
+const ASK_DOC: Record<string, string> = {
+  lead_research: 'prospect brief',
+  interview_script: 'consultation guide',
+  anonymizer: 'assessment',
+  discovery_call: 'follow-up guide',
+  growth_plan: 'proposal presentation',
+}
+
 function DocPanel({
   d,
   reading,
   setReading,
   writing,
+  ask,
+  children,
 }: {
   d: E1Doc
   reading: string | null
   setReading: (k: string | null) => void
   /** the stage, while a run writes its document */
   writing: Stage | null
+  /** What should change? on this document: the lead and how many changes were asked */
+  ask: { leadId: string; name: string; count: number }
+  /** under the document: the client proposal, on the Proposal tab */
+  children?: React.ReactNode
 }) {
   const open = reading === d.key
   const canRead = !!(d.md || d.readDocId || d.readPdfId)
@@ -259,6 +290,7 @@ function DocPanel({
                 Open Google Doc <ArrowUpRight size={14} aria-hidden="true" />
               </a>
             ) : null}
+            <ChangeAsk leadId={ask.leadId} agent={d.agent} doc={ASK_DOC[d.agent] ?? 'document'} name={ask.name} count={ask.count} />
             {d.status ? (
               <span className={chip}>
                 status: <b className="font-semibold text-ink">{d.status}</b>
@@ -271,6 +303,7 @@ function DocPanel({
       ) : (
         <p className="rounded-md bg-sunk px-4 py-5 text-center text-[14.5px] text-ink-2">This stage hasn’t produced output for this lead yet.</p>
       )}
+      {children}
     </Panel>
   )
 }
@@ -321,8 +354,19 @@ function PrepPanel({
                 {open ? 'Hide ▴' : 'Read inline ▾'}
               </button>
               {open ? (
-                <div className="mt-3 border-t border-line pt-3" data-testid="prep-text">
-                  <Md>{mdClean(prep.md)}</Md>
+                <div className="mt-3 space-y-3 border-t border-line pt-3" data-testid="prep-text">
+                  {prep.charts.length ? (
+                    placeCharts(mdClean(prep.md), prep.charts).map((p, i) => (
+                      <div key={i}>
+                        {p.text.trim() ? <Md>{p.text}</Md> : null}
+                        {p.charts.map((c, k) => (
+                          <ChartFigure key={k} chart={c} color={INK} ink={TXT} />
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    <Md>{mdClean(prep.md)}</Md>
+                  )}
                 </div>
               ) : null}
             </>
@@ -336,106 +380,6 @@ function PrepPanel({
           </button>
         </div>
       )}
-    </Panel>
-  )
-}
-
-const FILE_GROUP: Record<string, string> = {
-  lead_research: 'Prospect brief',
-  interview_script: 'Consultation guide',
-  anonymizer: 'Assessment',
-  discovery_call: 'Follow-up guide',
-  growth_plan: 'Proposal',
-  manual: 'General',
-}
-
-function fileIcon(name: string): string {
-  const x = name.toLowerCase()
-  if (x.includes('.pdf') || x.includes('pdf')) return '📄'
-  if (/\.(doc|docx)/.test(x) || x.includes('google doc')) return '📝'
-  if (/\.(xls|xlsx|csv)/.test(x)) return '📊'
-  if (/\.(png|jpe?g|gif|webp)/.test(x)) return '🖼️'
-  if (/\.(ppt|pptx)/.test(x) || x.includes('slide')) return '📽️'
-  return '📁'
-}
-
-function FilesPanel({ rows, error }: { rows: FileRow[]; error: boolean }) {
-  const [q, setQ] = useState('')
-  const t = q.trim().toLowerCase()
-  const shown = rows.filter(
-    (f) => !t || [f.name, FILE_GROUP[f.stage] ?? f.stage, f.note, f.by].join(' ').toLowerCase().includes(t),
-  )
-  const groups: { stage: string; rows: FileRow[] }[] = []
-  for (const f of shown) {
-    let g = groups.find((x) => x.stage === f.stage)
-    if (!g) groups.push((g = { stage: f.stage, rows: [] }))
-    g.rows.push(f)
-  }
-  return (
-    <Panel id="files" title="Files" extra={<span className="font-sans text-[13.5px] font-normal text-ink-3">{rows.length}</span>}>
-      {error ? (
-        <p className="mb-3 rounded-sm bg-warn-soft px-3.5 py-2.5 text-[14px] text-warn">
-          <b>Couldn’t read the uploads.</b> The agents’ documents still show below.
-        </p>
-      ) : null}
-      {rows.length ? (
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search files by name or category…"
-          aria-label="Search files"
-          className="mb-3 h-10 w-full max-w-[340px] rounded-sm border border-line bg-panel px-3 text-[14px] focus:border-accent focus:outline-none"
-        />
-      ) : null}
-      {rows.length === 0 ? <p className="py-2 text-[14.5px] text-ink-2">No files yet for this lead.</p> : null}
-      {rows.length > 0 && shown.length === 0 ? <p className="py-2 text-[14.5px] text-ink-2">No files match that search.</p> : null}
-      <div className="space-y-4">
-        {groups.map((g) => (
-          <div key={g.stage}>
-            <p className="mb-1.5 flex items-center gap-2 text-[11.5px] font-bold uppercase tracking-[0.08em] text-ink-3">
-              <span aria-hidden="true">📁</span> {FILE_GROUP[g.stage] ?? g.stage} <span className="font-semibold opacity-70">{g.rows.length}</span>
-            </p>
-            <ul className="divide-y divide-line rounded-md border border-line">
-              {g.rows.map((f) => {
-                const href = safeUrl(f.url)
-                return (
-                  <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5 text-[14px]">
-                    <span aria-hidden="true">{fileIcon(f.name)}</span>
-                    {href ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer" className="min-w-0 break-words font-semibold text-action hover:underline">
-                        {f.name}
-                      </a>
-                    ) : (
-                      <span className="min-w-0 break-words font-semibold text-ink">{f.name}</span>
-                    )}
-                    {f.note ? <span className="max-w-[220px] truncate text-[13px] text-ink-3" title={f.note}>{f.note}</span> : null}
-                    <span className={chip}>{f.source === 'agent' ? 'agent' : 'upload' + (f.by ? ' · ' + f.by : '')}</span>
-                    {f.source === 'upload' && f.indexed ? (
-                      <span className="rounded-full bg-good-soft px-2.5 py-1 text-[12.5px] text-good" title="Text extracted: the Ask bot can read this">
-                        ✦ searchable
-                      </span>
-                    ) : null}
-                    {f.at ? (
-                      <span className="ml-auto text-[12.5px] text-ink-3">
-                        {f.source === 'agent' ? 'generated' : 'uploaded'} <LocalDate iso={f.at} />
-                      </span>
-                    ) : null}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ))}
-      </div>
-      <p className="mt-4 border-t border-line pt-3 text-[13px] text-ink-3">
-        Agent rows come straight from the pipeline output. Uploading a file, and making it readable for the Ask bot, stays
-        in the current dashboard for now:{' '}
-        <a href={LEGACY_DASHBOARD_URL + '/lead-pipeline'} className="font-semibold text-info hover:underline">
-          open the lead pipeline there
-        </a>
-        .
-      </p>
     </Panel>
   )
 }
