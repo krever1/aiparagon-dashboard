@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { docs, fixtures } from '../stub/fixtures.mjs'
+import { docs, fathomCalls, fixtures } from '../stub/fixtures.mjs'
 import { findLead, leadId } from '../../src/lib/catalyst/lead-id'
 import {
   type LeadRow, type OutRow, buildLeads, docCount, docIds, docOf, derivedStage, mergeLeads, relink, stageOf,
@@ -9,6 +9,10 @@ import {
 } from '../../src/lib/catalyst/stages'
 import { jsonStruct, mdClean, mdStruct, parseDocText, parseSaved, pdfToMd } from '../../src/lib/catalyst/doc-format'
 import { followFields, followedText, metaPageIdFrom } from '../../src/lib/catalyst/follow'
+import {
+  type CallMeta, type CallOutput, agoText, callRow, catButtons, cleanTags, companyOf, crmBody, emptyLine, filterRows, folderChoices, folderOf,
+  hoursText, newTypeProblem, normCall, normMeta, normOutput, peopleOf, shareToken, slackText, tasksText, typeShort, withLine,
+} from '../../src/lib/catalyst/calls'
 import { hsName } from '../../src/lib/catalyst/names'
 import {
   baseFields, composeNote, crmLine, customBody, mailBlock, planFor, prepBody, researchBody, runOf, runsFromSetting, setupOf,
@@ -318,4 +322,105 @@ test('Follow: the Meta page id comes out of whatever is pasted, and the checks s
   expect(followedText({ name: 'Acme', meta: '' })).toBe(
     'Acme is followed now. The Intel Tracker picks them up on its next run. No Meta page ID was given, so no ads will be pulled for them.',
   )
+})
+
+// ---------- Calls ----------
+
+const FC = () => fathomCalls().map(normCall)
+const FX = () => fixtures() as unknown as { call_meta: Record<string, unknown>[]; call_outputs: Record<string, unknown>[] }
+const metaOf = (id: string): CallMeta | null => {
+  const r = FX().call_meta.find((m) => String(m.call_id) === id)
+  return r ? normMeta(r) : null
+}
+const outOf = (id: string): CallOutput | null => {
+  const r = FX().call_outputs.find((m) => String(m.call_id) === id)
+  return r ? normOutput(r) : null
+}
+const callRows = () => FC().map((c) => callRow(c, metaOf(c.id), outOf(c.id)))
+
+test('a call’s client folder: the folder set, the client, the lead’s company, the guests’ company, else the team or no client yet', () => {
+  const [robin, pat, team] = FC()
+  const m = (x: Partial<CallMeta>): CallMeta => ({ ...normMeta({ call_id: robin.id }), ...x })
+  expect(folderOf(robin, m({ folder: 'Ops', client: 'Acme' }), null, 'Lead Co')).toBe('Ops')
+  expect(folderOf(robin, m({ client: 'Acme' }), null, 'Lead Co')).toBe('Acme')
+  expect(folderOf(robin, null, null, 'Lead Co')).toBe('Lead Co')
+  expect(folderOf(robin, null, null)).toBe('Example') // robin.sample@example.com
+  expect(folderOf(pat, null, null)).toBe('Example')
+  expect(folderOf(team, null, null)).toBe('AI Paragon (internal)')
+  expect(folderOf(team, m({ meeting_type: 'demo' }), null)).toBe('No client yet') // a client call with no client on the invite
+  expect(folderOf(team, null, normOutput({ call_id: team.id, meeting_type: 'sales' }))).toBe('No client yet')
+  expect(folderOf(team, m({ guests: [{ name: 'Gail Mail', email: 'gail@gmail.com', external: true }] }), null)).toBe('Gail Mail')
+  expect(companyOf('nia@northwind-advisors.co.uk')).toBe('Northwind Advisors')
+  expect(companyOf('a@mail.acme.com')).toBe('Acme')
+  expect(companyOf('a@outlook.com')).toBe('')
+  expect(companyOf('nobody')).toBe('')
+})
+
+test('the people on a call, the type buttons, the filters and the empty lines', () => {
+  const [robin] = FC()
+  expect(peopleOf(robin, null).map((p) => p.name)).toEqual(['QA Teammate', 'Robin Sample'])
+  expect(withLine(peopleOf(robin, null))).toBe('With Robin Sample, QA Teammate')
+  expect(withLine([])).toBe('No people listed')
+  const rows = callRows()
+  expect(rows.map((r) => [r.call.id, r.type, r.cat, r.client])).toEqual([
+    ['9001', 'discovery', 'sales', true],
+    ['9004', '', 'none', true],
+    ['9003', '', 'none', false],
+    ['9002', 'sales', 'sales', true],
+  ])
+  expect(catButtons(rows, 'all')).toEqual([
+    { key: '', label: 'All', n: 4 },
+    { key: 'demo', label: 'Client demos', n: 0 },
+    { key: 'sales', label: 'Sales', n: 2 },
+    { key: 'dev', label: 'Internal development', n: 0 },
+    { key: 'none', label: 'No type yet', n: 2 },
+  ])
+  const mine = callRow(FC()[2], normMeta({ call_id: '9003', meeting_type: 'Podcast' }), null)
+  expect(catButtons([mine], 'all').map((b) => b.label)).toEqual(['All', 'Client demos', 'Sales', 'Internal development', 'Podcast'])
+  const f = { q: '', folder: '', tag: '', cat: '' }
+  expect(filterRows(rows, 'ext', f).map((r) => r.call.id)).toEqual(['9001', '9004', '9002'])
+  expect(filterRows(rows, 'all', { ...f, q: 'robin sample' }).map((r) => r.call.id)).toEqual(['9001', '9002'])
+  expect(filterRows(rows, 'all', { ...f, cat: 'sales' }).map((r) => r.call.id)).toEqual(['9001', '9002'])
+  expect(folderChoices(rows, [normMeta({ call_id: 'x', folder: 'Zed' })])).toEqual(['AI Paragon (internal)', 'Example', 'Zed'])
+  expect(emptyLine(rows, 'all', { ...f, cat: 'demo' })).toEqual({ text: 'Nothing under Client demos here yet.', clear: 'cat' })
+  expect(emptyLine(rows, 'all', { ...f, folder: 'Zed' })).toEqual({ text: 'No calls match these filters.', clear: 'filters' })
+  expect(emptyLine(rows, 'all', { ...f, q: 'zzz' }).text).toBe('No calls match that search.')
+  expect(emptyLine([], 'ext', f).text).toBe('No calls with outside guests loaded yet.')
+  expect(emptyLine([], 'all', f).text).toBe('No calls yet. Record one in Fathom and refresh.')
+  expect(typeShort('interview')).toBe('Interview')
+  expect(typeShort('Partner call')).toBe('Partner call')
+  expect(hoursText(0)).toBe('0')
+  expect(hoursText(125)).toBe('2.1')
+  expect(hoursText(900)).toBe('15')
+  expect(shareToken(FC()[0])).toBe('robinDiscovery01')
+  expect(shareToken({ shareUrl: 'https://evil.example/share/robinDiscovery01' })).toBe('')
+})
+
+test('tags, a new type’s name, and what goes to Slack and HubSpot', () => {
+  expect(cleanTags('#Onboarding, weekly review,, ops, ops')).toEqual(['onboarding', 'weekly-review', 'ops'])
+  expect(cleanTags(Array.from({ length: 20 }, (_, i) => 't' + i).join(','))).toHaveLength(12)
+  expect(newTypeProblem('a')).toBe('Give it a name, two letters or more.')
+  expect(newTypeProblem('Pod<cast>')).toBe('Use letters, numbers and spaces.')
+  expect(newTypeProblem('Client Demo')).toBe('That type is already in the list.')
+  expect(newTypeProblem('internal development')).toBe('That type is already in the list.')
+  expect(newTypeProblem('no type yet')).toBe('That type is already in the list.')
+  expect(newTypeProblem('Partner call')).toBe('')
+
+  const o = outOf('9001')!
+  expect(o.tasks.map((t) => t.id)).toEqual(['t1', 't2'])
+  expect(tasksText(o.tasks, false)).toBe('- [ ] Send the onboarding checklist (QA Teammate, due 2026-11-12)\n- [x] Book the assessment (Robin Sample)')
+  expect(tasksText(o.tasks, true)).toBe('- [ ] Send the onboarding checklist (QA Teammate, due 2026-11-12)')
+  expect(slackText({ title: 'Call', day: 'Nov 4, 2026', type: 'discovery', out: o, link: 'https://fathom.video/share/x' })).toBe(
+    '*Call* · Nov 4, 2026 · Discovery\n\n*Summary*\n• Onboarding paperwork takes most of their week\n• They want one workflow automated first\n\n' +
+      '*Next steps*\n• Send the onboarding checklist (QA Teammate, due 2026-11-12)\n\n<https://fathom.video/share/x|Recording in Fathom>',
+  )
+  const meta = normMeta({ call_id: '9001', folder: 'Sample', tags: ['a', 'b'], description: 'Notes here' })
+  expect(crmBody({ type: 'discovery', meta, out: null, ftSummary: 'See [this](https://x.example) moment', link: '' })).toBe(
+    'Call type: Discovery\nFolder: Sample\nTags: #a #b\n\nNotes: Notes here\n\nFathom summary:\nSee this moment\n\nLogged from the AI Paragon dashboard.',
+  )
+  expect(agoText('2026-11-10T11:40:00Z', Date.parse('2026-11-10T12:00:00Z'))).toBe('just now')
+  expect(agoText('2026-11-10T11:30:00Z', Date.parse('2026-11-10T12:00:00Z'))).toBe('1h ago') // half an hour rounds up, as the current dashboard does
+  expect(agoText('2026-11-10T06:00:00Z', Date.parse('2026-11-10T12:00:00Z'))).toBe('6h ago')
+  expect(agoText('2026-11-01T12:00:00Z', Date.parse('2026-11-10T12:00:00Z'))).toBe('9d ago')
+  expect(agoText('', 0)).toBe('')
 })

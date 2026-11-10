@@ -7,9 +7,9 @@ import { buildLeads } from '@/lib/catalyst/leads'
 import { findLead, readCatalyst, toView } from '@/lib/catalyst/load'
 import { ENTRY, RUN_HOOKS, type ReadRow, composeNote, planFor } from '@/lib/catalyst/plan'
 import {
-  type Gathered, fathomList, fathomTranscript, fileUsed, gather, readRows, recordRun, setStage, startStage,
+  type Gathered, callsOfLead, fathomList, fathomTranscript, fileCall, fileUsed, gather, readRows, readSetting, recordRun, setStage, startStage,
 } from '@/lib/catalyst/run'
-import { STAGES, type StageNames, cleanName, isStageKey, namesFromSetting, stageOfKey } from '@/lib/catalyst/stages'
+import { STAGES, type StageNames, cleanName, isStageKey, namesFromSetting, nextStageKey, stageOfKey } from '@/lib/catalyst/stages'
 import { viewStage } from '@/lib/catalyst/view'
 import { callN8n, startN8n } from '@/lib/n8n'
 import { createClient } from '@/lib/supabase/server'
@@ -261,4 +261,116 @@ export async function callText(id: string): Promise<{ ok: true; text: string } |
   } catch (e) {
     return { ok: false, error: msgOf(e) }
   }
+}
+
+// ---------- a lead's calls, and filing one (v137LeadCalls, v137AskCall, v137CallGo) ----------
+
+export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string }
+
+/** The lead's Calls tab: every recorded call with it, and the stage each is filed under. */
+export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: LeadCallRow[]; error: string } | { ok: false; error: string }> {
+  if (!(await getCurrentUser())) return { ok: false, error: 'You are signed out. Sign in again.' }
+  const read = await readCatalyst()
+  const lead = findLead(buildLeads(read.rows, read.outs).leads, String(leadId))
+  if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
+  const r = await callsOfLead(await createClient(), lead)
+  return { ok: true, calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage })), error: r.err }
+}
+
+/** Up to three points of a call's post-call summary, for the question. */
+export async function callSummary(callId: string): Promise<string[]> {
+  if (!(await getCurrentUser()) || !/^[\w-]{1,80}$/.test(String(callId))) return []
+  const { data } = await (await createClient())
+    .from('call_outputs')
+    .select('summary,status')
+    .eq('call_id', String(callId))
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const row = (data ?? [])[0] as { summary?: unknown } | undefined
+  const list = Array.isArray(row?.summary) ? row.summary : []
+  return list
+    .map((x) => (typeof x === 'string' ? x : String((x as Record<string, unknown>)?.text || (x as Record<string, unknown>)?.point || '')))
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
+/**
+ * The answer to a new transcript: set the call aside, file it under the stage the lead is in, or file it and run the
+ * next stage with it (the lead moved there first), as the current dashboard does.
+ */
+export async function answerCall(input: { leadId: string; callId: string; action: 'skip' | 'file' | 'run'; notes: string }): Promise<GoResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
+  const callId = String(input?.callId ?? '')
+  if (!/^[\w-]{1,80}$/.test(callId)) return { ok: false, error: 'That is not a Fathom call.' }
+  const supabase = await createClient()
+  let read = await readCatalyst()
+  let built = buildLeads(read.rows, read.outs)
+  let lead = findLead(built.leads, String(input.leadId))
+  if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
+  let view = toView(lead, built.outs, read.runs)
+  const cur = viewStage(view)
+  const nx = nextStageKey(cur)
+  const curSt = stageOfKey(cur, read.names)
+  const st = stageOfKey(nx, read.names)
+  const meta = await supabase.from('call_meta').select('meeting_type').eq('call_id', callId).maybeSingle()
+  const call = { id: callId, type: String(meta.data?.meeting_type ?? '') }
+  const saved = await readSetting(supabase, 'catalyst_stage_setup')
+
+  if (input.action === 'skip' || input.action === 'file') {
+    try {
+      await fileCall(supabase, call, lead.email, input.action === 'skip' ? 'none' : cur, user.email, saved)
+    } catch (e) {
+      return { ok: false, error: 'Could not save it: ' + msgOf(e) }
+    }
+    refresh()
+    return { ok: true, toast: input.action === 'skip' ? 'Set aside. The call stays on Calls.' : `Filed under ${curSt.name}.` }
+  }
+
+  if (view.run) return { ok: false, error: `Catalyst is still writing for ${view.name}. File the transcript now, and run the next stage once that is done.` }
+  try {
+    await fileCall(supabase, call, lead.email, cur, user.email, saved)
+  } catch (e) {
+    return { ok: false, error: 'Could not file it: ' + msgOf(e) }
+  }
+  read = await readCatalyst()
+  built = buildLeads(read.rows, read.outs)
+  lead = findLead(built.leads, String(input.leadId))
+  if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
+  view = toView(lead, built.outs, read.runs)
+  const plan = planFor(view, nx)
+  if (plan.blocked) return { ok: false, error: plan.blocked }
+  const notes = String(input.notes ?? '').trim().slice(0, 200_000)
+  let g: Gathered | null = null
+  try {
+    g = await gather(supabase, lead, nx, true)
+  } catch {
+    g = null
+  }
+  if (plan.need && !notes && !(g && (g.calls.some((x) => x.text) || g.emails.length))) {
+    return { ok: false, error: `The transcript could not be read from Fathom, and this lead has no ${plan.need} to work from. Add your notes from the meeting.` }
+  }
+  const moving = nx !== cur
+  if (moving) {
+    try {
+      await setStage(supabase, lead, nx)
+    } catch (e) {
+      return { ok: false, error: 'Filed, but the lead could not be moved: ' + msgOf(e) }
+    }
+  }
+  const note = composeNote({ typed: notes, crm: g?.crm ?? null, calls: g?.calls ?? [], emails: g?.emails ?? [], names: read.names })
+  try {
+    await startStage(lead, built.outs, nx, note, g, read.names)
+  } catch (e) {
+    refresh()
+    return { ok: false, error: (moving ? `Moved to ${st.name}, but it could not start: ` : 'Could not start it: ') + msgOf(e) + '. Try again in a minute.' }
+  }
+  try {
+    await recordRun(supabase, lead, built.outs, nx, user.email)
+  } catch {
+    // the run is under way; only its "Writing" line on the board is missing
+  }
+  await fileUsed(supabase, lead, g, cur, user.email)
+  refresh()
+  return { ok: true, toast: `Started. ${st.doc} shows on the Lead pipeline when it is done.` }
 }

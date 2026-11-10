@@ -78,13 +78,13 @@ function guestsOf(c: FathomCall, m: Meta | undefined): string[] {
   return c.invitees.map((i) => lower(i.email)).filter((e) => e && e !== c.recorder)
 }
 
-export type LeadCall = GatherCall & { type: string }
+export type LeadCall = GatherCall & { type: string; minutes: number }
 
 /**
- * The lead's recorded calls, newest first: a guest is one of its emails, the call is not filed under another lead,
- * and it was not set aside.
+ * Every recorded call with the lead, newest first: a guest is one of its emails and the call is not filed under
+ * another lead. Calls set aside (filed as none) are in the list, with stage 'none'.
  */
-export async function leadCalls(supabase: Supa, lead: Lead): Promise<{ calls: LeadCall[]; err: string }> {
+export async function callsOfLead(supabase: Supa, lead: Lead): Promise<{ calls: LeadCall[]; err: string }> {
   let list: FathomCall[]
   try {
     list = await fathomList()
@@ -103,10 +103,26 @@ export async function leadCalls(supabase: Supa, lead: Lead): Promise<{ calls: Le
       if (m?.lead_email && !em.includes(lower(m.lead_email))) return false
       return guestsOf(c, m).some((g) => em.includes(g))
     })
-    .map((c) => ({ id: c.id, start: c.start, title: c.title, stage: str(meta.get(c.id)?.lead_stage), type: str(meta.get(c.id)?.meeting_type) }))
-    .filter((x) => x.stage !== 'none')
+    .map((c) => {
+      const a = Date.parse(c.start)
+      const b = Date.parse(c.end)
+      return {
+        id: c.id,
+        start: c.start,
+        title: c.title,
+        stage: str(meta.get(c.id)?.lead_stage),
+        type: str(meta.get(c.id)?.meeting_type),
+        minutes: a && b && b > a ? Math.round((b - a) / 60000) : 0,
+      }
+    })
     .sort((a, b) => b.start.localeCompare(a.start))
   return { calls, err: '' }
+}
+
+/** The lead's recorded calls a run reads: those not set aside. */
+export async function leadCalls(supabase: Supa, lead: Lead): Promise<{ calls: LeadCall[]; err: string }> {
+  const r = await callsOfLead(supabase, lead)
+  return { calls: r.calls.filter((x) => x.stage !== 'none'), err: r.err }
 }
 
 // ---------- HubSpot ----------

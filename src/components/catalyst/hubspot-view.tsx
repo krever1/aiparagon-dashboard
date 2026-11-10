@@ -48,7 +48,7 @@ export function HubspotView({ data }: { data: HubspotData }) {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search name, email, company…"
             aria-label="Search contacts"
-            className="h-9 w-full min-w-[220px] rounded-sm border border-line bg-panel px-3 text-[14px] text-ink focus:border-accent focus:outline-none sm:ml-auto sm:w-auto"
+            className="h-9 w-full rounded-sm border border-line bg-panel px-3 text-[14px] text-ink focus:border-accent focus:outline-none sm:ml-auto sm:w-[290px]"
           />
         ) : null}
       </div>

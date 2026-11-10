@@ -95,7 +95,7 @@ export function overviewTab(v: unknown): OverviewTab {
 }
 
 /** A lead page's tabs (?tab= in the address): its documents, the meeting prep, Files and HubSpot. */
-export const LEAD_TABS = ['research', 'consultation', 'assessment', 'followup', 'proposal', 'onboarding', 'review', 'files', 'hubspot'] as const
+export const LEAD_TABS = ['research', 'consultation', 'assessment', 'followup', 'proposal', 'onboarding', 'review', 'files', 'hubspot', 'calls'] as const
 export type LeadTab = (typeof LEAD_TABS)[number]
 
 export function leadTab(v: unknown): LeadTab | null {

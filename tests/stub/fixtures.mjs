@@ -134,6 +134,7 @@ export function fixtures() {
         key: 'catalyst_stages', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z',
         value: { consultation: { name: 'Kickoff call', by: 'qa.teammate@aiparagonconsulting.com', at: '2026-11-01T10:00:00Z' } },
       },
+      { key: 'call_types', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-10-20T10:00:00Z', value: ['Partner call'] },
     ],
     hubspot_contacts: [
       {
@@ -155,6 +156,20 @@ export function fixtures() {
       { call_id: '9002', lead_email: 'robin.sample@example.com', lead_stage: 'research', meeting_type: 'sales', created_at: '2026-10-21T10:00:00Z' },
       { call_id: '9004', lead_email: PAT, lead_stage: 'none', created_at: '2026-10-31T10:00:00Z' },
     ],
+    // Robin's discovery consultation has its post-call actions (the AI picked the call type); the team sync has none
+    call_outputs: [
+      {
+        id: '40000000-0000-4000-8000-000000000001', call_id: '9001', call_title: 'Discovery consultation with Robin', meeting_type: 'discovery',
+        meeting_type_guess: true, status: 'done', source: 'auto', created_by: 'qa.teammate@aiparagonconsulting.com', created_at: '2026-11-04T18:00:00Z',
+        summary: ['Onboarding paperwork takes most of their week', 'They want one workflow automated first'],
+        tasks: [
+          { id: 't1', text: 'Send the onboarding checklist', owner: 'QA Teammate', due: '2026-11-12', why: 'They asked for it', done: false },
+          { id: 't2', text: 'Book the assessment', owner: 'Robin Sample', due: '', why: '', done: true },
+        ],
+        deliverable: { title: 'Discovery recap: Sample Peak Partners', markdown: '## What we heard\n- Paperwork is the bottleneck\n- **Two advisors** do intake' },
+        follow_up: { subject: 'Thanks for the call, Robin', body: 'Hi Robin,\n\nThanks for the time today.' },
+      },
+    ],
     catalyst_sources: [
       {
         id: '30000000-0000-4000-8000-000000000001', kind: 'discovery_template', file_name: 'Our discovery questions.docx', active: true,
@@ -173,10 +188,17 @@ export function fathomCalls() {
     {
       id: 9001, title: 'Discovery consultation with Robin', start: '2026-11-04T17:00:00Z', end: '2026-11-04T17:45:00Z', recorded_by: TEAM,
       invitees: [TEAM, { name: 'Robin Sample', email: 'robin.sample@example.com', external: true }],
+      share_url: 'https://fathom.video/share/robinDiscovery01', url: 'https://fathom.video/calls/9001',
+      summary: '## Key takeaways:\n- Paperwork takes most of the week\n    - Two advisors do intake\n[Paperwork comes up](https://fathom.video/share/robinDiscovery01?timestamp=125.5)\n\n## Next steps\n1. Send the checklist',
+      actions: [
+        { text: 'Send Robin the onboarding checklist', who: 'QA Teammate', t: '12:05', done: false, link: 'https://fathom.video/share/robinDiscovery01?timestamp=725' },
+        { text: 'Share the case study', who: 'QA Teammate', t: '', done: true, link: '' },
+      ],
     },
     {
       id: 9004, title: 'Catch-up with Pat', start: '2026-10-30T16:00:00Z', end: '2026-10-30T16:20:00Z', recorded_by: TEAM,
       invitees: [TEAM, { name: 'Pat Example', email: PAT, external: true }],
+      share_url: 'https://fathom.video/share/patTeamOnly0001',
     },
     { id: 9003, title: 'Team sync', start: '2026-10-25T16:00:00Z', end: '2026-10-25T16:30:00Z', recorded_by: TEAM, invitees: [TEAM] },
     {
@@ -233,4 +255,14 @@ export function docs() {
     docPatFollowUp0000000000001: { ok: false, message: 'Google says this document is private.' },
     docRobinResearch00000001: { kind: 'doc', text: '# Robin brief\n\n## Notes\n- From the link on the lead' },
   }
+}
+
+/** Fathom's older calls, the second page of its list (cursor 'page2'). */
+export function fathomOlderCalls() {
+  return [
+    {
+      id: 8001, title: 'Partner intro with Northwind', start: '2026-09-15T15:00:00Z', end: '2026-09-15T15:50:00Z', recorded_by: TEAM,
+      invitees: [TEAM, { name: 'Nia North', email: 'nia@northwind-advisors.co.uk', external: true }],
+    },
+  ]
 }

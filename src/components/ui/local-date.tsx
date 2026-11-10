@@ -1,6 +1,7 @@
 'use client'
 
 import { useSyncExternalStore } from 'react'
+import { agoText } from '@/lib/catalyst/calls'
 
 const noop = () => () => {}
 
@@ -92,4 +93,37 @@ export function LocalUsDay({ iso }: { iso: string | null | undefined }) {
   const hydrated = useHydrated()
   const text = usDayText(iso, hydrated ? undefined : 'UTC')
   return text ? <time dateTime={iso ?? undefined}>{text}</time> : null
+}
+
+/** "Tue, Nov 4 · 5:00 PM", with the year in place of the weekday when it is not this year (a Fathom call, apFtWhen). */
+export function callWhenText(iso: string | null | undefined, timeZone?: string): string {
+  const d = parse(iso)
+  if (!d) return ''
+  const year = (x: Date) => x.toLocaleDateString('en-US', { year: 'numeric', timeZone })
+  const same = year(d) === year(new Date())
+  const day = d.toLocaleDateString(
+    'en-US',
+    same ? { weekday: 'short', month: 'short', day: 'numeric', timeZone } : { month: 'short', day: 'numeric', year: 'numeric', timeZone },
+  )
+  return day + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone })
+}
+
+export function LocalCallWhen({ iso }: { iso: string | null | undefined }) {
+  const hydrated = useHydrated()
+  const text = callWhenText(iso, hydrated ? undefined : 'UTC')
+  return text ? <time dateTime={iso ?? undefined}>{text}</time> : null
+}
+
+/** "Nov 4, 2026", always with the year (apCxDay). */
+export function usDateText(iso: string | null | undefined, timeZone?: string): string {
+  const d = parse(iso)
+  if (!d) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone })
+}
+
+/** "3h ago" in the browser (the current dashboard's apAgo); the day while the server draws the page. */
+export function Ago({ iso }: { iso: string | null | undefined }) {
+  const hydrated = useHydrated()
+  if (!iso) return null
+  return <time dateTime={iso}>{hydrated ? agoText(iso) : usDateText(iso, 'UTC')}</time>
 }
