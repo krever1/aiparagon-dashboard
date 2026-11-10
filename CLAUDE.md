@@ -26,7 +26,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   (PR #4) and released to production on Nov 10 (PR #5). See Catalyst below.
 - Part 4 (Nov 10, branch `catalyst/proposal-files`): What should change? on a lead's documents, the client proposal
   (write, read, edit, Save as PDF), the charts in the proposal and the meeting prep, and file uploads on a lead's Files
-  tab. Uploads need Storage rules for signed-in teammates first (see Gotchas). See Catalyst below.
+  tab. The Storage rules uploads need were added on Nov 10 (see Gotchas). See Catalyst below.
 - Not ported from a lead's page, on purpose: comments on a document (only in Full text there; six ever, all resolved)
   and the Edit lead panel (broken in the current dashboard: it saves a column e1_leads does not have).
 - Next: Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
@@ -38,7 +38,9 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   aiparagon-dashboard-git-dev-kaesers-projects.vercel.app.
 - Access: Standard Protection, as on the aiparagon project. Previews and per-deployment URLs need a Vercel login; the
   production domain aiparagon-dashboard.vercel.app is open, guarded by the app's own sign-in.
-- Not set up yet: branch protection on `main`.
+- Not set up yet: branch protection on `main` (Settings, Rules, Rulesets: block force pushes and deletions, require a
+  pull request and the CI check `check`). Rules on a private repo need a paid GitHub plan; there is no API for them in
+  these sessions, so Kser sets them in GitHub.
 
 | Product | Pages | Status |
 |---|---|---|
@@ -315,10 +317,11 @@ signed-in teammate's token, as the current dashboard's do.
   page to say it is checking back (`html[data-check-back="on"]`, set by `useCheckBack`).
 - An `apAgo`-style "3h ago" changes with the clock, so it is drawn only once the page has hydrated (`Ago`); the server
   draws the date.
-- Storage's rules for the lead-files bucket cover the public key only (the current dashboard uploads with it). Here an
-  upload address is signed as the teammate, and a delete goes as the teammate, so the bucket needs rules for signed-in
-  team accounts (insert, select and delete, checked on the email's domain as catalyst_sources' rules are). Until they
-  are in, an upload says "Storage turned the upload away" and a delete leaves the stored file behind.
+- Storage's lead-files bucket has rules for the public key (the current dashboard uploads with it) and, since Nov 10
+  (migration lead_files_storage_team_rules), for signed-in team accounts: insert, select and delete, checked on the
+  email's domain as catalyst_sources' rules are. Here an upload address is signed, and a file removed, as the teammate,
+  so without those rules an upload says "Storage turned the upload away" and a delete leaves the stored file behind.
+  Checked with a rolled-back insert as a team account (allowed) and an outsider (refused).
 - React's `autoFocus` does nothing inside the dialog (it focuses before the dialog's own effect opens it): focus in an
   effect of the dialog's content instead (`change-ask.tsx`).
 - The proposal is drawn once and left alone while it is edited in place (React never redraws text a teammate is
