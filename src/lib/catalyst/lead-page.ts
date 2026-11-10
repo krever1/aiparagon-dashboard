@@ -1,9 +1,11 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { type Chart, checkCharts } from './charts'
 import { type Lead, type OutRow, asObj, buildLeads, docOf, leadEmails } from './leads'
 import { findLead, readCatalyst, toView } from './load'
 import { STAGES, type StageKey, type StageNames } from './stages'
 import { driveId, googleDocId } from './doc-format'
+import { type ProposalData, loadProposal } from './proposal-run'
 import { type LeadView, viewStage } from './view'
 
 // A lead's own page: its documents (with their text), files and HubSpot contact, read as the signed-in teammate.
@@ -22,6 +24,8 @@ export type E1DocKey = (typeof E1_DOCS)[number]['key']
 export type E1Doc = {
   key: E1DocKey
   n: number
+  /** the agent that writes it (What should change? asks are saved by agent) */
+  agent: string
   label: string
   short: string
   done: boolean
@@ -48,6 +52,8 @@ export type PrepDoc = {
   at: string | null
   title: string
   md: string | null
+  /** the charts drawn from the document's own numbers (v138), checked */
+  charts: Chart[]
 }
 
 export type FileRow = {
@@ -86,8 +92,14 @@ export type LeadPageData =
       prep: Record<'onboarding' | 'review', PrepDoc | null>
       files: { rows: FileRow[]; error: boolean }
       hubspot: { ok: boolean; contact: HubspotContact | null }
+      /** What should change? asks on each document of this lead, by agent (v125For) */
+      asks: Record<string, number>
+      proposal: ProposalData
       error: string | null
     }
+
+/** The documents a teammate can ask changes on: the five older ones and the client proposal. */
+export const ASK_AGENTS = ['lead_research', 'interview_script', 'anonymizer', 'discovery_call', 'growth_plan', 'client_proposal'] as const
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim())
 
@@ -132,7 +144,8 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
   })
   const ids = [...docs0.map((x) => x.out?.id), ...prep0.map((x) => x.doc?.out?.id)].filter((x): x is string => !!x)
 
-  const [texts, files, hs] = await Promise.all([
+  const askIds = [...new Set(emails.map((e) => e.toLowerCase()))].flatMap((e) => ASK_AGENTS.map((a) => e + ':' + a))
+  const [texts, files, hs, asked, proposal] = await Promise.all([
     ids.length
       ? supabase.from('agent_outputs').select('id,content_md').in('id', ids)
       : Promise.resolve({ data: [] as { id: string; content_md: string | null }[], error: null }),
@@ -143,7 +156,14 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('hubspot_contacts').select('*').in('email', emails).limit(1),
+    supabase.from('agent_feedback').select('target_id').eq('target_type', 'e1_document').in('target_id', askIds).limit(2000),
+    loadProposal(supabase, lead).catch(() => ({ view: null, template: null, run: null }) as ProposalData),
   ])
+  const asks: Record<string, number> = {}
+  for (const r of (asked.data ?? []) as { target_id: string }[]) {
+    const agent = String(r.target_id).split(':').pop() ?? ''
+    asks[agent] = (asks[agent] ?? 0) + 1
+  }
   const mdOf = new Map((texts.data ?? []).map((r) => [r.id, r.content_md]))
 
   const docs: E1Doc[] = docs0.map(({ spec, out, d, url, documentId }) => {
@@ -151,6 +171,7 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     return {
       key: spec.key,
       n: spec.n,
+      agent: spec.agent,
       label: spec.label,
       short: spec.short,
       done: !!(out || url),
@@ -178,6 +199,7 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
             at: doc.out.created_at ?? null,
             title: str(doc.out.title),
             md: (mdOf.get(doc.out.id) ?? '').trim() ? (mdOf.get(doc.out.id) as string) : null,
+            charts: checkCharts(asObj(doc.out.data).visuals),
           }
         : null,
     ]),
@@ -238,6 +260,8 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     prep,
     files: { rows, error: !!files.error },
     hubspot: { ok: !hs.error, contact },
+    asks,
+    proposal,
     error: read.error ?? (texts.error ? 'Couldn’t load the documents’ text. ' + texts.error.message : null),
   }
 }

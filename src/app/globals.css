@@ -164,3 +164,310 @@ body {
   background: var(--color-sunk);
   font-weight: 600;
 }
+
+/* ===== the client proposal, as the client sees it (the current dashboard's v132 document), in the template's brand:
+   --b1 main color, --b2 accent, --bt text, --bs the chips' tint, --bh heading font, --bb body font (brandVars) ===== */
+.prop-doc {
+  --b1: #1c2647;
+  --b2: #b08a3e;
+  --bt: #1d2433;
+  --bs: #f2f4f8;
+  --bh: "Helvetica Neue", Arial, sans-serif;
+  --bb: Georgia, "Times New Roman", serif;
+  background: #e9ecf1;
+  border-radius: 12px;
+  padding: 26px;
+  display: grid;
+  gap: 22px;
+  justify-items: center;
+}
+.prop-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
+  border-radius: 3px;
+  padding: 64px 72px;
+  color: var(--bt);
+  font: 400 15.5px/1.65 var(--bb);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.prop-cover {
+  min-height: min(1060px, calc(100vh - 130px));
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding-top: 70px;
+}
+.prop-cover .lg {
+  height: 62px;
+  max-width: 320px;
+  object-fit: contain;
+  object-position: left center;
+  align-self: flex-start;
+}
+.prop-cover .firm {
+  font: 700 22px/1.2 var(--bh);
+  color: var(--b1);
+}
+.prop-cover .kick {
+  margin-top: auto;
+  font: 700 13px/1.4 var(--bh);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--b2);
+}
+.prop-cover h1 {
+  margin: 12px 0 0;
+  font: 700 46px/1.1 var(--bh);
+  color: var(--b1);
+  letter-spacing: -0.01em;
+}
+.prop-cover .sub {
+  margin: 14px 0 0;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--bt);
+}
+.prop-cover .rule {
+  height: 6px;
+  width: 120px;
+  background: var(--b2);
+  border-radius: 3px;
+  margin: 30px 0 22px;
+}
+.prop-cover .meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 18px;
+  font-size: 15px;
+}
+.prop-cover .meta b {
+  font: 600 12px/1.9 var(--bh);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--b1);
+}
+.prop-cover .foot {
+  margin: 46px 0 26px;
+  font-size: 12.5px;
+  color: #667085;
+}
+.prop-cover .band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14px;
+  background: linear-gradient(90deg, var(--b1) 0 72%, var(--b2) 72% 100%);
+}
+.prop-sec + .prop-sec {
+  margin-top: 34px;
+}
+.prop-sec .hd {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.prop-sec .no {
+  font: 700 14px/1 var(--bh);
+  color: var(--b2);
+  letter-spacing: 0.06em;
+  flex: none;
+}
+.prop-sec h2 {
+  margin: 0;
+  font: 700 25px/1.25 var(--bh);
+  color: var(--b1);
+}
+.prop-sec .src {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 9px 0 12px;
+}
+.prop-sec .src span {
+  font: 600 11.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bs);
+  color: var(--b1);
+}
+.prop-sec .bd p {
+  margin: 0 0 12px;
+}
+.prop-sec .bd ul,
+.prop-sec .bd ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.prop-sec .bd ul {
+  list-style: disc;
+}
+.prop-sec .bd ol {
+  list-style: decimal;
+}
+.prop-sec .bd li {
+  margin: 5px 0;
+}
+.prop-sec .bd li::marker {
+  color: var(--b2);
+}
+.prop-sec .bd h3 {
+  margin: 16px 0 6px;
+  font: 700 17px/1.3 var(--bh);
+  color: var(--b1);
+}
+.prop-sec .bd strong {
+  color: var(--b1);
+  font-weight: 700;
+}
+.prop-sec .bd em {
+  font-style: italic;
+}
+.prop-fill {
+  background: #fff3d6;
+  color: #7a5200;
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.prop-pfoot {
+  margin-top: 46px;
+  padding-top: 14px;
+  border-top: 2px solid var(--b2);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: #667085;
+}
+.prop-doc.edit [contenteditable="true"] {
+  outline: 1.5px dashed #c9a24a;
+  outline-offset: 5px;
+  border-radius: 4px;
+}
+.prop-doc.edit [contenteditable="true"]:focus {
+  outline-style: solid;
+  background: #fffdf6;
+}
+@media (max-width: 760px) {
+  .prop-doc {
+    padding: 10px;
+  }
+  .prop-page {
+    padding: 30px 22px;
+  }
+  .prop-cover {
+    min-height: auto;
+  }
+  .prop-cover h1 {
+    font-size: 32px;
+  }
+}
+
+/* ===== charts in a document (v138), drawn from its own numbers; on a phone the table stands in for the drawing.
+   The figure holds the table (placed off screen for screen readers), so it never widens a page that scrolls. ===== */
+.chart-fig {
+  position: relative;
+  margin: 16px 0 4px;
+  padding: 12px 14px 10px;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  background: #fff;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.chart-fig figcaption {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #1d2433;
+}
+.prop-doc .chart-fig {
+  font-family: var(--bh);
+}
+.prop-doc .chart-fig figcaption {
+  font-family: var(--bh);
+  color: var(--bt, #1d2433);
+}
+.chart-fig svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 600px;
+  font-family: inherit;
+}
+.chart-fig .mk {
+  transition: opacity 0.12s;
+}
+.chart-fig .mk:hover {
+  opacity: 0.78;
+}
+.chart-tbl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 600px) {
+  .chart-fig svg {
+    display: none;
+  }
+  .chart-tbl {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    white-space: normal;
+  }
+  .chart-tbl table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .chart-tbl caption {
+    display: none;
+  }
+  .chart-tbl th,
+  .chart-tbl td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #eaecf0;
+    text-align: left;
+    font-weight: 400;
+    color: #344054;
+  }
+  .chart-tbl thead th {
+    font-size: 12px;
+    font-weight: 700;
+    color: #667085;
+  }
+  .chart-tbl td:last-child,
+  .chart-tbl th:last-child {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* the client proposal's "Writing…" bar */
+@keyframes prop-bar {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
