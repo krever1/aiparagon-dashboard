@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// The tests build and start the app against a stand-in for Supabase Auth (tests/stub/supabase-auth.mjs), so they
-// never touch the real project. NEXT_PUBLIC_ values are built into the page, so the build happens here, with the
-// stand-in's address.
+// The tests build and start the app against a stand-in for Supabase (tests/stub/supabase.mjs: sign-in and the data
+// API), so they never touch the real project. NEXT_PUBLIC_ values are built into the page, so the build happens here,
+// with the stand-in's address.
 const PORT = 3100
 const STUB = 54399
 
@@ -15,7 +15,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'off' },
   webServer: [
     {
-      command: 'node tests/stub/supabase-auth.mjs',
+      command: 'node tests/stub/supabase.mjs',
       url: `http://127.0.0.1:${STUB}/health`,
       env: { STUB_PORT: String(STUB) },
       reuseExistingServer: false,
@@ -29,6 +29,8 @@ export default defineConfig({
         NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${STUB}`,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: 'stub-anon-key',
         NEXT_PUBLIC_LEGACY_DASHBOARD_URL: 'https://aiparagon.vercel.app/dashboard',
+        // n8n's webhooks, answered by the same stand-in (read on the server at run time)
+        N8N_WEBHOOK_URL: `http://127.0.0.1:${STUB}/webhook`,
         NEXT_TELEMETRY_DISABLED: '1',
       },
     },

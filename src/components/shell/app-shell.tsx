@@ -1,33 +1,37 @@
 'use client'
 
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, Suspense, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { ChevronRight, Menu, X } from 'lucide-react'
 import { Icon } from '@/components/icon'
+import { Toaster } from '@/components/ui/toast'
 import { pageForPath, productOf } from '@/lib/nav'
 import { Sidebar } from './sidebar'
 
 /**
  * The frame every signed-in page sits in: the sidebar (a drawer on a phone) and the top bar, which says where you
- * are (product, then page).
+ * are (product, then page). Both read the address inside <Suspense>: a page whose address is only known at request
+ * time (a lead's page) still gets a static shell, with the sidebar closed until the address is known. Every other
+ * page's address is known when it is built, so it never shows the fallback.
  */
 export function AppShell({ userCard, children }: { userCard: ReactNode; children: ReactNode }) {
   const [drawer, setDrawer] = useState(false)
-  const pathname = usePathname()
-  const page = pageForPath(pathname)
-  const product = page ? productOf(page.product) : null
+
+  const sidebar = (onNavigate?: () => void) => (
+    <Suspense fallback={<Sidebar userCard={userCard} pathname={null} onNavigate={onNavigate} />}>
+      <RoutedSidebar userCard={userCard} onNavigate={onNavigate} />
+    </Suspense>
+  )
 
   return (
     <div className="min-h-screen min-[900px]:grid min-[900px]:grid-cols-[252px_minmax(0,1fr)]">
       {/* sidebar: in the page from 900px, a drawer below */}
-      <div className="sticky top-0 hidden h-screen border-r border-line min-[900px]:block">
-        <Sidebar userCard={userCard} />
-      </div>
+      <div className="sticky top-0 hidden h-screen border-r border-line min-[900px]:block">{sidebar()}</div>
       {drawer ? (
         <div className="fixed inset-0 z-40 min-[900px]:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <button type="button" aria-label="Close the menu" className="absolute inset-0 bg-[rgba(14,18,34,.36)]" onClick={() => setDrawer(false)} />
           <div className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] border-r border-line shadow-pop">
-            <Sidebar userCard={userCard} onNavigate={() => setDrawer(false)} />
+            {sidebar(() => setDrawer(false))}
             <button
               type="button"
               aria-label="Close the menu"
@@ -50,21 +54,36 @@ export function AppShell({ userCard, children }: { userCard: ReactNode; children
           >
             <Menu size={20} aria-hidden="true" />
           </button>
-          {page && product ? (
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[14px]">
-              <Icon name={product.icon} size={17} className="shrink-0 text-accent" />
-              <span className="hidden text-ink-2 sm:inline">{product.name}</span>
-              <ChevronRight size={14} aria-hidden="true" className="hidden shrink-0 text-ink-3 sm:inline" />
-              <span className="truncate font-semibold text-ink" aria-current="page">
-                {page.label}
-              </span>
-            </nav>
-          ) : null}
+          <Suspense fallback={null}>
+            <Crumb />
+          </Suspense>
         </header>
         <main id="main" className="w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-8">
           {children}
         </main>
+        <Toaster />
       </div>
     </div>
+  )
+}
+
+function RoutedSidebar({ userCard, onNavigate }: { userCard: ReactNode; onNavigate?: () => void }) {
+  return <Sidebar userCard={userCard} pathname={usePathname()} onNavigate={onNavigate} />
+}
+
+/** The top bar's "Catalyst › Lead pipeline". */
+function Crumb() {
+  const page = pageForPath(usePathname())
+  if (!page) return null
+  const product = productOf(page.product)
+  return (
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[14px]">
+      <Icon name={product.icon} size={17} className="shrink-0 text-accent" />
+      <span className="hidden text-ink-2 sm:inline">{product.name}</span>
+      <ChevronRight size={14} aria-hidden="true" className="hidden shrink-0 text-ink-3 sm:inline" />
+      <span className="truncate font-semibold text-ink" aria-current="page">
+        {page.label}
+      </span>
+    </nav>
   )
 }
