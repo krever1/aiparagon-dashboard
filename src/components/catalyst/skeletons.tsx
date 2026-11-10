@@ -38,3 +38,27 @@ export function LeadSkeleton() {
     </div>
   )
 }
+
+/** A card of rows: HubSpot contacts, Calls. */
+export function ListSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="space-y-3 rounded-lg border border-line bg-panel p-5">
+      <div className="flex items-center gap-2.5">
+        <Bar w="90px" h={16} />
+        <Bar w="36px" h={16} />
+        <span className="ml-auto block h-9 w-[240px] animate-pulse rounded-sm bg-line" />
+      </div>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 border-t border-line pt-3">
+          <span className="block h-5 w-5 animate-pulse rounded-full bg-line" />
+          <div className="flex-1 space-y-1.5">
+            <Bar w="38%" />
+            <Bar w="24%" h={11} />
+          </div>
+          <Bar w="110px" h={28} />
+        </div>
+      ))}
+      <span className="sr-only">{label}</span>
+    </div>
+  )
+}

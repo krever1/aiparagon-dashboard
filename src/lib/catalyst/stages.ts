@@ -94,6 +94,12 @@ export function stagesNamed(names: StageNames = {}): Stage[] {
   return STAGE_LIST.map((s) => ({ ...s, name: cleanName(names[s.key]) || s.defaultName }))
 }
 
+/** The stage a new call moves a lead to: the next one; in Client review, the review again. */
+export function nextStageKey(cur: StageKey): StageKey {
+  const i = STAGES.findIndex((s) => s.key === cur)
+  return i >= 0 && i < STAGES.length - 1 ? STAGES[i + 1].key : cur
+}
+
 export function stageOfKey(key: StageKey, names: StageNames = {}): Stage {
   return stagesNamed(names).find((s) => s.key === key) as Stage
 }

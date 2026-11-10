@@ -1,17 +1,19 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight } from 'lucide-react'
+import { type LeadCallRow, leadCallsFor } from '@/app/(app)/lead-pipeline/actions'
 import { PageHeader } from '@/components/moving-page'
-import { LocalDate, LocalDateTime } from '@/components/ui/local-date'
+import { LocalDate, LocalDateTime, LocalUsDay } from '@/components/ui/local-date'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import type { E1Doc, FileRow, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
 import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
 import { type LeadTab, hasDoc, leadTab, safeUrl } from '@/lib/catalyst/view'
 import { pageBySlug } from '@/lib/nav'
-import { Banner, ErrorNotice, StripTile, type TabDef, Tabs } from './bits'
+import { Banner, ErrorNotice, StageDot, StripTile, type TabDef, Tabs } from './bits'
+import { CallQuestion } from './call-question'
 import { useCheckBack } from './check-back'
 import { DocReader } from './doc-reader'
 import { type Ask, StageQuestion, stillWriting } from './stage-question'
@@ -58,6 +60,21 @@ export function LeadView({ data }: { data: Found }) {
   }
   tabs.push({ key: 'files', label: 'Files', count: data.files.rows.length })
   if (data.hubspot.ok) tabs.push({ key: 'hubspot', label: 'HubSpot' })
+
+  // the calls recorded in Fathom with this lead, read once the page is up (the count shows once they are in)
+  const [calls, setCalls] = useState<{ rows: LeadCallRow[]; error: string } | null>(null)
+  const [callsRead, setCallsRead] = useState(0)
+  const [fileIt, setFileIt] = useState<LeadCallRow | null>(null)
+  useEffect(() => {
+    let live = true
+    leadCallsFor(lead.id)
+      .then((r) => live && setCalls(r.ok ? { rows: r.calls, error: r.error } : { rows: [], error: r.error }))
+      .catch(() => live && setCalls({ rows: [], error: 'Could not reach the dashboard.' }))
+    return () => {
+      live = false
+    }
+  }, [lead.id, callsRead])
+  tabs.push({ key: 'calls', label: 'Calls', count: calls ? calls.rows.length || '' : '' })
 
   const home = STAGE_TAB[data.stage]
   // the address's tab when this lead has it, else the tab of the stage the lead is in
@@ -154,6 +171,8 @@ export function LeadView({ data }: { data: Found }) {
       ) : null}
       {tab === 'files' ? <FilesPanel rows={data.files.rows} error={data.files.error} /> : null}
       {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} /> : null}
+      {tab === 'calls' ? <CallsPanel name={lead.name} calls={calls} stages={byKey} onFile={setFileIt} /> : null}
+      {fileIt ? <CallQuestion lead={lead} stages={stages} call={fileIt} onClose={() => setFileIt(null)} onDone={() => setCallsRead((n) => n + 1)} /> : null}
       {ask ? <StageQuestion key={ask.stage} ask={ask} stages={stages} onClose={() => setAsk(null)} /> : null}
     </>
   )
@@ -476,6 +495,69 @@ function HubspotPanel({ c }: { c: Found['hubspot']['contact'] }) {
           </div>
         ) : null}
       </dl>
+    </Panel>
+  )
+}
+
+/** The lead's Calls tab (v137LeadCalls): each call recorded with it, and the stage it is filed under. */
+function CallsPanel({
+  name,
+  calls,
+  stages,
+  onFile,
+}: {
+  name: string
+  calls: { rows: LeadCallRow[]; error: string } | null
+  stages: Record<StageKey, Stage>
+  onFile: (c: LeadCallRow) => void
+}) {
+  return (
+    <Panel id="calls" title="Calls" extra={calls ? <span className="text-[13px] font-normal text-ink-3">{calls.rows.length}</span> : null}>
+      {!calls ? (
+        <p role="status" className="py-4 text-[14px] text-ink-3">
+          Reading the calls from Fathom…
+        </p>
+      ) : calls.error && !calls.rows.length ? (
+        <p className="py-4 text-[14px] text-ink-3">Could not read the calls from Fathom: {calls.error}</p>
+      ) : !calls.rows.length ? (
+        <p className="py-4 text-[14px] text-ink-3">
+          No recorded calls with {name} yet. A call recorded in Fathom with {name}’s email shows up here, and Catalyst asks to run the next stage with it.
+        </p>
+      ) : (
+        <>
+          <p className="mb-3 text-[14px] text-ink-2">
+            Calls recorded in Fathom with {name}. Each is filed under the stage {name} was in, and the stages after it read its transcript.
+          </p>
+          <ul className="divide-y divide-line" data-testid="lead-calls">
+            {calls.rows.map((c) => {
+              const st = c.stage && c.stage !== 'none' && isStageKey(c.stage) ? stages[c.stage] : null
+              return (
+                <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+                  <StageDot color={st ? st.color : '#C7CDD6'} />
+                  <span className="min-w-[180px] flex-1">
+                    <b className="block text-[14.5px] font-semibold text-ink">{c.title || 'A call'}</b>
+                    <small className="text-[13px] text-ink-3">
+                      <LocalUsDay iso={c.start} />
+                      {c.minutes ? ` · ${c.minutes} min` : ''}
+                    </small>
+                  </span>
+                  <span className={`rounded-full px-2.5 py-1 text-[12.5px] ${st ? 'bg-sunk text-ink-2' : 'bg-warn-soft text-warn'}`}>
+                    {st ? 'Filed under ' + st.name : c.stage === 'none' ? 'Set aside' : 'Not filed yet'}
+                  </span>
+                  {c.stage ? null : (
+                    <button type="button" className={btn} onClick={() => onFile(c)}>
+                      File it
+                    </button>
+                  )}
+                  <Link href={`/calls?call=${encodeURIComponent(c.id)}&seg=post`} className={btn}>
+                    Open on Calls
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
     </Panel>
   )
 }

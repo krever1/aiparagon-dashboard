@@ -1,6 +1,6 @@
 # AI Paragon internal dashboard (Next.js)
 
-Brief for Claude sessions in this repo. Last reviewed 2026-11-09.
+Brief for Claude sessions in this repo. Last reviewed 2026-11-10.
 
 ## What this is
 The AI Paragon Consulting Group team workspace: Touchpoint (home and tasks), Catalyst (clients and meetings),
@@ -12,7 +12,7 @@ until every page has moved; then aiparagon.vercel.app/dashboard forwards here.
 One repo per project (Kser, Nov 9): this repo is the internal dashboard only. The other projects (care portal, voice
 agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon until they get their own repos.
 
-## Where it stands (as of 2026-11-09)
+## Where it stands (as of 2026-11-10)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
   every current page address. A page not ported yet opens a card that links to it in the current dashboard.
 - Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
@@ -21,8 +21,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   should change?, file uploads. `dev` goes to `main` once parts 1 and 2 are in, so production never has a board that
   cannot run anything.
 - Part 1 (Nov 9, branch `catalyst/pipeline-read`) and part 2 (Nov 9, branch `catalyst/pipeline-runs`, on top of part
-  1): see Catalyst below.
-- Next: Catalyst parts 2 to 4, then Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
+  1): see Catalyst below. Merged into `dev` (PR #2) and released to production on Nov 10 (PR #3, `dev` into `main`).
+- Part 3 (Nov 10, branch `catalyst/hubspot-calls`): HubSpot contacts, Calls and a lead's Calls tab. See Catalyst below.
+- Next: Catalyst part 4, then Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
+- Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
+  run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
   custom domain can come later). Vercel project aiparagon-dashboard in Kaeser's projects, framework Next.js, the two
   Supabase values set for Production, Preview and Development. Production builds from `main`; `dev` deploys to
@@ -34,8 +37,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Product | Pages | Status |
 |---|---|---|
 | Touchpoint | Today, Approvals, Tasks | current dashboard |
-| Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here |
-| Catalyst | HubSpot contacts, Calls | current dashboard |
+| Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
+| Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (part 3) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Overview, Intel Tracker, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
@@ -150,6 +153,41 @@ signed-in teammate's token, as the current dashboard's do.
   list says 0 shown, not 1, when nothing matches; a run in progress is kept for the team and survives a reload (the
   current dashboard kept it in one tab's memory); a move leaves the anonymizer's shared placeholder row alone; New run
   runs show on the board.
+- HubSpot contacts (part 3, `hubspot.ts`, `hubspot-view.tsx`, renderHubspot): the synced contacts, newest sync first,
+  with search; Run Catalyst opens New run prefilled from the contact (`NewRunDialog` takes a `prefill`); Follow
+  (`follow.ts`, `follow-dialog.tsx`, `followCompany`) puts the company on the watchlist (`competitors`, category
+  ads_strategist) the Intel Tracker and the Ad Strategist read; Open lead shows when the contact's email is an
+  e1_leads row (never the anonymizer's placeholder row).
+- Calls (part 3, `calls.ts` pure rules, `calls-load.ts`, `fathom.ts`, `src/components/calls`, `src/app/(app)/calls`):
+  - Fathom is read live through Dashboard · Fathom Proxy from the server (`ftStatus`, `ftList` a page at a time with a
+    cursor, `ftTranscript`, `ftAccess` for the share links, `ftConnect`, `ftDisconnect`). Not connected, or the list
+    failing, shows the Set up (or Connection) tab with the key form.
+  - The page: the strip, All / Clients / Internal, the type buttons (`catButtons`, v121), search, folders and tags, and
+    the open call. The tab, the type button, the call and its section are the address's (`?tab= ?type= ?call= ?seg=`),
+    so a lead's "Open on Calls" (`/calls?call=<id>&seg=post`) lands on the call's post-call actions.
+  - A call's type is the team's (`call_meta.meeting_type`), else the AI's pick on its post-call actions; the team's own
+    types are `ai_settings` `call_types` (names). Its folder (`folderOf`): the folder set, the client, the Catalyst
+    lead's company, the guests' company from their email domain, else AI Paragon (internal) or No client yet.
+  - Edits (Edit details, the type, HubSpot results) go to `call_meta` (update, else insert) with `updated_by`.
+  - Post-call actions (`post-call.tsx`): the newest `call_outputs` row per call; Write post-call actions and Write
+    again start Meetings · Post-call Actions (`call-actions`) and the page checks `call_outputs` every 5 seconds for 4
+    minutes; ticks write the task's `done`; Share to Slack (Integrations · Slack Proxy) and Sync to HubSpot (Meetings ·
+    Call to HubSpot, `crmBody`) as the current dashboard words them; Run the assessment from this call opens New run
+    with the transcript; Auto for new calls is `ai_settings` `call_auto_actions`.
+  - The page checks for new calls every minute (`router.refresh()`, which reads the page's data again) and on coming
+    back to the tab, and says "New call from Fathom: …".
+- A lead's Calls tab (`leadCallsFor`, `callsOfLead`): every recorded call with the lead (set-aside ones too), filed
+  or not; File it opens the new-transcript question (`call-question.tsx`, `answerCall`, v137AskCall): Not about this
+  client (filed as none), Just file it (under the lead's stage), Move and run it (filed, the lead moved to the next
+  stage, that stage run with the call; in Client review, the review again).
+- Changed on purpose in part 3 (reported to Kser): no Integrations switcher above HubSpot contacts and Calls (the
+  sidebar has them under Catalyst); Use as content source and Send to Asana are not here yet (Content Transformation
+  and Tasks are still in the current dashboard; the team-wide Asana Proxy was never published); Refresh from Fathom and
+  Key ending sit on the banner line; a HubSpot search with no match says so (the old page said no contacts were
+  synced); Follow also saves the website it asks for and who added the company; the Assessment card on a discovery
+  call says "Next: the Assessment" (the old one said the Growth Plan over the same button); due dates no longer show the
+  day before in US time zones; a call's lead box counts the six stages; File it on a lead's page files the call under
+  that lead (the old one picked the first lead among the guests).
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -177,8 +215,13 @@ signed-in teammate's token, as the current dashboard's do.
   canned answer), with made-up accounts (qa.teammate@aiparagonconsulting.com, outsider@example.org) and made-up leads
   at example.com (`fixtures.mjs` says where each one sits), so the tests never touch the real project.
   `npm run test:e2e` builds with the stand-in's address (NEXT_PUBLIC_ values are built in).
-- `catalyst-logic.spec.ts` checks the lead rules without a browser; `catalyst.spec.ts` the pages. Helpers in
-  `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`.
+- `catalyst-logic.spec.ts` checks the lead, call and follow rules without a browser; `catalyst.spec.ts` and
+  `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts` HubSpot contacts; `calls.spec.ts` Calls and a lead's
+  Calls tab. Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+- The Fathom stand-in keeps the team's key (`/__fathom`, `stubFathom({connected: false})` disconnects it), lists two
+  pages (`fathomCalls()`, then `fathomOlderCalls()` for cursor `page2`), answers `access` with 'team' for a share token
+  containing TeamOnly, and takes connect (a key starting "bad" is turned away) and disconnect. Slack, HubSpot sync
+  and post-call actions answer as their workflows do; a test writes the `call_outputs` row the workflow would save.
 - Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
   `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
   no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
@@ -210,3 +253,10 @@ signed-in teammate's token, as the current dashboard's do.
   first `dev` build failed after compiling ("No Output Directory named public"). It is set to Next.js now; keep it so.
 - Twice on Nov 9 a push that changed `.github/workflows/ci.yml` started a CI run with no jobs (failed in under a
   minute); Re-run started it. Other pushes start CI normally.
+- React's lint (`react-hooks`) refuses a ref written during render and a setState called straight from an effect: keep
+  refs in step inside an effect, and read data in an effect with a `live` flag and `.then` (as `stage-question.tsx`
+  and the lead page's Calls tab do).
+- A card drawn on the server is on screen before the page's timers are set: a test that moves the clock waits for the
+  page to say it is checking back (`html[data-check-back="on"]`, set by `useCheckBack`).
+- An `apAgo`-style "3h ago" changes with the clock, so it is drawn only once the page has hydrated (`Ago`); the server
+  draws the date.
