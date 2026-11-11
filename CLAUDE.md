@@ -45,7 +45,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   editor); 3. results (Ad Testing, Landing pages); 4. Content Transformation, with the creation kit it shares; 5.
   Marketing Generation. Part 1 comes as two PRs: 1a the Intel Tracker (Nov 11, branch `pipeline/intel-tracker`, on top
   of the finishing PR, PR #12), 1b the Overview and the Market Intelligence Briefs (Nov 11, branch
-  `pipeline/briefs-overview`, on top of 1a). With 1b, part 1 is done. See Pipeline below.
+  `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. See Pipeline below.
 - Next: Pipeline parts 2 to 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
