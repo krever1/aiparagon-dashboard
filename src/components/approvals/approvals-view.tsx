@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock, Copy, Eye, MessageSquare, PenLine, Repeat2 } from 'lucide-react'
 import { approveItems, approveReply, rejectReply, undoItems } from '@/app/(app)/approvals/actions'
@@ -24,6 +25,13 @@ const btn =
 const ghost = 'inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[13px] font-semibold text-ink-2 hover:bg-sunk hover:text-ink disabled:opacity-60'
 const primary =
   'inline-flex items-center gap-1.5 rounded-sm bg-action px-2.5 py-1.5 text-[13px] font-semibold text-action-ink hover:bg-action-hover disabled:opacity-60'
+
+/** What the message says once they are done: comments are resolved, the rest approved (nwApprove). */
+function doneText(done: string[]): string {
+  const n = done.length
+  if (done.every((k) => k.startsWith('cmt:'))) return n === 1 ? 'Comment resolved' : n + ' comments resolved'
+  return n === 1 ? 'Approved' : 'Approved ' + n
+}
 
 /** The tab in the address (?tab=replies), without a new history entry. */
 function writeTab(t: TabKey) {
@@ -86,7 +94,7 @@ export function ApprovalsView({ data }: { data: ApprovalsData }) {
     setBusy(false)
     drop(keys)
     if (!r.ok) toast('Could not approve that: ' + r.error, 'warn')
-    if (r.done.length) toast(r.done.length === 1 ? 'Approved' : 'Approved ' + r.done.length, 'ok', { label: 'Undo', run: () => void undo(r.done) })
+    if (r.done.length) toast(doneText(r.done), 'ok', { label: 'Undo', run: () => void undo(r.done) })
   }
 
   const unskip = (keys: string[]) => removeSkips(keys)
@@ -398,11 +406,16 @@ function Row({
             <Eye size={16} aria-hidden="true" />
             Review
           </button>
-        ) : (
-          <a href={review.href} className={btn} title={review.out ? 'Opens in the current dashboard' : undefined}>
+        ) : review.out ? (
+          <a href={review.href} className={btn} title="Opens in the current dashboard">
             {review.label ? <ArrowRight size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
             {review.label ?? 'Review'}
           </a>
+        ) : (
+          <Link href={review.href} className={btn}>
+            {review.label ? <ArrowRight size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+            {review.label ?? 'Review'}
+          </Link>
         )}
         {x.approve ? (
           <button type="button" className={primary} disabled={busy} onClick={onApprove}>

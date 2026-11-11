@@ -1,14 +1,15 @@
 'use server'
 
 import { refresh } from 'next/cache'
-import { getCurrentUser } from '@/lib/auth'
+import { type CurrentUser, getCurrentUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { type Key, parseKey } from '@/lib/touchpoint/approvals'
 
-// What Approvals saves, as the signed-in teammate (nwApproveOne, nwUndo, nwReplyAct, apSetDraft): a brief's decision
-// in agent_feedback (brief_approval), an ad image's decision (ad_image_variant, by its file, which Marketing Generation
-// and Landing pages count), a reply's status in engagement_drafts with its row in agent_feedback (engagement_draft),
-// which AI settings lists and the Intel Tracker learns from once a reason is a rule.
+// What Approvals saves, as the signed-in teammate (nwApproveOne, nwUndo, nwReplyAct, apSetDraft, apResolveComment): a
+// brief's decision in agent_feedback (brief_approval), an ad image's decision (ad_image_variant, by its file, which
+// Marketing Generation and Landing pages count), a reply's status in engagement_drafts with its row in agent_feedback
+// (engagement_draft), which AI settings lists and the Intel Tracker learns from once a reason is a rule, and a
+// comment resolved (dashboard_comments, with who resolved it).
 
 const SIGNED_OUT = 'You are signed out. Sign in again.'
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -28,7 +29,20 @@ async function setReply(supabase: Supa, id: string, status: 'approved' | 'reject
   if (!data?.length) throw new Error('that reply is gone')
 }
 
-async function approveOne(supabase: Supa, k: Key, by: string) {
+/** A comment resolved, or open again; who resolved it by name, as the document's comments say it. */
+async function setComment(supabase: Supa, id: string, resolved: boolean, by: string) {
+  const { data, error } = await supabase
+    .from('dashboard_comments')
+    .update({ resolved, resolved_by: resolved ? by : null })
+    .eq('id', id)
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data?.length) throw new Error('that comment is gone')
+}
+
+async function approveOne(supabase: Supa, k: Key, user: CurrentUser) {
+  const by = user.email
+  if (k.kind === 'comment') return setComment(supabase, k.id, true, user.name || by)
   if (k.kind === 'brief') {
     await feedback(supabase, { agent: k.agent, target_type: 'brief_approval', target_id: k.runId, action: 'approved', feedback: 'Approved in Approvals', author: by })
     return
@@ -52,7 +66,7 @@ export async function approveItems(keys: string[]): Promise<Approved> {
     const k = parseKey(key)
     if (!k) return finish({ ok: false, done, error: 'that is not something to approve' })
     try {
-      await approveOne(supabase, k, user.email)
+      await approveOne(supabase, k, user)
       done.push(key)
     } catch (e) {
       return finish({ ok: false, done, error: e instanceof Error ? e.message : String(e) })
@@ -80,6 +94,8 @@ export async function undoItems(keys: string[]): Promise<Done> {
         await feedback(supabase, { agent: k.agent, target_type: 'brief_approval', target_id: k.runId, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
       } else if (k.kind === 'ad') {
         await feedback(supabase, { agent: 'low_ticket_content', target_type: 'ad_image_variant', target_id: k.file, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
+      } else if (k.kind === 'comment') {
+        await setComment(supabase, k.id, false, '')
       } else {
         await setReply(supabase, k.id, 'pending')
         await feedback(supabase, { agent: 'intel_tracker', target_type: 'engagement_draft', target_id: k.id, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
@@ -108,7 +124,7 @@ export async function approveReply(id: string, text: string): Promise<Approved> 
     }
   }
   try {
-    await approveOne(supabase, k, user.email)
+    await approveOne(supabase, k, user)
   } catch (e) {
     return finish({ ok: false, done: [], error: 'Could not approve that: ' + (e instanceof Error ? e.message : String(e)) })
   }

@@ -1,6 +1,8 @@
 // Approvals' rules (nwApprovalAll, nwApprovalsHtml and nwRowHtml as v117 and v127 left them): one list of everything
 // waiting for a person, the filter tabs and their counts, and what a tab shows. Pure: the page and the tests both use it.
 
+import { FOLLOW_UP, STAGES, type StageKey, stageOfKey } from '@/lib/catalyst/stages'
+import { type LeadView, leadHref, nextDocOf, waitsOnNext } from '@/lib/catalyst/view'
 import { legacyUrl, pageBySlug } from '@/lib/nav'
 
 export type Kind = 'brief' | 'ad' | 'draft' | 'reply' | 'lead' | 'comment' | 'failed'
@@ -177,6 +179,41 @@ export type ContentRequest = { id: string; title: string; status: string; error:
 export type ContentDraft = { id: string; title: string; created_at: string; data: Record<string, unknown> }
 /** A book a call or low-ticket campaign (agent_outputs, low_ticket_content): the newest row of a run, data read. */
 export type Campaign = { run_id: string; created_at: string; data: Record<string, unknown> }
+/** A lead waiting on its next document (see leadWaits). */
+export type LeadWait = { id: string; email: string; name: string; company: string; next: StageKey; updatedAt: string }
+/** An open comment (dashboard_comments): what it is about (target_key), who wrote it and what it says. */
+export type CommentRow = { id: string; target: string; author: string; body: string; createdAt: string }
+
+/** The leads on the board that wait on a person, newest first: not a weak fit, their next document not written, nothing
+ * being written for them (nwApprovalAll's leads, by the six stages). */
+export function leadWaits(leads: LeadView[]): LeadWait[] {
+  return leads
+    .filter(waitsOnNext)
+    .map((l) => ({ id: l.id, email: l.email, name: l.name, company: l.company, next: nextDocOf(l)!, updatedAt: l.updatedAt ?? '' }))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+/** The lead page's tab for a document's agent (the comment keys say e1:<email>:<agent>). */
+function tabOfAgent(agent: string): string | undefined {
+  if (agent === FOLLOW_UP.agent) return 'followup'
+  if (agent === 'client_proposal') return 'proposal'
+  return STAGES.find((s) => s.agent === agent && s.agent !== 'meeting_prep')?.key
+}
+
+/** Where a comment's Open goes: what it is about. A lead's document opens on the lead's page here (e1:<email>:<agent>),
+ * a brief on the briefs (brief:<run>), a campaign on Marketing Generation (funnel:<run>:<part>), in the current
+ * dashboard; anything else on the Intel Tracker there, where the current dashboard always sent it. */
+export function commentReview(target: string, leadIds: Record<string, string>, legacy: string): Review {
+  const at = (slug: string): Review => ({ kind: 'link', href: legacyUrl(legacy, pageBySlug(slug)), label: 'Open', out: true })
+  const p = str(target).split(':')
+  if (p[0] === 'e1') {
+    const id = leadIds[str(p[1]).trim().toLowerCase()]
+    return { kind: 'link', href: id ? leadHref(id, tabOfAgent(p.slice(2).join(':'))) : '/lead-pipeline', label: 'Open' }
+  }
+  if (p[0] === 'brief') return at('briefs')
+  if (p[0] === 'funnel') return at('marketing-generation')
+  return at('intel-tracker')
+}
 
 export type ApprovalInput = {
   intel: IntelBrief | null
@@ -196,6 +233,11 @@ export type ApprovalInput = {
   campaigns?: Campaign[]
   hooks?: Record<string, string[]>
   adDecisions?: Record<string, string>
+  /** the leads waiting on their next document, newest first (leadWaits) */
+  leads?: LeadWait[]
+  /** open comments, newest first, and each lead's page by its emails (lower case), for a comment on a lead's document */
+  comments?: CommentRow[]
+  leadIds?: Record<string, string>
   /** the current dashboard's address, where the briefs page still lives */
   legacy: string
   now: number
@@ -332,6 +374,35 @@ export function approvalItems(x: ApprovalInput): Item[] {
       reply: r,
     })
   }
+  // leads waiting on their next document: opened on their page, at that document's tab, where it runs
+  for (const l of x.leads ?? []) {
+    out.push({
+      key: 'lead:' + l.email.toLowerCase(),
+      kind: 'lead',
+      icon: 'users',
+      title: l.name + (l.company ? ' · ' + l.company : ''),
+      text: 'Next: ' + stageOfKey(l.next).doc,
+      tags: [{ text: 'Lead' }, { text: 'Catalyst' }],
+      approve: false,
+      review: { kind: 'link', href: leadHref(l.id, l.next), label: 'Open lead' },
+      when: l.updatedAt,
+    })
+  }
+  // open comments: resolved from the list, or opened where they were left
+  for (const c of x.comments ?? []) {
+    out.push({
+      key: 'cmt:' + c.id,
+      kind: 'comment',
+      icon: 'message',
+      title: 'Comment from ' + ((str(c.author) || 'someone').split('@')[0] || 'someone'),
+      text: c.body,
+      tags: [{ text: 'Comment' }, { day: c.createdAt }],
+      approve: true,
+      approveLabel: 'Resolve',
+      review: commentReview(c.target, x.leadIds ?? {}, x.legacy),
+      when: c.createdAt,
+    })
+  }
   return out
 }
 
@@ -428,6 +499,7 @@ export type Key =
   | { kind: 'brief'; agent: 'intel_tracker' | 'ad_strategist'; runId: string }
   | { kind: 'reply'; id: string }
   | { kind: 'ad'; runId: string; file: string }
+  | { kind: 'comment'; id: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const RUN = /^[\w.:-]{1,120}$/
@@ -442,6 +514,7 @@ export function parseKey(k: unknown): Key | null {
     return RUN.test(runId) ? { kind: 'brief', agent: p[1], runId } : null
   }
   if (p[0] === 'reply' && p.length === 2 && UUID.test(p[1])) return { kind: 'reply', id: p[1] }
+  if (p[0] === 'cmt' && p.length === 2 && UUID.test(p[1])) return { kind: 'comment', id: p[1] }
   // an ad image: its campaign's run, then its file (the decision's target_id, as nwApproveOne keeps it)
   if (p[0] === 'ad' && AD_RUN.test(p[1] ?? '')) {
     const file = p.slice(2).join(':')

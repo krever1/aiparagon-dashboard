@@ -1,8 +1,8 @@
 import 'server-only'
 import { type InboxData, loadInbox } from '@/lib/catalyst/inbox-load'
 import { loadPipeline } from '@/lib/catalyst/load'
-import { STAGES, type StageNames } from '@/lib/catalyst/stages'
-import { viewStage } from '@/lib/catalyst/view'
+import type { StageNames } from '@/lib/catalyst/stages'
+import { waitsOnNext } from '@/lib/catalyst/view'
 import { createClient } from '@/lib/supabase/server'
 import { type ApprovalsData, loadApprovals } from './approvals-load'
 import type { RunRow } from './today'
@@ -14,7 +14,7 @@ export type Signup = { id: string; who: string; page: string; at: string }
 
 export type TodayData = {
   approvals: ApprovalsData
-  /** leads, and those not a weak fit that are short of the last meeting stage; null when they could not be read */
+  /** leads, and those waiting on their next document (Approvals' Leads); null when they could not be read */
   leads: { count: number; next: number } | null
   /** live landing pages; null when they could not be read */
   live: number | null
@@ -30,13 +30,14 @@ export type TodayData = {
 }
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
-const LAST = STAGES[STAGES.length - 1].key
 
 export async function loadToday(): Promise<TodayData> {
   const supabase = await createClient()
+  // the board's leads, read once for Approvals' Leads, the Catalyst line and the new clients and transcripts
+  const pipelineP = loadPipeline().catch(() => null)
   const [approvals, pipeline, live, runs, su] = await Promise.all([
-    loadApprovals(),
-    loadPipeline().catch(() => null),
+    loadApprovals({ pipeline: pipelineP }),
+    pipelineP,
     supabase.from('landing_pages').select('id', { count: 'exact', head: true }).eq('status', 'live'),
     supabase.from('runs').select('agent,status,started_at,finished_at,run_date').order('started_at', { ascending: false, nullsFirst: false }).limit(4),
     supabase.from('lp_signups').select('id,name,email,page_id,created_at').order('created_at', { ascending: false }).limit(4),
@@ -46,10 +47,8 @@ export async function loadToday(): Promise<TodayData> {
   const now = Date.now()
   const inbox: InboxData = pipeline && !pipeline.error ? await loadInbox(pipeline.leads, now).catch(() => ({ items: [], leads: [] })) : { items: [], leads: [] }
 
-  const leads =
-    pipeline && !(pipeline.error && !pipeline.leads.length)
-      ? { count: pipeline.leads.length, next: pipeline.leads.filter((l) => l.fit !== 'Weak' && viewStage(l) !== LAST).length }
-      : null
+  // only from a whole read: without the documents every lead would look as if it had none
+  const leads = pipeline && !pipeline.error ? { count: pipeline.leads.length, next: pipeline.leads.filter(waitsOnNext).length } : null
 
   // the sign-ups' pages, for the name shown when a row is pointed at
   const rows = (su.data ?? []) as Record<string, unknown>[]

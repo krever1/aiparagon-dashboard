@@ -98,3 +98,24 @@ export function agoWords(iso: string, now = Date.now()): string {
   if (m < 2880) return 'yesterday'
   return Math.round(m / 1440) + ' days ago'
 }
+
+/** Take the tour (NW_TOUR): the current dashboard's first three steps (the first as v115 left it), and a fourth that is
+ * true here (the old one spoke of Ask, Ctrl K, G shortcuts and Customize, which this dashboard does not have). */
+export const TOUR: readonly { t: string; p: string }[] = [
+  {
+    t: 'Five products, one sidebar',
+    p: 'Touchpoint is home: today, approvals and tasks. Catalyst holds leads, contacts and calls (Engine 1), Canvas the client deliverables, Pipeline the content and ads (Engine 3), Atlas the knowledge and files. Click a name to open its pages.',
+  },
+  {
+    t: 'One place for every approval',
+    p: 'Briefs, ads and the replies the tracker drafts all wait in Approvals. Approve one at a time, or select several and approve them together. Undo is one click.',
+  },
+  {
+    t: 'Two ways to create',
+    p: 'Content Transformation starts from your own material. Marketing Generation starts from the briefs. Both show what they will use before you generate.',
+  },
+  {
+    t: 'Some pages are still moving over',
+    p: 'A page that has not moved here yet opens a card that links to it in the current dashboard. Both work on the same leads, briefs and approvals. The current dashboard has its own sign-in, so it may ask you to sign in there too.',
+  },
+]

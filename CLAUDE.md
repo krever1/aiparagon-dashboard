@@ -1,6 +1,6 @@
 # AI Paragon internal dashboard (Next.js)
 
-Brief for Claude sessions in this repo. Last reviewed 2026-11-10.
+Brief for Claude sessions in this repo. Last reviewed 2026-11-11.
 
 ## What this is
 The AI Paragon Consulting Group team workspace: Touchpoint (home and tasks), Catalyst (clients and meetings),
@@ -33,12 +33,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 - Touchpoint, in three parts (Nov 11): 1. Tasks; 2. Approvals; 3. Today, which reads Approvals' list for Needs you.
   Part 1 (Nov 11, branch `touchpoint/tasks`, PR #8 into `dev`): the post-call to-dos. Part 2 (Nov 11, branch
   `touchpoint/approvals`, on top of part 1, PR #9): Approvals, in pieces: A, the briefs and the Intel Tracker's replies,
-  and B, ad images waiting for a decision, content drafts and failed requests (both done); C, leads and comments, as
-  Kser decides. `dev` goes to `main` only once Approvals lists every kind the current page does (or Kser leaves some
-  out), so production never shows fewer things waiting. Part 3 (Nov 11, branch `touchpoint/today`, on top of part 2):
-  Today: the hello line, the Catalyst card (new clients from HubSpot, new transcripts), Needs you, Quick start, Your
-  workspace, Recent runs and Latest sign-ups. See Touchpoint below.
-- Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
+  and B, ad images waiting for a decision, content drafts and failed requests (both done); C, leads and comments (Nov
+  11, in the finishing PR below). `dev` goes to `main` only once Approvals lists every kind the current page does, so
+  production never shows fewer things waiting. Part 3 (Nov 11, branch `touchpoint/today`, on top of part 2): Today:
+  the hello line, the Catalyst card (new clients from HubSpot, new transcripts), Needs you, Quick start, Your
+  workspace, Recent runs and Latest sign-ups. The finishing PR (Nov 11, branch `touchpoint/finish`, on top of part 3;
+  Kser: "fix the 3"): Approvals' leads and comments, the Catalyst line by the same rule, and Take the tour on Today.
+  With it Approvals lists every kind the current page does. See Touchpoint below.
+- Next: Pipeline, in parts, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -53,8 +55,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 | Product | Pages | Status |
 |---|---|---|
-| Touchpoint | Today (Take the tour waits on Kser) | here (Touchpoint part 3, not released) |
-| Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests (leads and comments wait on Kser) | here (Touchpoint part 2, not released) |
+| Touchpoint | Today, with Take the tour | here (Touchpoint part 3 and the finishing PR, not released) |
+| Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests, leads, comments | here (Touchpoint part 2 and the finishing PR, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
@@ -289,9 +291,21 @@ signed-in teammate's token, as the current dashboard's do.
       label, and how many of the campaign's ads are approved. Review opens Marketing Generation;
     - content drafts not marked ready (agent_outputs content_generation content_draft, newest 60; a draft_review row
       with action ready), with Check and approve to Content Transformation, where drafts are approved;
-    - the Intel Tracker's pending replies (engagement_drafts), newest first.
-    Every page Review opens is still in the current dashboard (`out`: "Opens in the current dashboard"); none of them
-    can be opened at the exact draft or campaign from here.
+    - the Intel Tracker's pending replies (engagement_drafts), newest first;
+    - the board's leads waiting on a person (`leadWaits`, `waitsOnNext` in `catalyst/view.ts`): not a weak fit
+      (`fitTone` bad: weak or disqualified), nothing being written for them, and a next document not written yet
+      (`nextDocOf`: the lead's own stage's document, else the first later stage's without one; none once every stage
+      from its own on has its document), newest first: "Lee Ready · Ready Example LLC", "Next: Assessment report",
+      Open lead to the lead's page at that document's tab. Nothing to approve. Only from a whole read of the leads and
+      their documents (without the documents every lead would look as if it had none);
+    - open comments (dashboard_comments where resolved is not true, the newest 40): "Comment from <author>" (an email's
+      part before the @), the comment, Resolve, and Open where it was left, by its target_key: `e1:<email>:<agent>` a
+      lead's page here at that document's tab (the lead found by any of its emails; the board when none has it),
+      `brief:<run>` the briefs and `funnel:<run>:<part>` Marketing Generation in the current dashboard, anything else
+      the Intel Tracker there, where the current dashboard always sent it. On Nov 11 the live table held 14
+      comments (brief, e1 and funnel keys), none open.
+    Every page Review opens but a lead's is still in the current dashboard (`out`: "Opens in the current dashboard");
+    none of them can be opened at the exact draft or campaign from here.
   - The tabs (`viewOf`): All, each kind with something waiting, then Skipped. The tab is the address's (`?tab=`); a tab
     left with nothing in it shows All and All becomes the choice (as V107D.filter does), so a later skip or undo does
     not jump back. All shows five replies and a line for the rest. Replies more than a week old are out of the counts
@@ -300,15 +314,18 @@ signed-in teammate's token, as the current dashboard's do.
     a brief's decision in agent_feedback (brief_approval, approved, "Approved in Approvals"), an ad image's
     (low_ticket_content, ad_image_variant, target_id the image's file; Marketing Generation and Landing pages count
     these), a reply's status in engagement_drafts with its agent_feedback row (engagement_draft, "Reviewed on the
-    dashboard"), author the teammate's email. Drafts and failed requests are not approved from the list. The message
-    that confirms has Undo (`undoItems`: reopened, "Undone in Approvals"; a reply back to pending).
+    dashboard"), author the teammate's email; a comment's Resolve sets resolved and resolved_by (the teammate's name,
+    as the document's own comments do). Drafts, failed requests and leads are not approved from the list. The message
+    that confirms has Undo (`undoItems`: reopened, "Undone in Approvals"; a reply back to pending; a comment open
+    again, resolved_by cleared); it says "Comment resolved" / "2 comments resolved" when every row was a comment.
   - Skip keeps a row out for now in this browser only (localStorage `ap.nw.skip`, as the current dashboard; the two
     apps are on different addresses, so they do not share it), with Undo and Bring back. Nothing is saved.
   - A reply's Review opens it in full: the post it answers (only a web address), the draft to change (saved when it
     changed, then approved), Copy, Approve, and Reject, which asks why first (v127: six reasons and a note, `whyText`,
     saved as the decision's feedback); Cancel, the X or Esc keep the reply.
-  - Not here yet: leads and comments (part C, waiting on Kser). On Nov 11 the live data had 4 ad images waiting (two
-    campaigns), no content requests and no content drafts.
+  - On Nov 11 the live data had 4 ad images waiting (two campaigns), no content requests, no content drafts, no open
+    comments and 3 leads (none with a fit rating).
+  - The board's leads are read once per visit: `loadApprovals({pipeline})` takes Today's read of them.
 - Approvals opens a reply's window from the address once (`?review=reply:<id>`, Today's Next up); closing it drops
   the word from the address. The Skip store is `src/components/approvals/skips.ts` (`useSkips`), shared with Today.
 - Today (part 3, `today.ts` pure rules, `today-load.ts`, `src/components/today/today-view.tsx`, `src/app/(app)/today`;
@@ -323,8 +340,8 @@ signed-in teammate's token, as the current dashboard's do.
     the address after hydrating) and Make an ad campaign, Turn content into a post, Put a landing page live, which
     open their pages in the current dashboard (the old page opened the form itself).
   - Your workspace: the five products with their pages and a line each: things waiting (with this browser's skips),
-    leads and how many wait on a next stage, Canvas's and Atlas's fixed lines, briefs to review (all undecided, skipped
-    or not, as before) and live landing pages.
+    leads and how many wait on a next stage (the leads Approvals lists, `waitsOnNext`), Canvas's and Atlas's fixed
+    lines, briefs to review (all undecided, skipped or not, as before) and live landing pages.
   - Recent runs (`runs`, the four newest by start, a run with no start last), Latest sign-ups (`lp_signups`, the four
     newest, "5 minutes ago", the page's title on hover). The page reads its data again every 10 minutes while open
     (`html[data-today-refresh="on"]` while the timer is set).
@@ -341,10 +358,17 @@ signed-in teammate's token, as the current dashboard's do.
     none) or Run the prospect brief (the same, then the full run with `only: true`, the HubSpot title, company and
     website and hearAboutUs HubSpot, kept in catalyst_runs). A new transcript opens the call question of a lead's
     Calls tab (`CallQuestion`; its Reads list is `reads-box.tsx`, shared with the new client's).
-  - Not ported: Take the tour (waiting on Kser).
-- Changed on purpose on Today (reported to Kser): the Catalyst line counts the leads not a weak fit that are short of
-  the last meeting stage (Client review), by the six stages; the old page counted leads missing any of the five older
-  documents, so a lead without the retired follow-up guide always counted. Canvas's line says what it holds instead
+  - Take the tour (`tour.tsx`, `TOUR` in `today.ts`; NW_TOUR, nwTourHtml), a button on the hello line: four steps in a
+    window, "1 of 4", a picture, the words, dots, Skip (or Back) and Next (or Done), the main button taking the keyboard
+    at each step; Esc or the X close it, and it starts again at the first step. The first three are the current
+    dashboard's words (the first as v115 left it, its picture now the five products); the fourth is new (Some pages are
+    still moving over: a page not moved yet opens a card that links to it, both work on the same data, and the current
+    dashboard has its own sign-in), since the old one spoke of Ask, Ctrl K, G shortcuts and Customize, which this
+    dashboard does not have.
+- Changed on purpose on Today (reported to Kser): the Catalyst line counts the leads Approvals lists (by the six
+  stages: the next document from the lead's own stage on); the old page counted leads missing any of the five older
+  documents, so a lead without the retired follow-up guide always counted. The tour's fourth step and its first
+  picture (the old picture showed the Intel Tracker's flow). Canvas's line says what it holds instead
   of counting documents (that count comes with the Deliverables port). Between 641 and 1080 px wide every card takes
   the whole width. A read that fails says so in its card. The Catalyst card's items past four open with Show N more
   (the old page sent them to the bell, which this app does not have yet).
@@ -352,7 +376,12 @@ signed-in teammate's token, as the current dashboard's do.
   email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
   page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only
   when it worked; changing tab clears the selection, so Approve N only takes rows on screen; the tab is in the address;
-  the link to a reply's post opens only when it is a web address.
+  the link to a reply's post opens only when it is a web address. Leads: by the six stages (the old page counted the
+  five older documents, the follow-up guide among them, and so named a lead's next step wrongly); a lead being written
+  for, or disqualified, is not waiting; Open lead opens the lead's page at its next document. Comments: the newest 40
+  open ones (the old page took the newest 40 and kept the open ones); Open goes where the comment was left (the old one
+  always opened the Intel Tracker); resolved_by is the teammate's name (the old page wrote the company profile's
+  contact name).
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -386,7 +415,9 @@ signed-in teammate's token, as the current dashboard's do.
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`;
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
-  `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day); `today-logic.spec.ts`
+  `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day; `approvalRows` empties
+  e1_leads and dashboard_comments, so the stand-in's own leads do not wait there, and `catalystRows` seeds leads and
+  comments for their tests); `today-logic.spec.ts`
   (without a browser), `today.spec.ts` Today (the page's clock set to a Wednesday morning) and `today-catalyst.spec.ts`
   its Catalyst card (contacts and calls dated from now). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.

@@ -1,15 +1,17 @@
 import 'server-only'
+import { loadPipeline } from '@/lib/catalyst/load'
+import type { PipelineData } from '@/lib/catalyst/view'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import { createClient } from '@/lib/supabase/server'
 import {
-  type AdsBrief, type Campaign, type ContentDraft, type ContentRequest, type IntelBrief, type Item, type ReplyRow, adImages, approvalItems, hookText,
-  snapItems,
+  type AdsBrief, type Campaign, type CommentRow, type ContentDraft, type ContentRequest, type IntelBrief, type Item, type ReplyRow, adImages,
+  approvalItems, hookText, leadWaits, snapItems,
 } from './approvals'
 
 // Approvals' data, read as the signed-in teammate (apCfLoad, v97LtLoad, e9SnapLoad and apLoad, the parts Approvals
 // uses): the newest organic and ads briefs with their decisions and snapshots, failed content requests, content drafts
-// not marked ready, the ad images of the three newest campaigns with their decisions, and the replies waiting. Read
-// fresh on every visit.
+// not marked ready, the ad images of the three newest campaigns with their decisions, the replies waiting, the leads
+// on the board waiting on their next document, and the open comments. Read fresh on every visit.
 
 export type ApprovalsData = {
   items: Item[]
@@ -47,9 +49,11 @@ const arr = (v: unknown): unknown[] => {
 type Row = Record<string, unknown>
 const rowsOf = (r: { data: unknown }) => (r.data ?? []) as Row[]
 
-export async function loadApprovals(): Promise<ApprovalsData> {
+/** `pipeline`: the board's leads when the caller reads them already (Today), so they are read once. */
+export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | null> } = {}): Promise<ApprovalsData> {
   const supabase = await createClient()
-  const [ib, ab, dr, rq, df, lt] = await Promise.all([
+  const pipelineP = opts.pipeline ?? loadPipeline().catch(() => null)
+  const [ib, ab, dr, rq, df, lt, cm, pipeline] = await Promise.all([
     supabase
       .from('agent_outputs')
       .select('run_id,created_at,content_md,data')
@@ -73,8 +77,13 @@ export async function loadApprovals(): Promise<ApprovalsData> {
       .order('created_at', { ascending: false })
       .limit(60),
     supabase.from('agent_outputs').select('run_id,created_at,data').eq('agent', 'low_ticket_content').order('created_at', { ascending: false }).limit(40),
+    // the newest 40 open comments (the current dashboard read the newest 40 and kept the open ones)
+    supabase.from('dashboard_comments').select('id,target_key,author,body,created_at').not('resolved', 'is', true).order('created_at', { ascending: false }).limit(40),
+    pipelineP,
   ])
-  const errors = [ib.error, ab.error, dr.error, rq.error, df.error, lt.error].filter(Boolean).map((e) => e!.message)
+  const errors = [ib.error, ab.error, dr.error, rq.error, df.error, lt.error, cm.error].filter(Boolean).map((e) => e!.message)
+  if (!pipeline) errors.push('the leads could not be read')
+  else if (pipeline.error) errors.push(pipeline.error)
 
   const i0 = rowsOf(ib)[0]
   const a0 = rowsOf(ab)[0]
@@ -139,6 +148,19 @@ export async function loadApprovals(): Promise<ApprovalsData> {
   const adDecisions: Record<string, string> = {}
   for (const r of rowsOf(ad)) if (!(str(r.target_id) in adDecisions)) adDecisions[str(r.target_id)] = str(r.action)
 
+  // the board's leads: the ones waiting on their next document (only from a whole read: without the documents every
+  // lead would look as if it had none), and every lead's page by its emails (a comment on a lead's document opens there)
+  const leadIds: Record<string, string> = {}
+  for (const l of pipeline?.leads ?? []) for (const e of l.emails) leadIds[e.trim().toLowerCase()] ??= l.id
+  const waits = pipeline && !pipeline.error ? leadWaits(pipeline.leads) : []
+  const comments: CommentRow[] = rowsOf(cm).map((c) => ({
+    id: str(c.id),
+    target: str(c.target_key),
+    author: str(c.author),
+    body: str(c.body),
+    createdAt: str(c.created_at),
+  }))
+
   const replies: ReplyRow[] = rowsOf(dr).map((d) => ({
     id: str(d.id),
     competitor: str(d.competitor_name),
@@ -162,6 +184,9 @@ export async function loadApprovals(): Promise<ApprovalsData> {
       campaigns,
       hooks,
       adDecisions,
+      leads: waits,
+      comments,
+      leadIds,
       legacy: LEGACY_DASHBOARD_URL,
       now: Date.now(),
     }),

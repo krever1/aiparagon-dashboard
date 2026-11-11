@@ -22,6 +22,7 @@ import {
 } from '@/lib/touchpoint/today'
 import type { TodayData } from '@/lib/touchpoint/today-load'
 import { CrmQuestion } from './crm-question'
+import { TourButton } from './tour'
 
 // Today (v115TodayHtml as v137 left it): the hello line, what needs you, quick starts, the five products with their
 // pages, the newest runs and sign-ups. The page reads its data again every 10 minutes while it is open, as the current
@@ -94,14 +95,17 @@ export function TodayView({ data, name }: { data: TodayData; name: string }) {
 
   return (
     <div data-testid="today">
-      <header className="mb-6">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent-text" data-testid="today-date">
-          Touchpoint · {todayText(d, tz)}
-        </p>
-        <h1 className="mt-1 break-words font-display text-[34px] font-semibold leading-tight text-ink sm:text-[38px]">{hello(hour, name)}</h1>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2" data-testid="today-need">
-          {needLine(items.length + data.inbox.items.length)}
-        </p>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent-text" data-testid="today-date">
+            Touchpoint · {todayText(d, tz)}
+          </p>
+          <h1 className="mt-1 break-words font-display text-[34px] font-semibold leading-tight text-ink sm:text-[38px]">{hello(hour, name)}</h1>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2" data-testid="today-need">
+            {needLine(items.length + data.inbox.items.length)}
+          </p>
+        </div>
+        <TourButton />
       </header>
 
       <div className="grid grid-cols-1 gap-4 min-[641px]:grid-cols-2 min-[1081px]:grid-cols-3">

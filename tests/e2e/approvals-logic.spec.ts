@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { type LeadView, nextDocOf, waitsOnNext } from '../../src/lib/catalyst/view'
 import {
-  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, clip, draftTitle, hookText, kindLabel, parseKey, safeUrl, snapItems, tabFromWord, tldr,
-  undecided, viewOf, waitingChips, whyText, wordOf,
+  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, clip, commentReview, draftTitle, hookText, kindLabel, leadWaits, parseKey, safeUrl,
+  snapItems, tabFromWord, tldr, undecided, viewOf, waitingChips, whyText, wordOf,
 } from '../../src/lib/touchpoint/approvals'
 import { DR, IMG, INTEL_MD, RID, RQ, RUN1, RUN2, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
 
@@ -292,4 +293,111 @@ test('part B: the key an ad image’s approval takes', () => {
   for (const bad of ['ad::a.png', 'ad:run_1:', 'ad:run 1:a.png', 'ad:run_1:a b.png', 'ad:run_1:<x>.png', 'ad:' + 'r'.repeat(121) + ':a.png']) {
     expect(parseKey(bad)).toBeNull()
   }
+})
+
+// ---------- part C: leads and comments ----------
+
+/** A lead as the board draws it, with what a test changes. */
+const lead = (over: Partial<LeadView> = {}): LeadView => ({
+  id: 'lee-ready-0123456789', name: 'Lee Ready', email: 'Lee.Ready@example.com', emails: ['Lee.Ready@example.com'], company: 'Ready Example LLC',
+  firmType: '', title: '', fit: 'Strong', updatedAt: '2026-11-10T10:00:00Z', stored: null, derived: 'research', docs: {}, docCount: 0,
+  ids: { research: false, interview: false, anonymized: false }, run: null, anonEmail: '', anonCompany: '', search: '', ...over,
+})
+
+test('part C: the next document a lead needs, and which leads wait on a person', () => {
+  // nothing yet: the prospect brief
+  expect(nextDocOf(lead())).toBe('research')
+  // moved to Assessment with the two documents before it: the assessment report
+  expect(nextDocOf(lead({ stored: 'assessment', docs: { research: 1, consultation: 2 } }))).toBe('assessment')
+  // its own stage's document is there, and the proposal too: the onboarding plan
+  expect(nextDocOf(lead({ stored: 'assessment', derived: 'proposal', docs: { assessment: 1, proposal: 2 } }))).toBe('onboarding')
+  // a document before its stage that is missing does not count: only its stage on
+  expect(nextDocOf(lead({ stored: 'proposal', docs: { proposal: 1 } }))).toBe('onboarding')
+  // the client review brief is there: nothing next
+  expect(nextDocOf(lead({ stored: 'review', docs: { review: 1 } }))).toBeNull()
+  // a run in progress sits in its stage: that is the next document, being written
+  expect(nextDocOf(lead({ run: { s: 'consultation', t0: '2026-11-11T11:00:00Z' }, docs: { research: 1 } }))).toBe('consultation')
+
+  expect(waitsOnNext(lead())).toBe(true)
+  expect(waitsOnNext(lead({ fit: 'Moderate' }))).toBe(true)
+  expect(waitsOnNext(lead({ fit: '' }))).toBe(true)
+  expect(waitsOnNext(lead({ fit: 'Weak' }))).toBe(false)
+  expect(waitsOnNext(lead({ fit: 'weak fit' }))).toBe(false)
+  expect(waitsOnNext(lead({ fit: 'Disqualified' }))).toBe(false)
+  expect(waitsOnNext(lead({ run: { s: 'research', t0: '2026-11-11T11:00:00Z' } }))).toBe(false)
+  expect(waitsOnNext(lead({ stored: 'review', docs: { review: 1 } }))).toBe(false)
+
+  // newest first, with what each needs next
+  const waits = leadWaits([
+    lead({ id: 'old-1111111111', name: 'Old Lead', email: 'old@example.com', updatedAt: '2026-11-01T10:00:00Z', stored: 'consultation', docs: { research: 1 } }),
+    lead({ fit: 'Weak', id: 'weak-2222222222' }),
+    lead(),
+    lead({ id: 'none-3333333333', name: 'No Date', email: 'none@example.com', updatedAt: null }),
+  ])
+  expect(waits).toEqual([
+    { id: 'lee-ready-0123456789', email: 'Lee.Ready@example.com', name: 'Lee Ready', company: 'Ready Example LLC', next: 'research', updatedAt: '2026-11-10T10:00:00Z' },
+    { id: 'old-1111111111', email: 'old@example.com', name: 'Old Lead', company: 'Ready Example LLC', next: 'consultation', updatedAt: '2026-11-01T10:00:00Z' },
+    { id: 'none-3333333333', email: 'none@example.com', name: 'No Date', company: 'Ready Example LLC', next: 'research', updatedAt: '' },
+  ])
+})
+
+test('part C: leads after the replies, then comments, each with what it says and where it opens', () => {
+  const leads = leadWaits([lead({ stored: 'assessment', docs: { research: 1, consultation: 2 } }), lead({ id: 'solo-4444444444', name: 'Solo', email: 'solo@example.com', company: '', updatedAt: '2026-11-09T10:00:00Z' })])
+  const comments = [
+    { id: 'c1', target: 'e1:LEE.READY@example.com:interview_script', author: 'Erin Example', body: 'Ask about the custodian move.', createdAt: '2026-11-11T10:00:00Z' },
+    { id: 'c2', target: 'brief:agent1_2026-11-08_0700', author: 'robin@example.com', body: 'Drop the fee posts?', createdAt: '2026-11-10T10:00:00Z' },
+    { id: 'c3', target: 'funnel:agent3_2026-11-05_0900:tab5', author: '', body: 'Headline too long.', createdAt: '2026-11-09T10:00:00Z' },
+  ]
+  const items = approvalItems(input({ leads, comments, leadIds: { 'lee.ready@example.com': 'lee-ready-0123456789' } }))
+  expect(keys(items).slice(-5)).toEqual(['lead:lee.ready@example.com', 'lead:solo@example.com', 'cmt:c1', 'cmt:c2', 'cmt:c3'])
+  expect(keys(items)[9]).toBe('reply:' + RID(8))
+
+  const [lee, solo, c1, c2, c3] = items.slice(-5)
+  expect(lee).toMatchObject({
+    kind: 'lead', icon: 'users', title: 'Lee Ready · Ready Example LLC', text: 'Next: Assessment report', tags: [{ text: 'Lead' }, { text: 'Catalyst' }],
+    approve: false, review: { kind: 'link', href: '/lead-pipeline/lee-ready-0123456789?tab=assessment', label: 'Open lead' }, when: '2026-11-10T10:00:00Z',
+  })
+  expect(lee.review).not.toHaveProperty('out')
+  expect(solo).toMatchObject({ title: 'Solo', text: 'Next: Pre-meeting prospect brief' })
+  expect(c1).toMatchObject({
+    kind: 'comment', icon: 'message', title: 'Comment from Erin Example', text: 'Ask about the custodian move.',
+    tags: [{ text: 'Comment' }, { day: '2026-11-11T10:00:00Z' }], approve: true, approveLabel: 'Resolve',
+    review: { kind: 'link', href: '/lead-pipeline/lee-ready-0123456789?tab=consultation', label: 'Open' },
+  })
+  expect(c2).toMatchObject({ title: 'Comment from robin', review: { href: LEGACY + '/briefs', label: 'Open', out: true } })
+  expect(c3).toMatchObject({ title: 'Comment from someone', review: { href: LEGACY + '/marketing-generation', label: 'Open', out: true } })
+
+  // their tabs and counts
+  expect(tabs(viewOf(items, {}, 'all', PAGE))).toEqual(['All 13', 'Briefs 2', 'Replies 6', 'Leads 2', 'Comments 3'])
+  expect(viewOf(items, {}, 'comment', PAGE).rows.map((x) => x.key)).toEqual(['cmt:c1', 'cmt:c2', 'cmt:c3'])
+  expect(kindLabel('lead', 2)).toBe('2 leads')
+  expect(kindLabel('comment', 1)).toBe('1 comment')
+  expect([tabFromWord('leads'), tabFromWord('comments')]).toEqual(['lead', 'comment'])
+})
+
+test('part C: where a comment opens, by what it is about', () => {
+  const ids = { 'lee.ready@example.com': 'lee-ready-0123456789' }
+  const href = (t: string) => (commentReview(t, ids, LEGACY + '/') as { href: string }).href
+  expect(href('e1:lee.ready@example.com:lead_research')).toBe('/lead-pipeline/lee-ready-0123456789?tab=research')
+  expect(href('e1:lee.ready@example.com:interview_script')).toBe('/lead-pipeline/lee-ready-0123456789?tab=consultation')
+  expect(href('e1:lee.ready@example.com:anonymizer')).toBe('/lead-pipeline/lee-ready-0123456789?tab=assessment')
+  expect(href('e1:lee.ready@example.com:discovery_call')).toBe('/lead-pipeline/lee-ready-0123456789?tab=followup')
+  expect(href('e1:lee.ready@example.com:growth_plan')).toBe('/lead-pipeline/lee-ready-0123456789?tab=proposal')
+  expect(href('e1:lee.ready@example.com:client_proposal')).toBe('/lead-pipeline/lee-ready-0123456789?tab=proposal')
+  // a document with no tab of its own opens the lead; a lead the board does not have opens the board
+  expect(href('e1:lee.ready@example.com:meeting_prep')).toBe('/lead-pipeline/lee-ready-0123456789')
+  expect(href('e1: Lee.Ready@Example.com :lead_research')).toBe('/lead-pipeline/lee-ready-0123456789?tab=research')
+  expect(href('e1:gone@example.com:lead_research')).toBe('/lead-pipeline')
+  expect(commentReview('e1:gone@example.com:lead_research', ids, LEGACY)).toEqual({ kind: 'link', href: '/lead-pipeline', label: 'Open' })
+  // the rest are still in the current dashboard; anything else opens the Intel Tracker there, as before
+  expect(commentReview('brief:agent1_2026-11-08_0700', ids, LEGACY)).toEqual({ kind: 'link', href: LEGACY + '/briefs', label: 'Open', out: true })
+  expect(href('funnel:agent3_2026-11-05_0900:tab5')).toBe(LEGACY + '/marketing-generation')
+  expect(href('post:12345')).toBe(LEGACY + '/intel-tracker')
+  expect(href('')).toBe(LEGACY + '/intel-tracker')
+})
+
+test('part C: the key a comment’s Resolve takes; leads are never written', () => {
+  const id = '73000000-0000-4000-8000-000000000001'
+  expect(parseKey('cmt:' + id)).toEqual({ kind: 'comment', id })
+  for (const k of ['cmt:', 'cmt:42', 'cmt:' + id + ':x', 'cmt:' + id + "'", 'lead:lee.ready@example.com', 'lead:' + id]) expect(parseKey(k)).toBeNull()
 })

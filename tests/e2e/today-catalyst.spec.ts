@@ -82,7 +82,8 @@ test.beforeEach(async ({ page }) => {
 
 test('new clients and transcripts come first, newest first, counted in the hello line', async ({ page }) => {
   await signIn(page, '/today')
-  await expect(page.getByTestId('today-need')).toHaveText('3 things need you.')
+  // three here, and Nia and Ria wait on their next document (Approvals' Leads)
+  await expect(page.getByTestId('today-need')).toHaveText('5 things need you.')
   const card = page.getByTestId('catalyst-inbox')
   await expect(card.getByRole('heading', { level: 2 })).toHaveText('Catalyst · Before your next meetings')
   await expect(rows(page)).toHaveCount(3)
@@ -120,7 +121,7 @@ test('a new client: what the brief reads, and Not a client sets them aside for t
   await expect(dlg).toHaveCount(0)
   await expect(toasts(page)).toContainText('Set aside. Tom Becker stays in HubSpot contacts.')
   await expect(rows(page)).toHaveCount(2)
-  await expect(page.getByTestId('today-need')).toHaveText('2 things need you.')
+  await expect(page.getByTestId('today-need')).toHaveText('4 things need you.')
   const inbox = (await setting('catalyst_inbox')) as { crm: Record<string, { by: string }> }
   expect(Object.keys(inbox.crm).sort()).toEqual(['aside@example.com', 'tom.becker@example.com'])
   expect(inbox.crm['tom.becker@example.com'].by).toBe(TEAM.email)
@@ -185,7 +186,7 @@ test('four at a time, then Show more; with Fathom off only the new clients show'
   })
   await signIn(page, '/today')
   await expect(rows(page)).toHaveCount(4)
-  await expect(page.getByTestId('today-need')).toHaveText('6 things need you.')
+  await expect(page.getByTestId('today-need')).toHaveText('8 things need you.')
   await page.getByRole('button', { name: 'Show 2 more' }).click()
   await expect(rows(page)).toHaveCount(6)
   await expect(page.getByRole('button', { name: 'Show fewer' })).toHaveAttribute('aria-expanded', 'true')

@@ -4,8 +4,8 @@ import { callItems, crmItems, inboxItems, itemText, recent } from '../../src/lib
 import type { LeadView } from '../../src/lib/catalyst/view'
 import type { Item, Kind } from '../../src/lib/touchpoint/approvals'
 import {
-  agentName, agoWords, catalystLine, firstName, greeting, hello, needChips, needLine, pipelineLine, runIcon, runState, todayText, touchLine, waiting,
-  whenText,
+  TOUR, agentName, agoWords, catalystLine, firstName, greeting, hello, needChips, needLine, pipelineLine, runIcon, runState, todayText, touchLine,
+  waiting, whenText,
 } from '../../src/lib/touchpoint/today'
 
 // Today's rules, checked without a browser: the hello line, what is counted as waiting, the products' lines, the runs
@@ -143,4 +143,12 @@ test('new transcripts: recorded lately, with a lead among the guests, not filed 
     s: 'In Client review. Run the client review brief again with it?',
     b: 'Run it again',
   })
+})
+
+test('the tour: four steps, the current dashboard’s first three, and a fourth that is true here', () => {
+  expect(TOUR.map((s) => s.t)).toEqual(['Five products, one sidebar', 'One place for every approval', 'Two ways to create', 'Some pages are still moving over'])
+  expect(TOUR[0].p).toContain('Click a name to open its pages.')
+  // nothing about what this dashboard does not have
+  for (const s of TOUR) expect(s.p).not.toMatch(/Ctrl K|Customize|\bAsk\b|G then a letter/)
+  expect(TOUR[3].p).toContain('current dashboard')
 })

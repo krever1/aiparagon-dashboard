@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
+import { leadId } from '../../src/lib/catalyst/lead-id'
 import { LEGACY, TEAM, serveLogo, signIn, stubReset, stubRows, stubSeed } from './helpers'
-import { DR, IMG, RID, RQ, RUN1, RUN2, RUN3, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
+import { CM, DR, IMG, RID, RQ, RUN1, RUN2, RUN3, RUN4, approvalRows, campaignRows, catalystRows, file, reply } from './approvals-fixtures'
 
 // Approvals: the briefs and the Intel Tracker's replies waiting for a person, the tabs, approving several at once and
 // undoing it, skipping for now, a reply's window (edit, copy, approve, reject with a reason). On the made-up rows in
@@ -412,4 +413,74 @@ test('approve the ads together; their tab empties and All becomes the choice; un
   await expect(tabs(page).first()).toHaveAttribute('aria-selected', 'true')
   await expect(row(page, AD(RUN2, 'b'))).toBeVisible()
   expect((await said()).slice(9)).toEqual(ads.map((f) => `low_ticket_content | ad_image_variant | ${f} | reopened | Undone in Approvals | ${TEAM.email}`))
+})
+
+test('leads waiting on their next document open on their page; comments are resolved from the list, and undone', async ({ page }) => {
+  const c = catalystRows()
+  await stubSeed({ ...c, agent_outputs: [...rows.agent_outputs, ...c.agent_outputs] })
+  const LEE = leadId({ prospect_name: 'Lee Ready', email: 'lee.ready@example.com' })
+  await signIn(page, '/approvals')
+  await expect(tabs(page)).toHaveText(['All 11', 'Briefs 2', 'Replies 6', 'Leads 1', 'Comments 2'])
+
+  // a lead: what it needs next, and its page at that document; nothing to approve here. Wes is a weak fit, Dana has
+  // every document from her stage on, and Max's next document is being written.
+  await tabs(page).nth(3).click()
+  await expect(page).toHaveURL(/\/approvals\?tab=leads$/)
+  await expect(list(page)).toHaveCount(1)
+  const lead = row(page, 'lead:lee.ready@example.com')
+  await expect(lead.locator('b').first()).toHaveText('Lee Ready · Ready Example LLC')
+  await expect(lead).toContainText('Next: Assessment report')
+  await expect(lead).toContainText('LeadCatalyst')
+  await expect(lead.getByRole('checkbox')).toHaveCount(0)
+  await expect(lead.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+  const open = lead.getByRole('link', { name: 'Open lead' })
+  await expect(open).toHaveAttribute('href', `/lead-pipeline/${LEE}?tab=assessment`)
+  await expect(open).not.toHaveAttribute('title', /current dashboard/)
+  await open.click()
+  await expect(page).toHaveURL(new RegExp(`/lead-pipeline/${LEE}\\?tab=assessment$`))
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lee Ready')
+
+  // the comments, newest first: who wrote each, and Open goes where it was left (the resolved one is not here)
+  await page.goto('/approvals?tab=comments')
+  await expect(list(page)).toHaveCount(2)
+  expect(await list(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-key')))).toEqual(['cmt:' + CM(1), 'cmt:' + CM(2)])
+  const c1 = row(page, 'cmt:' + CM(1))
+  await expect(c1.locator('b').first()).toHaveText('Comment from Erin Example')
+  await expect(c1).toContainText('Ask about the custodian move before the call.')
+  await expect(c1.getByRole('link', { name: 'Open' })).toHaveAttribute('href', `/lead-pipeline/${LEE}?tab=consultation`)
+  const c2 = row(page, 'cmt:' + CM(2))
+  await expect(c2.locator('b').first()).toHaveText('Comment from robin')
+  await expect(c2.getByRole('link', { name: 'Open' })).toHaveAttribute('href', LEGACY + '/briefs')
+  await expect(c2.getByRole('link', { name: 'Open' })).toHaveAttribute('title', 'Opens in the current dashboard')
+
+  // Resolve: saved with who resolved it; Undo opens it again
+  await c2.getByRole('button', { name: 'Resolve' }).click()
+  await expect(toast(page, 'Comment resolved')).toBeVisible()
+  await expect(row(page, 'cmt:' + CM(2))).toHaveCount(0)
+  const cm = async (n: number) => (await stubRows<Record<string, unknown>>('dashboard_comments')).find((r) => r.id === CM(n))!
+  expect(await cm(2)).toMatchObject({ resolved: true, resolved_by: TEAM.name })
+  await undo(page).click()
+  await expect(toast(page, 'Undone. It is waiting again.')).toBeVisible()
+  await expect(row(page, 'cmt:' + CM(2))).toBeVisible()
+  expect(await cm(2)).toMatchObject({ resolved: false, resolved_by: null })
+
+  // several at once; the tab empties and All becomes the choice
+  await page.getByRole('button', { name: 'Select all' }).click()
+  await bulk(page).getByRole('button', { name: 'Approve 2' }).click()
+  await expect(toast(page, '2 comments resolved')).toBeVisible()
+  expect([(await cm(1)).resolved, (await cm(2)).resolved, (await cm(3)).resolved]).toEqual([true, true, true])
+  await expect(tabs(page)).toHaveText(['All 9', 'Briefs 2', 'Replies 6', 'Leads 1'])
+  await expect(page).toHaveURL(/\/approvals$/)
+  // nothing went to agent_feedback for a comment
+  expect(await said()).toEqual([])
+})
+
+test('a comment approved with something else says Approved', async ({ page }) => {
+  const c = catalystRows()
+  await stubSeed({ dashboard_comments: c.dashboard_comments })
+  await signIn(page, '/approvals')
+  await row(page, ORG).getByRole('checkbox').check()
+  await row(page, 'cmt:' + CM(1)).getByRole('checkbox').check()
+  await bulk(page).getByRole('button', { name: 'Approve 2' }).click()
+  await expect(toast(page, 'Approved 2')).toBeVisible()
 })

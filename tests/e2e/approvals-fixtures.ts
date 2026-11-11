@@ -65,6 +65,9 @@ export function approvalRows(now = Date.now()) {
       reply(9, 'Already Done LLC', 2 * H, now, { status: 'approved' }),
     ],
     agent_feedback: [] as Record<string, unknown>[],
+    // no leads and no comments here (the stand-in's own leads would wait on their next document); their tests seed them
+    e1_leads: [] as Record<string, unknown>[],
+    dashboard_comments: [] as Record<string, unknown>[],
   }
 }
 
@@ -137,5 +140,53 @@ export function campaignRows(now = Date.now()) {
         data: { title: 'Marked ready', format: 'email' },
       },
     ],
+  }
+}
+
+/** A comment's id (dashboard_comments ids are uuids). */
+export const CM = (n: number) => `73000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+
+/**
+ * Leads and comments for Approvals. Lee is in Assessment with his prospect brief and consultation guide: he waits on the
+ * assessment report. Wes is a weak fit, Dana has her client review brief, and Max's consultation guide is being
+ * written, so none of them waits. Two open comments (one on Lee's consultation guide, one on a brief; one saved with
+ * resolved left empty) and a resolved one.
+ */
+export function catalystRows(now = Date.now()) {
+  const ago = (ms: number) => new Date(now - ms).toISOString()
+  const doc = (n: number, run: string, agent: string, name: string, age: number, data: Record<string, unknown> = {}) => ({
+    id: `74000000-0000-4000-8000-${String(n).padStart(12, '0')}`, run_id: run, agent, output_type: 'json', title: name, created_at: ago(age),
+    content_md: '', data: { prospectName: name, ...data },
+  })
+  return {
+    e1_leads: [
+      { email: 'lee.ready@example.com', prospect_name: 'Lee Ready', company_name: 'Ready Example LLC', fit_rating: 'Strong', stage: 'assessment', updated_at: ago(H) },
+      { email: 'wes.weak@example.com', prospect_name: 'Wes Weak', company_name: 'Weak Example Co', fit_rating: 'Weak', updated_at: ago(2 * H) },
+      { email: 'dana.done@example.com', prospect_name: 'Dana Done', company_name: 'Done Example Group', fit_rating: 'Moderate', stage: 'review', updated_at: ago(3 * H) },
+      { email: 'max.busy@example.com', prospect_name: 'Max Busy', company_name: 'Busy Example Partners', fit_rating: 'Strong', stage: 'consultation', updated_at: ago(4 * H) },
+    ],
+    agent_outputs: [
+      doc(1, 'lee.ready@example.com', 'lead_research', 'Lee Ready', 3 * D),
+      doc(2, 'lee.ready@example.com', 'interview_script', 'Lee Ready', 2 * D),
+      doc(3, 'dana.done@example.com', 'meeting_prep', 'Dana Done', D, { stage: 'review', stage_name: 'Client review', doc_name: 'Client review brief' }),
+      doc(4, 'max.busy@example.com', 'lead_research', 'Max Busy', 2 * D),
+    ],
+    ai_settings: [
+      { key: 'catalyst_runs', value: { 'max.busy@example.com': { s: 'consultation', t0: ago(5 * 60e3), seen: 0, by: 'someone@aiparagonconsulting.com' } } },
+    ],
+    dashboard_comments: [
+      {
+        id: CM(1), target_key: 'e1:lee.ready@example.com:interview_script', author: 'Erin Example', body: 'Ask about the custodian move before the call.',
+        created_at: ago(2 * H), resolved: false, resolved_by: null, parent_id: null,
+      },
+      {
+        id: CM(2), target_key: 'brief:agent1_2026-11-08_0700', author: 'robin@example.com', body: 'Can we drop the fee posts?',
+        created_at: ago(D), resolved: null, resolved_by: null, parent_id: null,
+      },
+      {
+        id: CM(3), target_key: 'funnel:agent3_2026-11-05_0900:tab5', author: 'Sam Sample', body: 'The landing page headline is too long.',
+        created_at: ago(2 * D), resolved: true, resolved_by: 'Sam Sample', parent_id: null,
+      },
+    ] as Record<string, unknown>[],
   }
 }
