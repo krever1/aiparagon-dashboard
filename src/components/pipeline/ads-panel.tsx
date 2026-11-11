@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, PenLine, Plus, Repeat } from 'lucide-react'
 import { setInBrief, setScore } from '@/app/(app)/ad-strategist/actions'
+import { rereadAd } from '@/app/(app)/ad-strategist/upload-actions'
 import { Dialog } from '@/components/ui/dialog'
 import { Drawer } from '@/components/ui/drawer'
 import { dateText, dayText } from '@/components/ui/local-date'
@@ -17,8 +18,38 @@ import { AdInfoButton } from './ads-info'
 import type { ACtx } from './ads-view'
 
 // An ad in full (nwAdOpen with v113AdDress): its preview, what to take from it, its offer, its score and fit, which
-// briefs it went into, its copy and patterns, whether the next ads brief uses it, and its details. Read this ad and
-// Utilize this ad copy are still in the current dashboard.
+// briefs it went into, its copy and patterns, whether the next ads brief uses it, and its details. Read this ad sends an
+// upload to the analyzer again; Utilize this ad copy is still in the current dashboard (Marketing Generation).
+
+const OFF = 'Could not reach the dashboard. Try again in a minute.'
+
+/** Where an ad's link goes, by its address (the old panel called every link the Meta Ad Library). */
+export function linkLabel(url: string): string {
+  if (/facebook\.com\/ads\/library/i.test(url)) return 'View in Meta Ad Library'
+  if (/linkedin\.com/i.test(url)) return 'View on LinkedIn'
+  return 'View the ad'
+}
+
+/** Read this ad: an upload the analyzer could not read sent to it again (apReanalyse). */
+export function ReadAd({ id }: { id: string }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      className={btn}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        const r = await rereadAd({ id }).catch(() => ({ ok: false as const, error: OFF }))
+        setBusy(false)
+        if (r.ok) toast(r.toast)
+        else toast(r.error, 'warn')
+      }}
+    >
+      {busy ? 'Reading…' : 'Read this ad'}
+    </button>
+  )
+}
 
 const STAGE: Record<string, string> = { tof: 'Top of funnel', mof: 'Middle of funnel', bof: 'Bottom of funnel' }
 const H = 'mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-3'
@@ -93,16 +124,11 @@ export function AdPanel({
           <>
             {url ? (
               <a href={url} target="_blank" rel="noopener noreferrer" className={btn}>
-                View in Meta Ad Library
+                {linkLabel(url)}
                 <ArrowUpRight size={14} aria-hidden="true" />
               </a>
             ) : null}
-            {a.pend ? (
-              <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn}>
-                Read this ad
-                <ArrowUpRight size={14} aria-hidden="true" />
-              </a>
-            ) : null}
+            {a.pend ? <ReadAd id={a.id} /> : null}
             <span className="grow" />
             <a href={legacy('marketing-generation')} title={OUT_TIP} className={primary}>
               <Plus size={15} aria-hidden="true" />

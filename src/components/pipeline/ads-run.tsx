@@ -1,18 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowUpRight, Megaphone, Upload } from 'lucide-react'
+import { Megaphone, Upload } from 'lucide-react'
 import { startAdRun } from '@/app/(app)/ad-strategist/actions'
 import { Dialog } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
 import { btn, ghost, primary } from './bits'
-import { OUT_TIP, legacy } from './briefs-parts'
 import type { ACtx } from './ads-view'
 
-// Run now (nwAdRunOpen, nwAdRunStart): a fresh pull from the Ad Library, or a brief from the team's uploads (still in
-// the current dashboard).
+// Run now (nwAdRunOpen, nwAdRunStart): a fresh pull from the Ad Library, or a brief from the team's uploads (Pick ads
+// opens the build-a-brief window).
 
-export function RunNowDialog({ ctx, onClose }: { ctx: ACtx; onClose: () => void }) {
+export function RunNowDialog({ ctx, onClose, onPick }: { ctx: ACtx; onClose: () => void; onPick: () => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const go = async () => {
@@ -52,10 +51,9 @@ export function RunNowDialog({ ctx, onClose }: { ctx: ACtx; onClose: () => void 
           <Upload size={20} aria-hidden="true" className="text-accent-text" />
           <b className="text-[15px] text-ink">From the ads you uploaded</b>
           <p className="text-[13.5px] text-ink-2">Builds an ads brief from the screenshots your team uploaded.</p>
-          <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn + ' mt-auto w-fit'}>
+          <button type="button" className={btn + ' mt-auto w-fit'} onClick={onPick}>
             Pick ads
-            <ArrowUpRight size={13} aria-hidden="true" />
-          </a>
+          </button>
         </section>
       </div>
       <p role={err ? 'alert' : undefined} className={`mt-3 text-[13.5px] ${err ? 'text-bad' : 'text-ink-3'}`} data-testid="run-msg">

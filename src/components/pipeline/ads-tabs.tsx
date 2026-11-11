@@ -2,11 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, Clock, Copy, FileText, History, Info, Lightbulb, Megaphone, PenLine, Rocket, Search, Upload } from 'lucide-react'
+import { ArrowUpRight, Clock, FileText, History, Info, Lightbulb, Megaphone, PenLine, Rocket, Search, Upload } from 'lucide-react'
 import { Drawer } from '@/components/ui/drawer'
 import { dateText, dayText } from '@/components/ui/local-date'
-import { toast } from '@/components/ui/toast'
-import { type CopySet, type SortKey, bandOf, filterAds, sortAds, topAds, uploadsOverview, variantText, whyShort } from '@/lib/pipeline/ad-strategist'
+import { type CopySet, type SortKey, bandOf, filterAds, sortAds, topAds, uploadsOverview, whyShort } from '@/lib/pipeline/ad-strategist'
 import { runDateOf } from '@/lib/pipeline/ads'
 import { ageDays, fiveHeading } from '@/lib/pipeline/briefs'
 import { briefHref } from '@/lib/touchpoint/approvals'
@@ -15,11 +14,12 @@ import { Chip, Empty, Pill, Ring, Tag, btn, ghost, inputCls, linkCls, primary, s
 import { OUT_TIP, legacy } from './briefs-parts'
 import { AdCard, LiveTag, clean, clip, isWeb, plural } from './ads-cards'
 import { AdInfoButton } from './ads-info'
+import { CopyBody } from './copy-cards'
 import type { ACtx } from './ads-view'
 
 // The Ad Strategist's tabs (nwAdsTopHtml, nwAdsAllHtml, nwAdsSwipeHtml with v113's overview, nwAdsTakeHtml with its
-// drawer, nwAdsLibHtml). The upload window, building a brief from uploads, ad copy and Marketing Generation are still in
-// the current dashboard, so their buttons open it there.
+// drawer, nwAdsLibHtml). The Uploads tab opens the upload, build-a-brief and ad copy windows; Marketing Generation is
+// still in the current dashboard, so its buttons open it there.
 
 const grid = 'grid grid-cols-1 gap-3.5 min-[641px]:grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
 
@@ -377,16 +377,14 @@ export function UploadsTab({ ctx }: { ctx: ACtx }) {
         </p>
         {anyRead ? (
           <span className="flex flex-wrap gap-2">
-            <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn}>
+            <button type="button" className={btn} onClick={ctx.openBrief}>
               <FileText size={14} aria-hidden="true" />
               Build a brief from these
-              <ArrowUpRight size={13} aria-hidden="true" />
-            </a>
-            <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn}>
+            </button>
+            <button type="button" className={btn} onClick={ctx.openCopy}>
               <PenLine size={14} aria-hidden="true" />
               Write ad copy
-              <ArrowUpRight size={13} aria-hidden="true" />
-            </a>
+            </button>
           </span>
         ) : null}
       </div>
@@ -395,15 +393,15 @@ export function UploadsTab({ ctx }: { ctx: ACtx }) {
         {ups.map((a) => (
           <AdCard key={a.id} a={a} ctx={ctx} />
         ))}
-        <a
-          href={legacy('ad-strategist')}
-          title={OUT_TIP}
+        <button
+          type="button"
+          onClick={ctx.openUpload}
           className="flex min-h-[280px] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line p-4 text-center text-ink-2 hover:border-accent hover:text-accent-text"
         >
           <Upload size={26} aria-hidden="true" />
           <b className="text-[15px]">Upload competitor ads</b>
-          <small className="text-[13px] text-ink-3">Screenshots, PNG or JPG · opens in the current dashboard</small>
-        </a>
+          <small className="text-[13px] text-ink-3">Screenshots, PNG or JPG</small>
+        </button>
       </div>
 
       {data.copySets.length ? <CopySets sets={data.copySets} tz={ctx.tz} /> : null}
@@ -421,14 +419,6 @@ function CopySets({ sets, tz }: { sets: CopySet[]; tz: string | undefined }) {
     : sets
   const pages = Math.max(1, Math.ceil(hits.length / 10))
   const p = Math.min(page, pages - 1)
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast('Copied')
-    } catch {
-      toast('Could not copy here', 'warn')
-    }
-  }
   return (
     <section className="mt-6" data-testid="copy-sets">
       <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent-text">Ad copy</p>
@@ -462,53 +452,8 @@ function CopySets({ sets, tz }: { sets: CopySet[]; tz: string | undefined }) {
                 </span>
                 <span className="text-[12.5px] text-ink-3">{dateText(s.createdAt, tz)}</span>
               </summary>
-              <div className="grid gap-3 border-t border-line px-3 py-3">
-                {s.takeaways.length ? (
-                  <div>
-                    <b className="mb-1 block text-[13px] text-ink">Key takeaways</b>
-                    <ul className="grid list-disc gap-1 pl-5 text-[13.5px] text-ink-2">
-                      {s.takeaways.map((x, i) => (
-                        <li key={i}>{x}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {s.variants.map((v, i) => (
-                  <div key={i} className="rounded-md border border-line p-3">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                      <b className="text-[13.5px] text-ink">Variant {String.fromCharCode(65 + (i % 26))}</b>
-                      {v.angle ? <Tag gold>{v.angle}</Tag> : null}
-                      <button type="button" className={ghost + ' ml-auto'} onClick={() => void copy(variantText(v))}>
-                        <Copy size={13} aria-hidden="true" />
-                        Copy
-                      </button>
-                    </div>
-                    {v.hook ? <p className="mb-1 text-[14px] font-semibold text-ink">{v.hook}</p> : null}
-                    {v.primary ? <p className="mb-1.5 whitespace-pre-line text-[13.5px] text-ink-2">{v.primary}</p> : null}
-                    <dl className="grid gap-0.5 text-[13px] text-ink-2">
-                      {(
-                        [
-                          ['Headline', v.headline],
-                          ['CTA', v.cta],
-                          ['Image', v.image],
-                          ['Pattern used', v.pattern],
-                        ] as const
-                      )
-                        .filter(([, x]) => x)
-                        .map(([k, x]) => (
-                          <div key={k}>
-                            <dt className="inline font-semibold text-ink">{k}: </dt>
-                            <dd className="inline">{x}</dd>
-                          </div>
-                        ))}
-                    </dl>
-                  </div>
-                ))}
-                {s.notes ? (
-                  <p className="text-[13.5px] text-ink-2">
-                    <b className="text-ink">How the guidelines shaped it:</b> {s.notes}
-                  </p>
-                ) : null}
+              <div className="border-t border-line px-3 py-3">
+                <CopyBody takeaways={s.takeaways} variants={s.variants} notes={s.notes} />
               </div>
             </details>
           </li>

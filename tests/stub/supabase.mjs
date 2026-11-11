@@ -38,9 +38,12 @@ let hooks = {}
 const FATHOM = () => ({ connected: true, hint: 'ab12', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z' })
 let fathom = FATHOM()
 const refresh = new Map() // refresh token -> email
-// Storage: path -> {type, body (Buffer)}; signed upload tokens -> path
+// Storage: path -> {type, body (Buffer)}, lead-files in `store`, the ads' pictures (creatives) in `creatives`; signed
+// upload tokens -> bucket and path
 let store = new Map()
+let creatives = new Map()
 let signed = new Map()
+const bucketOf = (b) => (b === 'creatives' ? creatives : store)
 let denyStorage = false
 const CORS = {
   'access-control-allow-origin': '*',
@@ -104,22 +107,25 @@ function storage(req, res, url, buf, body) {
     return res.end()
   }
   let m
-  if (req.method === 'POST' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+  if (req.method === 'POST' && (m = p.match(/^object\/upload\/sign\/(lead-files|creatives)\/(.+)$/))) {
     if (!claimsOf(req)) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'Invalid Compact JWS' }, CORS)
-    if (denyStorage) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, CORS)
+    // the creatives bucket takes the team's uploads under uploads/ only, as the project's rule does
+    if (denyStorage || (m[1] === 'creatives' && !m[2].startsWith('uploads/'))) {
+      return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, CORS)
+    }
     const token = crypto.randomBytes(10).toString('hex')
-    signed.set(token, m[1])
-    return send(res, 200, { url: '/object/upload/sign/lead-files/' + m[1] + '?token=' + token }, CORS)
+    signed.set(token, m[1] + '/' + m[2])
+    return send(res, 200, { url: '/object/upload/sign/' + m[1] + '/' + m[2] + '?token=' + token }, CORS)
   }
-  if (req.method === 'PUT' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+  if (req.method === 'PUT' && (m = p.match(/^object\/upload\/sign\/(lead-files|creatives)\/(.+)$/))) {
     const token = url.searchParams.get('token')
-    if (!token || signed.get(token) !== m[1]) return send(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'The signature does not match' }, CORS)
+    if (!token || signed.get(token) !== m[1] + '/' + m[2]) return send(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'The signature does not match' }, CORS)
     signed.delete(token)
-    store.set(m[1], { type: String(req.headers['content-type'] || 'application/octet-stream'), body: buf })
-    return send(res, 200, { Key: 'lead-files/' + m[1] }, CORS)
+    bucketOf(m[1]).set(m[2], { type: String(req.headers['content-type'] || 'application/octet-stream'), body: buf })
+    return send(res, 200, { Key: m[1] + '/' + m[2] }, CORS)
   }
-  if (req.method === 'GET' && (m = p.match(/^object\/public\/lead-files\/(.+)$/))) {
-    const f = store.get(m[1])
+  if (req.method === 'GET' && (m = p.match(/^object\/public\/(lead-files|creatives)\/(.+)$/))) {
+    const f = bucketOf(m[1]).get(m[2])
     if (!f) return send(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' }, CORS)
     res.writeHead(200, { 'content-type': f.type, ...CORS })
     return res.end(f.body)
@@ -166,6 +172,7 @@ http
         fathom = FATHOM()
         store = new Map()
         signed = new Map()
+        creatives = new Map()
         denyStorage = false
         return send(res, 200, { ok: true })
       }
@@ -174,7 +181,8 @@ http
           denyStorage = !!body.deny
           return send(res, 200, { ok: true })
         }
-        return send(res, 200, Object.fromEntries([...store].map(([k, v]) => [k, { type: v.type, size: v.body.length }])))
+        const kept = url.searchParams.get('bucket') === 'creatives' ? creatives : store
+        return send(res, 200, Object.fromEntries([...kept].map(([k, v]) => [k, { type: v.type, size: v.body.length }])))
       }
       if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
@@ -281,6 +289,47 @@ http
         // Engine 3 · Ad Strategist: a run starts; Engine 3 · Advertiser Industries: names an industry for the advertisers
         // whose ads say what they sell (a test gives its own answer with /__hook)
         if (name === 'ad-strategist-run') return send(res, 200, { ok: true, run_id: 'agent2_stub' })
+        // Engine 3 · Ad Upload Analyzer: reads an ad (an advertiser named "Unreadable…" cannot be read), or writes copy
+        if (name === 'ad-upload' && body.mode === 'copy') {
+          const n = Number(body.count) || 3
+          const variants = Array.from({ length: n }, (_, i) => ({
+            angle: ['Time back', 'Proof', 'Simple start', 'Risk', 'Speed'][i % 5],
+            hook: 'Stub hook ' + (i + 1) + ' for ' + (body.offer?.name || 'the offer'),
+            primary_text: 'Stub primary text ' + (i + 1) + '.',
+            headline: 'Stub headline ' + (i + 1),
+            cta: 'Book a call',
+            image_direction: 'A clear desk',
+            pattern_borrowed: 'Proof first',
+          }))
+          return send(res, 200, { ok: true, variants, takeaways: ['Lead with the result'], guideline_notes: ['Kept to plain words', 'No promises of results'] })
+        }
+        if (name === 'ad-upload') {
+          if (/^unreadable/i.test(String(body.advertiser || ''))) return send(res, 200, { ok: false, error: 'The analyzer could not read this ad.' })
+          const imgs = Array.isArray(body.images) ? body.images : []
+          return send(res, 200, {
+            ok: true,
+            analysis: {
+              hook: body.copy ? String(body.copy).split('\n')[0] : 'Hook read from the screenshot',
+              body: body.copy || 'Body read from the screenshot.',
+              cta: 'Learn more',
+              copy_formula: 'Problem -> Proof -> Offer',
+              offer_inferred: 'Free audit',
+              price_point_inferred: 0,
+              funnel_stage: 'mof',
+              format: imgs.length > 1 ? 'carousel' : imgs.length ? 'static_image' : 'text',
+              extracted_patterns: ['Proof first: a client result'],
+              visual: { visual_hook: 'A checklist on a desk', text_on_image: 'Free audit' },
+              takeaways: ['Opens with a result', 'Names the offer'],
+              confidence: 0.8,
+            },
+          })
+        }
+        // Engine 3 · Custom Ad Strategy: answers with the brief it would save (a test writes the rows it would save)
+        if (name === 'ad-brief') {
+          return send(res, 200, { ok: true, run_id: 'agent2_custom_stub', brief: { differentiation_angle: 'Proof you can check in a week.', winning_hooks: ['Your week back', 'Proof first'] } })
+        }
+        // Low-Ticket Ads Content Agent: answers that it started
+        if (name === 'e3-low-ticket-run') return send(res, 200, { ok: true, started: true })
         if (name === 'e3-ad-industries') return send(res, 200, { ok: true, industries: {} })
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })

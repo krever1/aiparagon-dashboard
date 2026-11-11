@@ -43,7 +43,7 @@ export function FollowingTab({ ctx }: { ctx: ACtx }) {
 // ---------- accounts ----------
 
 /** Ads only, or Ads and posts (v111ForSeg). */
-function ForSeg({ value, label, onPick, busy }: { value: 'ads' | 'both'; label: string; onPick: (f: 'ads' | 'both') => void; busy?: boolean }) {
+export function ForSeg({ value, label, onPick, busy }: { value: 'ads' | 'both'; label: string; onPick: (f: 'ads' | 'both') => void; busy?: boolean }) {
   return (
     <div role="radiogroup" aria-label={label} className="inline-flex rounded-md border border-line bg-panel p-0.5">
       {(

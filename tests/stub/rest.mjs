@@ -18,6 +18,9 @@ const KEYS = {
   catalyst_sources: 'id',
 }
 
+/** Other unique columns, as in the project (an ad's link is kept once: ad_records_url_unique). */
+const UNIQUE = { ad_records: ['ad_library_url'] }
+
 /**
  * Views, as in the project: winner_creatives is every ad_records row, so a write to ad_records shows in it. A test that
  * seeds winner_creatives itself reads its own rows there instead.
@@ -236,6 +239,8 @@ export function createRest(initial, claimsOf) {
         if (key === 'id' && row.id === undefined) row.id = `stub-${name}-${seq++}`
         if (row.created_at === undefined && name !== 'ai_settings') row.created_at = new Date().toISOString()
         const existing = row[key] !== undefined ? rows.find((r) => r[key] === row[key]) : undefined
+        const clash = (UNIQUE[name] || []).find((c) => row[c] !== undefined && row[c] !== null && rows.some((r) => r !== existing && r[c] === row[c]))
+        if (clash) return send(res, 409, { code: '23505', message: `duplicate key value violates unique constraint (${name}.${clash})` })
         if (existing) {
           if (ignore) continue
           if (!merge) return send(res, 409, { code: '23505', message: `duplicate key value violates unique constraint (${name}.${key})` })

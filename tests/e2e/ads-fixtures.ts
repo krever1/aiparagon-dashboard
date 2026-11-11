@@ -248,9 +248,10 @@ export function adsRows() {
           platform: 'Facebook',
           source_ads: [A(7)],
           takeaways: ['Lead with the time saved'],
-          guideline_notes: 'Kept to plain words, no promises of results.',
+          // a list, as the copy writer sends it; the picture and the pattern under the names it saves them by
+          guideline_notes: ['Kept to plain words', 'No promises of results'],
           variants: [
-            { angle: 'Time back', hook: 'Get your Fridays back', primary_text: 'We sort the paperwork so you can see clients.', headline: 'Paperwork, sorted', cta: 'Book a call', image_idea: 'A clear desk', pattern_used: 'Time saving' },
+            { angle: 'Time back', hook: 'Get your Fridays back', primary_text: 'We sort the paperwork so you can see clients.', headline: 'Paperwork, sorted', cta: 'Book a call', image_direction: 'A clear desk', pattern_borrowed: 'Time saving' },
             { angle: 'Proof', hook: 'Forty files in an afternoon', primary_text: 'Here is how one firm did it.', headline: 'See how', cta: 'Learn more' },
           ],
         }),

@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, ArrowUpRight, Check, ChevronRight, FileText, Megaphone, Play, Sparkles, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, FileText, Megaphone, Play, Sparkles, Upload } from 'lucide-react'
 import { suggestIndustries } from '@/app/(app)/ad-strategist/actions'
 import { ErrorNotice, Tabs } from '@/components/catalyst/bits'
 import { useNow } from '@/components/ui/clock'
@@ -14,12 +14,15 @@ import {
 } from '@/lib/pipeline/ad-strategist'
 import { runDateOf } from '@/lib/pipeline/ads'
 import type { AdsData } from '@/lib/pipeline/ads-load'
+import { uploadNames } from '@/lib/pipeline/uploads'
 import { btn, ghost, primary } from './bits'
-import { OUT_TIP, legacy } from './briefs-parts'
 import { AdPanel } from './ads-panel'
 import { FollowingTab, IndustriesDialog } from './ads-following'
 import { ScoreHow } from './ads-info'
 import { RunNowDialog } from './ads-run'
+import { BriefWindow } from './brief-window'
+import { CopyWindow } from './copy-window'
+import { UploadWindow } from './upload-window'
 import { AllTab, FiveDrawer, LibraryTab, TakeawaysTab, TopTab, UploadsTab } from './ads-tabs'
 
 // The Ad Strategist (NW_PAGES['e3.ads'] as v109, v111 and v113 left it): the top ads, every ad with which brief it went
@@ -45,6 +48,10 @@ export type ACtx = {
   /** another ads brief on the Takeaways tab (read on the server) */
   pickBrief: (run: string) => void
   openRun: () => void
+  /** the upload window, building a brief from the uploads, and writing ad copy from them */
+  openUpload: () => void
+  openBrief: () => void
+  openCopy: () => void
   openInd: () => void
   openHow: () => void
   runLabel: (run: string) => string
@@ -98,6 +105,7 @@ export function AdsView({ data }: { data: AdsData }) {
   const [five, setFive] = useState<number | null>(null)
   const [top, setTop] = useState(0)
   const [runOpen, setRunOpen] = useState(false)
+  const [win, setWin] = useState<'' | 'upload' | 'brief' | 'copy'>('')
   const [indOpen, setIndOpen] = useState(false)
   const [howOpen, setHowOpen] = useState(false)
   const [indBusy, setIndBusy] = useState(false)
@@ -125,12 +133,15 @@ export function AdsView({ data }: { data: AdsData }) {
   const caps = useMemo(() => Object.fromEntries(every.map((a) => [a.id, capOfAd(a, data.cap)])), [every, data.cap])
   const fit = useCallback((a: AdView) => fitOf(a, data.fit), [data.fit])
   const missing = useMemo(() => advertisers(data.pool).filter((n) => !industryOf(data.ind, n)), [data.pool, data.ind])
+  // whose ad it is, suggested from the accounts followed and the advertisers already seen
+  const suggestNames = useMemo(() => uploadNames(data.follows.map((c) => c.name), advertisers(data.pool)), [data.follows, data.pool])
 
   // the tab, the open ad and the filters live in the address, without a new history entry
   useEffect(() => {
     const want = addressOf(tab, adId, brief, newest, f)
-    if (window.location.pathname + window.location.search !== want) window.history.replaceState(window.history.state, '', want)
-  }, [tab, adId, brief, newest, f])
+    if (window.location.pathname + window.location.search !== want) window.history.replaceState(null, '', want)
+    // sp: a page refresh from an action can put back the address the page had when the action started
+  }, [tab, adId, brief, newest, f, sp])
 
   // an ad asked for in the address that is not among the ads read
   const lost = adId && !byId.has(adId)
@@ -199,6 +210,9 @@ export function AdsView({ data }: { data: AdsData }) {
     openFive: setFive,
     pickBrief,
     openRun: () => setRunOpen(true),
+    openUpload: () => setWin('upload'),
+    openBrief: () => setWin('brief'),
+    openCopy: () => setWin('copy'),
     openInd: () => setIndOpen(true),
     openHow: () => setHowOpen(true),
     runLabel,
@@ -273,11 +287,10 @@ export function AdsView({ data }: { data: AdsData }) {
           </span>
         ))}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn + ' px-3.5 py-2 text-[14px]'}>
+          <button type="button" className={btn + ' px-3.5 py-2 text-[14px]'} onClick={() => setWin('upload')}>
             <Upload size={16} aria-hidden="true" />
             Upload ads
-            <ArrowUpRight size={14} aria-hidden="true" />
-          </a>
+          </button>
           <button type="button" className={primary + ' px-3.5 py-2 text-[14px]'} onClick={() => setRunOpen(true)}>
             <Play size={16} aria-hidden="true" />
             Run now
@@ -371,7 +384,30 @@ export function AdsView({ data }: { data: AdsData }) {
           }}
         />
       ) : null}
-      {runOpen ? <RunNowDialog ctx={ctx} onClose={() => setRunOpen(false)} /> : null}
+      {runOpen ? (
+        <RunNowDialog
+          ctx={ctx}
+          onClose={() => setRunOpen(false)}
+          onPick={() => {
+            setRunOpen(false)
+            setWin('brief')
+          }}
+        />
+      ) : null}
+      {win === 'upload' ? (
+        <UploadWindow
+          names={suggestNames}
+          follows={data.follows}
+          onClose={() => setWin('')}
+          onDone={(id) => {
+            setWin('')
+            goTab('uploads')
+            setAdId(id)
+          }}
+        />
+      ) : null}
+      {win === 'brief' ? <BriefWindow onClose={() => setWin('')} /> : null}
+      {win === 'copy' ? <CopyWindow onClose={() => setWin('')} /> : null}
       {indOpen ? (
         <IndustriesDialog
           ctx={ctx}

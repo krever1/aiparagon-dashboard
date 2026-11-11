@@ -38,7 +38,7 @@ test('the header, the numbers, the industries banner and the top ads, best first
   const status = page.getByTestId('ads-status')
   await expect(status).toContainText('Last run ' + day(RUN1_AT) + ', 2 days ago')
   await expect(status).toContainText('Runs after each Intel Tracker run')
-  await expect(status.getByRole('link', { name: 'Upload ads' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(status.getByRole('button', { name: 'Upload ads' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'What it does' }).getByRole('listitem')).toHaveText([
     'Finds long-running competitor ads',
     'Reads ads you upload',
@@ -288,7 +288,7 @@ test('an upload in full, one not read yet, a catalog ad, an ad that is gone and 
   await page.getByRole('button', { name: 'Open this ad: Untitled ad' }).click()
   await expect(p).toContainText('Not read yet')
   await expect(p.getByTestId('ad-key')).toContainText('Not read yet. Use “Read this ad” below.')
-  await expect(p.getByRole('link', { name: 'Read this ad' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(p.getByRole('button', { name: 'Read this ad' })).toBeVisible()
   await page.keyboard.press('Escape')
 
   await page.goto('/ad-strategist?ad=' + A(5))
@@ -321,9 +321,9 @@ test('Uploads: what they show, the cards, and the ad copy written from them', as
   await expect(panel(page).getByRole('heading', { level: 2 })).toHaveText('Paperwork in an afternoon')
   await page.keyboard.press('Escape')
 
-  await expect(page.getByRole('link', { name: 'Build a brief from these' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
-  await expect(page.getByRole('link', { name: 'Write ad copy' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
-  await expect(page.getByRole('link', { name: /Upload competitor ads/ })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(page.getByRole('button', { name: 'Build a brief from these' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Write ad copy' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Upload competitor ads/ })).toBeVisible()
   const cards = page.getByTestId('ad-card')
   await expect(cards).toHaveCount(3)
   // newest first: the one not read yet, the upload, the swipe file's
@@ -338,7 +338,10 @@ test('Uploads: what they show, the cards, and the ad copy written from them', as
   await set.locator('summary').click()
   await expect(set).toContainText('Key takeawaysLead with the time saved')
   await expect(set).toContainText('Variant ATime back')
-  await expect(set).toContainText('How the guidelines shaped it: Kept to plain words, no promises of results.')
+  // the picture and the pattern under the names the copy writer saves (the first port read other names and showed neither)
+  await expect(set).toContainText('Image: A clear desk')
+  await expect(set).toContainText('Pattern used: Time saving')
+  await expect(set).toContainText('How the guidelines shaped it: Kept to plain words · No promises of results')
   await set.getByRole('button', { name: 'Copy' }).first().click()
   await expect(toast(page, 'Copied')).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
@@ -589,7 +592,7 @@ test('Run now: a run starts and the header says so; a workflow that is off says 
   await page.getByRole('button', { name: 'Run now' }).click()
   const d = page.getByRole('dialog', { name: 'Run the Ad Strategist' })
   await expect(d.getByTestId('run-msg')).toHaveText('It also runs after each Intel Tracker run.')
-  await expect(d.getByRole('link', { name: 'Pick ads' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(d.getByRole('button', { name: 'Pick ads' })).toBeVisible()
   await d.getByRole('button', { name: 'Start a run' }).click()
   await expect(toast(page, 'Ad Strategist started. The new ads brief lands in about 10 minutes.')).toBeVisible()
   await expect(d).toBeHidden()
@@ -655,7 +658,7 @@ test('no ads yet: each tab says what to do', async ({ page }) => {
   await expect(page.getByText('No ads yet', { exact: true })).toBeVisible()
   await tabs(page).nth(2).click()
   await expect(page.getByTestId('uploads-overview')).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /Upload competitor ads/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Upload competitor ads/ })).toBeVisible()
   await tabs(page).nth(3).click()
   await expect(page.getByText('No ads brief yet')).toBeVisible()
   await tabs(page).nth(4).click()

@@ -38,7 +38,7 @@ export function BriefsView({ data }: { data: BriefsData }) {
   // the address names the tab and, when it is not the newest, the brief
   useEffect(() => {
     const want = addressOf(data.tab, data.run, data.latest)
-    if (window.location.pathname + window.location.search !== want) window.history.replaceState(window.history.state, '', want)
+    if (window.location.pathname + window.location.search !== want) window.history.replaceState(null, '', want)
   }, [data.tab, data.run, data.latest])
 
   const approve = async (kind: DecideKind, id: string) => {

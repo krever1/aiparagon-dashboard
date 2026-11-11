@@ -45,13 +45,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   editor); 3. results (Ad Testing, Landing pages); 4. Content Transformation, with the creation kit it shares; 5.
   Marketing Generation. Part 1 comes as two PRs: 1a the Intel Tracker (Nov 11, branch `pipeline/intel-tracker`, on top
   of the finishing PR, PR #12), 1b the Overview and the Market Intelligence Briefs (Nov 11, branch
-  `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. Part 2 comes as two PRs too: 2a the Ad
-  Strategist (Nov 11, branch `pipeline/ads`, on top of 1b), 2b Runs & uploads, the upload, build-a-brief and ad copy
-  windows, Read this ad and the brief editor (next). See Pipeline below.
+  `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. Part 2 comes as three PRs: 2a the Ad
+  Strategist (Nov 11, branch `pipeline/ads`, on top of 1b, PR #14), 2b Runs & uploads and the upload, build-a-brief and
+  ad copy windows, with Read this ad and Send to Marketing Generation (Nov 11, branch `pipeline/uploads`, on top of the
+  link fix), 2c the brief editor and its Structure tab (next). See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Pipeline 2b, then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover.
+- Next: Pipeline 2c (the brief editor), then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -75,8 +76,9 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
-| Pipeline | Ad Strategist (its upload, build-a-brief and ad copy windows and Read this ad open the current dashboard until 2b) | here (Pipeline part 2a, not released) |
-| Pipeline | Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
+| Pipeline | Ad Strategist | here (Pipeline part 2a, not released) |
+| Pipeline | Runs & uploads; the upload, build-a-brief and ad copy windows; Read this ad | here (Pipeline part 2b, not released) |
+| Pipeline | Content Transformation, Marketing Generation, Landing pages, Ad Testing | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -552,8 +554,8 @@ signed-in teammate's token, as the current dashboard's do.
   - All ads: search, Still running and Uploaded, Advertiser, Industry, Found in and Captured in, eight columns that
     sort, 20 at a time; each ad's line says which brief it went into, or why not (`whyShort`).
   - Uploads: what they show (patterns, takeaways, offers, the average fit), the cards and the ad copy sets (search, ten a
-    page, each opening in place with Copy). Upload ads, Build a brief from these and Write ad copy open the current
-    dashboard until 2b.
+    page, each opening in place with Copy). Upload ads, Build a brief from these and Write ad copy open their windows
+    (see Runs & uploads and the windows below).
   - Takeaways: the brief's five things (its snapshot, else four hooks and a pain), each with the ads closest to it in a
     side panel, the short version, a brief picker and an old brief's warning. Run library: the twelve newest runs with
     their rule, numbers and lead finding; Open takeaways, Its ads, Brief.
@@ -562,15 +564,17 @@ signed-in teammate's token, as the current dashboard's do.
     went into (with the pick and the brief's rule) or why not, the copy (Copy the copy), its patterns, Next ads brief
     (`ad_records.in_brief`) and its details. Change the score keeps 0 to 100 on the ad (`performance_score` / 100,
     `score_overridden`) with an agent_feedback row (`performance_score_override`, "Score manually set to N (was M)").
-    Read this ad (an upload not read yet) and Utilize this ad copy open the current dashboard.
+    Read this ad (an upload not read yet) sends it to the analyzer again; Utilize this ad copy opens Marketing
+    Generation in the current dashboard. An ad's link is named for where it goes (`linkLabel`: the Meta Ad Library,
+    LinkedIn, or View the ad).
   - Following: the accounts followed for ads (`competitors` with a Facebook page, not posts only): Add an account,
     Ads only or Ads and posts, Stop following or Stop reading ads (asks first), and those followed for posts only (Pull
     their ads too, Add page); the searches and filters (ai_settings `ads_follow`: keywords up to 10, industries up to 8,
     ad types, running now or not, country), saved with Save; what each advertiser sells, with Suggest the missing ones
     and the window that sets them (`ad_industries`).
   - Run now: Start a run calls Engine 3 · Ad Strategist's `ad-strategist-run` with the team's limits and keeps the run
-    for the team in ai_settings `ad_runs` ({runs: [{run_id, names, t, by, cascade}]}); From the ads you uploaded opens
-    the current dashboard until 2b.
+    for the team in ai_settings `ad_runs` ({runs: [{run_id, names, t, by, cascade}]}); From the ads you uploaded's Pick
+    ads opens the build-a-brief window.
   - Writes go to `ad_records` (the table under the view) and `competitors` as the teammate; both take a team account's
     update.
 - Changed on purpose on the Ad Strategist (reported to Kser): the tab, the open ad and the filters are in the address;
@@ -585,6 +589,74 @@ signed-in teammate's token, as the current dashboard's do.
   team's and could not remove one); adding an account keeps what was typed when it fails and finds the account by its
   id for Add page; the searches' Save keeps its message; an ad opened from another page opens here
   (`?ad=<id>`), and one not found says so.
+- Runs & uploads (part 2b, `src/lib/pipeline/uploads.ts` pure rules, `runs-load.ts`,
+  `src/components/pipeline/runs-view.tsx`, `src/app/(app)/runs`; apRenderHistory and apHistBody with the Intel rows its
+  wrapper adds):
+  - What it reads, as the teammate, fresh on every visit: the team's uploads (winner_creatives with `uploaded_by`, 300),
+    the ads briefs built from them (agent_outputs ad_strategist `agent2_custom_*`, 100), the ad copy sets
+    (ad_copywriter, 100), the campaigns (low_ticket_content, 60; listed only when built from a brief made from uploads),
+    every Intel Tracker brief (40) and who started each run (`runs`), the custom Intel runs still reading (ai_settings
+    `intel_runs`), the campaigns started from here (ai_settings `campaign_runs`) and who the Ad Strategist follows (for
+    the upload window's question). A read that fails says so above the list.
+  - The page: Build ad strategy and New Intel run (the Intel Tracker's Run now window); the campaign banner; the newest
+    ads brief built from uploads, with Send to Marketing Generation; four numbers (uploads, strategies, content runs,
+    Intel runs: custom and by the agent) that open their tab; the tabs (All, Intel runs, Uploaded ads, Strategies, Ad
+    copy, Content runs) in `?tab=`; Add competitor ads; search (the titles, the line under them and the start of each
+    brief's text, 6,000 characters), 12 rows a page. Titles read as the old page showed them (`tidyTitle`: dashes as
+    dots, a date at the end left to the date beside it, Creative Brief as Advertisement brief).
+  - A row opens in place: an upload (its pictures, hook and takeaways, Open the ad on the Ad Strategist, Read this ad
+    when not read yet), a strategy (its hook patterns, Open the brief on the briefs page, Send to Marketing
+    Generation), a set of ad copy (the variant cards, `copy-cards.tsx`), a campaign (its ad images, Open in Marketing
+    Generation in the current dashboard), an Intel run (custom or by the agent, the first three points of its TL;DR,
+    Open in Intel Tracker), or one still reading.
+  - Send to Marketing Generation (`startCampaign`): the Low-Ticket Ads Content Agent's `e3-low-ticket-run` with the brief
+    (the newest built from uploads when none is named) and who asked. One at a time for the team: a campaign started in
+    the last 15 minutes that has not landed holds the next one back. Kept in ai_settings `campaign_runs` ({runs:
+    [{brief, t, by}]}, a week). The banner says it is running (the page checks back every 30 seconds), written (a
+    low_ticket_content row from that brief, created after the start) or not seen after 15 minutes; Dismiss hides it in
+    this browser (localStorage `ap.campaign.dismissed`).
+- The windows (part 2b, `upload-window.tsx`, `brief-window.tsx`, `copy-window.tsx`, `copy-cards.tsx`, and
+  `src/app/(app)/ad-strategist/upload-actions.ts`), opened from the Ad Strategist (Upload ads, the Uploads tab, Run
+  now's Pick ads) and from Runs & uploads:
+  - Add competitor ads (apOpenAdUpload with v113's question): screenshots dropped, chosen or pasted (pictures only, 8 MB
+    each, 10 at most), Each screenshot is a separate ad, the advertiser (suggested from who is followed and the
+    advertisers seen), the platform, the ad link (a web address; a bare one gets https), the copy, and Use these in the
+    next ads brief. Each ad's pictures go from the browser straight into Storage (bucket creatives,
+    `uploads/<day>/<id>.<ending>`) at addresses the server signs as the teammate (`startAdUploads`); then
+    `saveUploadedAd` sends them to Engine 3 · Ad Upload Analyzer (`ad-upload`, mode analyze) and saves the ad_records row
+    (`adRowOf`: source swipe_file, run upload_<day>, uploaded_by the teammate's email, in_brief; an ad the analyzer
+    cannot read is saved as not read yet). The table takes a link once: only the first ad of a batch keeps it as its Ad
+    Library link, and a link already there goes in under an upload id with the link kept as where the ad goes. Then, for
+    an advertiser not followed for ads and not set aside in this browser (localStorage `ap.v111.nofollow`, the current
+    dashboard's key), Follow them too? (`followForAds`; Not now sets them aside), with the upload's log under it. On the
+    Ad Strategist the new ad opens on the Uploads tab; on Runs & uploads its row opens.
+  - Read this ad (`rereadAd`): the analyzer reads an upload again; what it does not say keeps the old value, and the
+    format and the stage are values the table takes.
+  - Build an ad strategy from your uploads (`briefChoices`, `buildBrief`): the team's read uploads (ticked unless
+    switched out of the next ads brief) and, if ticked, the high-value Intel Tracker findings of the last 30 days (the
+    newest 25), to Engine 3 · Custom Ad Strategy (`ad-brief`), which answers with the brief it saved (`agent2_custom_…`):
+    its angle and hook patterns, Open the brief (`/briefs?tab=ads&run=`) and Send to Marketing Generation, which goes on
+    to Runs & uploads.
+  - Write ad copy (`copyChoices`, `writeAdCopy`, `saveAdCopy`): the read uploads (else up to 12 Ad Library ads with a
+    hook), the platform, 2 to 5 variants, the guidelines on file (guide_files with readable text), the brand voice and
+    the offer (`offerOf`: the team's default offer, else its newest; the old page's own when there is none) to the
+    analyzer's copy mode; Copy all, Save to Pipeline (an agent_outputs row: agent ad_copywriter, run
+    `adcopy_<YYYYMMDDHHMM>`), then ✓ Saved · view in history.
+- Changed on purpose on Runs & uploads and the windows (reported to Kser): a campaign started from here is kept for the
+  team (the old page kept it in one browser) and one runs at a time for the team; its wait ends only on a campaign from
+  that brief (the old one ended on anyone's); Dismiss hides the banner in this browser only; a read that fails says so
+  (the old page showed an empty list); search reads the start of each brief's text, not all of it; upload rows say Read
+  this ad, as the ad panel does (the old row said Analyse again, and on a fresh load it did nothing); a re-read keeps
+  values the table takes; an upload from Runs & uploads stays there and opens its row (the old one jumped to the Ad
+  Strategist); the upload's log stays on screen during the follow question (the old window replaced it, so an ad the
+  analyzer could not read went by unseen); the ad link has to be a web address (a bare one gets https; the old page
+  saved any text); the build-a-brief window starts with uploads switched out of the next ads brief unticked, names
+  catalog ads instead of showing their template words, reads the newest high-value findings (the old one read 25 in no
+  order) and builds one brief per window; Write ad copy writes for the team's default offer from the offers table (the
+  old page always sent its own copy of it, the same offer today) and says when it learns from Ad Library ads; brief rows
+  say Open the brief (the old Open in Ad Strategist opened the briefs page anyway); an ad's link is named for where it
+  goes (the old panel called every link the Meta Ad Library); the copy sets show the picture and the pattern under the
+  names the copy writer saves them by (the 2a port read other names and showed neither).
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -634,13 +706,21 @@ signed-in teammate's token, as the current dashboard's do.
   browser) and `ad-strategist.spec.ts` the Ad Strategist, on `ads-fixtures.ts` (nine ads in ad_records: six from the
   Ad Library, two uploads, one from the swipe file; three ads briefs, one built from uploads and an old one with no
   snapshot; four runs, one that did not finish; who it follows, the searches, the industries and a set of ad copy;
-  dates count back from now). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  dates count back from now); `uploads-logic.spec.ts` (without a browser) and `uploads.spec.ts` the upload, build-a-brief
+  and ad copy windows and Read this ad, on the same rows; `runs.spec.ts` Runs & uploads, on `runs-fixtures.ts` (the ads
+  rows plus a newer ads brief built from uploads, two campaigns, a scheduled and a custom Intel brief, and a custom
+  Intel run still reading). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
-  `winner_creatives` itself (the briefs suite does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and
-  answers the industry agent with no industries; a test gives its own answer with `stubHook`.
-- The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
-  upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
-  keeps, and `{deny: true}` turns signed-in teammates away, as Storage does before its rules for them. File Ingest saves
+  `winner_creatives` itself (the briefs suite does), and keeps each ad link once (`ad_records.ad_library_url`, 23505,
+  as the project's unique index does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and answers the
+  industry agent with no industries; the Ad Upload Analyzer reads an ad from what it is sent (an advertiser named
+  "Unreadable…" cannot be read) and writes copy for the offer it is sent; Custom Ad Strategy answers with the brief
+  `agent2_custom_stub`; the Low-Ticket agent starts. A test gives its own answer with `stubHook`.
+- The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
+  session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
+  takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
+  (`?bucket=creatives` the ads' pictures), and `{deny: true}` turns signed-in teammates away, as Storage does before its
+  rules for them. File Ingest saves
   a stored file's text on its row (a file named "scan…" has none); Catalyst · Client Proposal and the HubSpot file sync
   answer as their workflows do, and a test writes the client_proposal row n8n would save. `tests/fixtures` holds a
   made-up Word file.
@@ -719,14 +799,20 @@ signed-in teammate's token, as the current dashboard's do.
 - Next.js 16 with Cache Components keeps the last three pages alive (React Activity, hidden with `display: none`): a
   link back to one of them shows it with the state it had, and only its address changes. A view that copies the
   address into state must adopt an address that asks for something else, or a link to a tab lands on the old one. The
-  Ad Strategist and the Intel Tracker compare the address with what their state would write, during render (a bare
-  address keeps the page as it was, as the old dashboard kept tabs for the session); Approvals' `?review=`, the
-  proposal card's `?read=proposal` and New run's `?run=new` open again when the address newly asks (New run reads it
-  through `useSearchParams` in a Suspense of its own: the header is drawn before the address is known, and a static
-  page is not drawn again on a link). Views that read the address on every render (the Catalyst pages, Calls, Tasks,
-  Approvals' tab) or get it from the server (the briefs) need nothing. `bfcacheId` keys would reset on every link
-  instead. Tests that query by test id can match a hidden page's copy: use `getByRole` or `.filter({ visible: true
-  })`.
+  Ad Strategist, the Intel Tracker and Runs & uploads compare the address with what their state would write, during
+  render (a bare address keeps the page as it was, as the old dashboard kept tabs for the session); Approvals'
+  `?review=`, the proposal card's `?read=proposal` and New run's `?run=new` open again when the address newly asks
+  (New run reads it through `useSearchParams` in a Suspense of its own: the header is drawn before the address is
+  known, and a static page is not drawn again on a link). Views that read the address on every render (the Catalyst
+  pages, Calls, Tasks, Approvals' tab) or get it from the server (the briefs) need nothing. `bfcacheId` keys would
+  reset on every link instead. Tests that query by test id can match a hidden page's copy: use `getByRole` or
+  `.filter({ visible: true })`.
+- A view that writes its own address calls `window.history.replaceState(null, '', url)`. Passing Next's own history
+  state (`window.history.state`) makes Next skip syncing its router, so the next refresh from a server action puts the
+  old address back (found in 2b: Follow on the upload window lost `?tab=uploads&ad=`). The Pipeline views also write
+  the address again whenever it drifts from their state (the search params are in the effect's list).
+- Storage's creatives bucket has rules for uploads under `uploads/` and for reading, none for removing a file: the
+  pictures of an ad whose row could not be saved stay in Storage, as with the current dashboard.
 - The clock (`useNow`) is to the minute, so something exactly two days old can read "yesterday" for up to a minute:
   test rows that a "days ago" line reads are dated a little past the whole day (`RUN1_AT` in `ads-fixtures.ts`).
 - A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls

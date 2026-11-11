@@ -626,6 +626,11 @@ export type CopySet = {
   variants: CopyVariant[]
 }
 
+const notesOf = (v: unknown) => {
+  const list = arr(v).map(tidy).filter(Boolean)
+  return list.length ? list.join(' · ') : typeof v === 'string' ? tidy(v) : ''
+}
+
 export function copySetOf(r: Record<string, unknown>): CopySet {
   const d = json(r.data)
   return {
@@ -635,7 +640,8 @@ export function copySetOf(r: Record<string, unknown>): CopySet {
     platform: tidy(d.platform),
     sources: arr(d.source_ads).length,
     takeaways: arr(d.takeaways).map(tidy).filter(Boolean),
-    notes: tidy(d.guideline_notes),
+    // a list as the copy writer sends it (apCopyHtml joins it with dots); a line of text in older sets
+    notes: notesOf(d.guideline_notes),
     variants: arr(d.variants)
       .map(json)
       .map((v) => ({
@@ -644,8 +650,8 @@ export function copySetOf(r: Record<string, unknown>): CopySet {
         primary: str(v.primary_text || v.body).trim(),
         headline: str(v.headline).trim(),
         cta: str(v.cta).trim(),
-        image: str(v.image_idea || v.image).trim(),
-        pattern: tidy(v.pattern_used || v.pattern),
+        image: str(v.image_direction || v.image_idea || v.image).trim(),
+        pattern: tidy(v.pattern_borrowed || v.pattern_used || v.pattern),
       }))
       .filter((v) => v.hook || v.primary || v.headline),
   }

@@ -115,8 +115,9 @@ export function IntelView({ data }: { data: IntelData }) {
   // the tab and the filters live in the address, without a new history entry
   useEffect(() => {
     const want = addressOf(data.run, data.latest, tab, f)
-    if (window.location.pathname + window.location.search !== want) window.history.replaceState(window.history.state, '', want)
-  }, [data.run, data.latest, tab, f])
+    if (window.location.pathname + window.location.search !== want) window.history.replaceState(null, '', want)
+    // sp: a page refresh from an action can put back the address the page had when the action started
+  }, [data.run, data.latest, tab, f, sp])
 
   const setF = (p: Partial<Filters>) => setFilters((x) => ({ ...x, ...p }))
   const goTab = (t: Tab, p?: Partial<Filters>) => {
