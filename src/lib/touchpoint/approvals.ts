@@ -1,6 +1,8 @@
 // Approvals' rules (nwApprovalAll, nwApprovalsHtml and nwRowHtml as v117 and v127 left them): one list of everything
 // waiting for a person, the filter tabs and their counts, and what a tab shows. Pure: the page and the tests both use it.
 
+import { legacyUrl, pageBySlug } from '@/lib/nav'
+
 export type Kind = 'brief' | 'ad' | 'draft' | 'reply' | 'lead' | 'comment' | 'failed'
 
 /** The tabs after All, in the current dashboard's order: the kind, its label, and its word in the address (?tab=). */
@@ -15,10 +17,10 @@ export const KINDS: readonly (readonly [Kind, string, string])[] = [
 ]
 
 export type Icon = 'file' | 'megaphone' | 'pen' | 'message' | 'users' | 'alert'
-/** A tag under a row: words, or a day drawn in the viewer's time zone ("5 Nov"). */
-export type Tag = { text: string; tone?: 'bad' | 'warn' } | { day: string }
-/** Where Review goes: the reply window here, or a page (in this app, or still in the current dashboard). */
-export type Review = { kind: 'reply' } | { kind: 'link'; href: string; label?: string }
+/** A tag under a row: words, or a day drawn in the viewer's time zone ("5 Nov", "Campaign of 5 Nov"). */
+export type Tag = { text: string; tone?: 'bad' | 'warn' } | { day: string; before?: string }
+/** Where Review goes: the reply window here, or a page (`out`: still in the current dashboard). */
+export type Review = { kind: 'reply' } | { kind: 'link'; href: string; label?: string; out?: boolean }
 
 export type ReplyRow = {
   id: string
@@ -169,6 +171,12 @@ export function daysAgo(iso: string, now: number): number | null {
 
 export type IntelBrief = { run_id: string; created_at: string; content_md: string; n_items: number }
 export type AdsBrief = { run_id: string; created_at: string; winning_hooks: unknown; core_pain_points: unknown }
+/** A content request (content_requests): one with status error waits as a failed request. */
+export type ContentRequest = { id: string; title: string; status: string; error: string; created_at: string }
+/** A content draft (agent_outputs, content_generation content_draft), its data read from JSON. */
+export type ContentDraft = { id: string; title: string; created_at: string; data: Record<string, unknown> }
+/** A book a call or low-ticket campaign (agent_outputs, low_ticket_content): the newest row of a run, data read. */
+export type Campaign = { run_id: string; created_at: string; data: Record<string, unknown> }
 
 export type ApprovalInput = {
   intel: IntelBrief | null
@@ -179,15 +187,63 @@ export type ApprovalInput = {
   snaps: Record<string, unknown>
   /** pending replies, newest first */
   replies: ReplyRow[]
+  /** content requests, newest first (the newest 60, as apCfLoad reads them) */
+  requests?: ContentRequest[]
+  /** content drafts, newest first, and the ones marked ready (a draft_review row with action ready) */
+  drafts?: ContentDraft[]
+  ready?: string[]
+  /** campaigns, newest first, one per run; their ad hooks by run (funnel_packages); each image's newest decision */
+  campaigns?: Campaign[]
+  hooks?: Record<string, string[]>
+  adDecisions?: Record<string, string>
   /** the current dashboard's address, where the briefs page still lives */
   legacy: string
   now: number
 }
 
+/** A hook as a campaign keeps it: a line, or {hook | text | line} (v97Hook). */
+export function hookText(h: unknown): string {
+  if (typeof h === 'string') return h
+  const o = (h ?? {}) as Record<string, unknown>
+  return str(o.hook || o.text || o.line)
+}
+
+/** A campaign's ad images that have a file (the ones that can be decided on). */
+export function adImages(c: Campaign): { file: string; url: string; label: string }[] {
+  return list(c.data.ad_images)
+    .filter((i): i is Record<string, unknown> => !!i && typeof i === 'object' && !!(i as Record<string, unknown>).file)
+    .map((i) => ({ file: str(i.file), url: str(i.url), label: str(i.label) }))
+}
+
+/** The labels Approvals gives a draft's format (AP_CF_FMT); any other format is Content. */
+export const FORMATS: Record<string, string> = { ad: 'Paid ad', thought_leadership: 'Thought leadership', newsletter: 'Newsletter', email: 'Email' }
+
+/** A draft's title (apCfDraftTitle): its own, the brief's when the agent left "Draft title", else Content draft. */
+export function draftTitle(o: ContentDraft): string {
+  let t = str(o.data.title || o.title)
+  if (/^draft title$/i.test(t)) t = str(((o.data.brief ?? {}) as Record<string, unknown>).title)
+  return t || 'Content draft'
+}
+
 /** Everything waiting for a person, in the current dashboard's order (failed requests, the organic brief, the ads brief, ads, drafts, replies, leads, comments). */
 export function approvalItems(x: ApprovalInput): Item[] {
   const out: Item[] = []
-  const briefs = x.legacy.replace(/\/+$/, '') + '/briefs'
+  const at = (slug: string, label?: string): Review => ({ kind: 'link', href: legacyUrl(x.legacy, pageBySlug(slug)), label, out: true })
+  for (const r of x.requests ?? []) {
+    if (r.status !== 'error') continue
+    out.push({
+      key: 'req:' + r.id,
+      kind: 'failed',
+      icon: 'alert',
+      title: (r.title || 'A content request') + ' did not finish',
+      text: r.error || 'Open it to see why and try again.',
+      tags: [{ text: 'Failed', tone: 'bad' }, { text: 'Content Transformation' }, { day: r.created_at }],
+      approve: false,
+      review: at('content-transformation'),
+      when: r.created_at,
+    })
+  }
+  const briefs = at('briefs')
   const ib = x.intel
   if (ib && ib.run_id && undecided(x.decisions[ib.run_id] ?? [])) {
     const items = (snapItems(x.snaps[ib.run_id]) ?? orgFallback(ib.content_md)).filter((s) => s.text).slice(0, 5)
@@ -200,7 +256,7 @@ export function approvalItems(x: ApprovalInput): Item[] {
       text: items[0] ? itemLine(items[0]) : 'What the people and topics you follow are talking about.',
       tags: [{ text: 'Brief' }, { text: 'From Intel Tracker' }, ...(ib.n_items ? [{ text: ib.n_items + (ib.n_items === 1 ? ' post' : ' posts') }] : [])],
       approve: true,
-      review: { kind: 'link', href: briefs },
+      review: briefs,
       when: ib.created_at,
     })
   }
@@ -217,8 +273,47 @@ export function approvalItems(x: ApprovalInput): Item[] {
       text: it ? itemLine(it) : 'The competitor ads that keep running, and why.',
       tags: [{ text: 'Brief' }, { text: 'From Ad Strategist' }, ...(days !== null && days >= 14 ? [{ text: days + ' days old', tone: 'warn' as const }] : [])],
       approve: true,
-      review: { kind: 'link', href: briefs },
+      review: briefs,
       when: ab.created_at,
+    })
+  }
+  // the ad images of the three newest campaigns that nobody has approved or turned down
+  for (const c of (x.campaigns ?? []).slice(0, 3)) {
+    const imgs = adImages(c)
+    const dec = x.adDecisions ?? {}
+    const ok = imgs.filter((i) => dec[i.file] === 'approved').length
+    const hooks = x.hooks?.[c.run_id] ?? []
+    imgs.forEach((im, i) => {
+      if (dec[im.file] === 'approved' || dec[im.file] === 'rejected') return
+      out.push({
+        key: 'ad:' + c.run_id + ':' + im.file,
+        kind: 'ad',
+        icon: 'megaphone',
+        img: safeUrl(im.url) || undefined,
+        title: 'Ad ' + (i + 1) + ' · ' + (str(c.data.offer_name) || 'Campaign'),
+        text: hooks[i] || im.label,
+        tags: [{ text: 'Ad' }, { day: c.created_at, before: 'Campaign of ' }, { text: ok + ' of ' + imgs.length + ' approved' }],
+        approve: true,
+        review: at('marketing-generation'),
+        when: c.created_at,
+      })
+    })
+  }
+  // content drafts nobody has marked ready: checked and approved on their own page
+  const ready = new Set(x.ready ?? [])
+  for (const o of x.drafts ?? []) {
+    if (ready.has(o.id)) continue
+    const h = list(o.data.hooks)[0] as Record<string, unknown> | undefined
+    out.push({
+      key: 'draft:' + o.id,
+      kind: 'draft',
+      icon: 'pen',
+      title: draftTitle(o),
+      text: clip(str(h?.text) || str(o.data.body), 200),
+      tags: [{ text: 'Draft' }, { text: FORMATS[str(o.data.format)] || 'Content' }, { day: o.created_at }],
+      approve: false,
+      review: at('content-transformation', 'Check and approve'),
+      when: o.created_at,
     })
   }
   for (const r of x.replies) {
@@ -329,10 +424,15 @@ export function whyText(picked: string[], note: string): string {
 
 // ---------- the keys a write takes ----------
 
-export type Key = { kind: 'brief'; agent: 'intel_tracker' | 'ad_strategist'; runId: string } | { kind: 'reply'; id: string }
+export type Key =
+  | { kind: 'brief'; agent: 'intel_tracker' | 'ad_strategist'; runId: string }
+  | { kind: 'reply'; id: string }
+  | { kind: 'ad'; runId: string; file: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const RUN = /^[\w.:-]{1,120}$/
+const AD_RUN = /^[\w.-]{1,120}$/
+const FILE = /^[^\s<>"'`\\]{1,300}$/
 
 /** A row's key read back from the browser: only the kinds this page writes, with ids that look like ids. */
 export function parseKey(k: unknown): Key | null {
@@ -342,6 +442,11 @@ export function parseKey(k: unknown): Key | null {
     return RUN.test(runId) ? { kind: 'brief', agent: p[1], runId } : null
   }
   if (p[0] === 'reply' && p.length === 2 && UUID.test(p[1])) return { kind: 'reply', id: p[1] }
+  // an ad image: its campaign's run, then its file (the decision's target_id, as nwApproveOne keeps it)
+  if (p[0] === 'ad' && AD_RUN.test(p[1] ?? '')) {
+    const file = p.slice(2).join(':')
+    return FILE.test(file) ? { kind: 'ad', runId: p[1], file } : null
+  }
   return null
 }
 

@@ -6,8 +6,9 @@ import { createClient } from '@/lib/supabase/server'
 import { type Key, parseKey } from '@/lib/touchpoint/approvals'
 
 // What Approvals saves, as the signed-in teammate (nwApproveOne, nwUndo, nwReplyAct, apSetDraft): a brief's decision
-// in agent_feedback (brief_approval), a reply's status in engagement_drafts with its row in agent_feedback
-// (engagement_draft), which AI settings lists and the Intel Tracker learns from once a reason is a rule.
+// in agent_feedback (brief_approval), an ad image's decision (ad_image_variant, by its file, which Marketing Generation
+// and Landing pages count), a reply's status in engagement_drafts with its row in agent_feedback (engagement_draft),
+// which AI settings lists and the Intel Tracker learns from once a reason is a rule.
 
 const SIGNED_OUT = 'You are signed out. Sign in again.'
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -30,6 +31,10 @@ async function setReply(supabase: Supa, id: string, status: 'approved' | 'reject
 async function approveOne(supabase: Supa, k: Key, by: string) {
   if (k.kind === 'brief') {
     await feedback(supabase, { agent: k.agent, target_type: 'brief_approval', target_id: k.runId, action: 'approved', feedback: 'Approved in Approvals', author: by })
+    return
+  }
+  if (k.kind === 'ad') {
+    await feedback(supabase, { agent: 'low_ticket_content', target_type: 'ad_image_variant', target_id: k.file, action: 'approved', feedback: 'Approved in Approvals', author: by })
     return
   }
   await setReply(supabase, k.id, 'approved')
@@ -73,6 +78,8 @@ export async function undoItems(keys: string[]): Promise<Done> {
     try {
       if (k.kind === 'brief') {
         await feedback(supabase, { agent: k.agent, target_type: 'brief_approval', target_id: k.runId, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
+      } else if (k.kind === 'ad') {
+        await feedback(supabase, { agent: 'low_ticket_content', target_type: 'ad_image_variant', target_id: k.file, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
       } else {
         await setReply(supabase, k.id, 'pending')
         await feedback(supabase, { agent: 'intel_tracker', target_type: 'engagement_draft', target_id: k.id, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })

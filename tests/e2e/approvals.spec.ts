@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { LEGACY, TEAM, serveLogo, signIn, stubReset, stubRows, stubSeed } from './helpers'
-import { RID, approvalRows, reply } from './approvals-fixtures'
+import { DR, IMG, RID, RQ, RUN1, RUN2, RUN3, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
 
 // Approvals: the briefs and the Intel Tracker's replies waiting for a person, the tabs, approving several at once and
 // undoing it, skipping for now, a reply's window (edit, copy, approve, reject with a reason). On the made-up rows in
@@ -322,4 +322,94 @@ test('20 at a time; nothing waiting; nothing runs off the side on a phone', asyn
   await expect(page.getByTestId('approvals-empty')).toContainText('New briefs, ads and replies land here when the agents finish.')
   await expect(tabs(page)).toHaveText(['All 0'])
   await expect(page.getByRole('button', { name: 'Select all' })).toHaveCount(0)
+})
+
+// ---------- part B: failed requests, ad images, content drafts ----------
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+const AD = (run: string, v: string) => `ad:${run}:${file(run, v)}`
+
+async function seedB(page: Page) {
+  const b = campaignRows()
+  await stubSeed({
+    agent_outputs: [...rows.agent_outputs, ...b.campaigns, ...b.drafts],
+    agent_feedback: b.adFeedback,
+    funnel_packages: b.funnel_packages,
+    content_requests: b.content_requests,
+  })
+  await page.route(IMG + '**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }))
+  return b
+}
+
+test('failed requests, ad images and content drafts: their tabs, rows and where they open', async ({ page }) => {
+  const b = await seedB(page)
+  await signIn(page, '/approvals')
+  await expect(status(page)).toContainText('16 waiting')
+  await expect(tabs(page)).toHaveText(['All 16', 'Briefs 2', 'Ads 4', 'Drafts 2', 'Replies 6', 'Failed 2'])
+  expect(await list(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-key')))).toEqual([
+    'req:' + RQ(1), 'req:' + RQ(3), ORG, ADS, AD(RUN1, 'b'), AD(RUN1, 'c'), AD(RUN2, 'a'), AD(RUN2, 'b'), 'draft:' + DR(1), 'draft:' + DR(2),
+    R(1), R(2), R(3), R(4), R(5),
+  ])
+
+  // a failed request: why, and where to try again; nothing to approve here
+  const failed = row(page, 'req:' + RQ(1))
+  await expect(failed.locator('b').first()).toHaveText('LinkedIn post from the webinar did not finish')
+  await expect(failed).toContainText('The transcript could not be read.')
+  await expect(failed).toContainText('FailedContent Transformation' + day(b.content_requests[0].created_at))
+  await expect(failed.getByRole('link', { name: 'Review' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(failed.getByRole('link', { name: 'Review' })).toHaveAttribute('title', 'Opens in the current dashboard')
+  await expect(failed.getByRole('checkbox')).toHaveCount(0)
+  await expect(failed.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+  await expect(row(page, 'req:' + RQ(3)).locator('b').first()).toHaveText('A content request did not finish')
+  await expect(row(page, 'req:' + RQ(2))).toHaveCount(0)
+
+  // an ad image: its picture, the campaign's hook for it, the campaign's day and how many of its ads are approved
+  const ad = row(page, AD(RUN1, 'b'))
+  await expect(ad.locator('b').first()).toHaveText('Ad 2 · Onboarding Audit')
+  await expect(ad).toContainText('Your first workflow, automated')
+  await expect(ad).toContainText('Campaign of ' + day(b.campaigns[1].created_at))
+  await expect(ad).toContainText('1 of 3 approved')
+  await expect(ad.locator('img')).toHaveAttribute('src', IMG + file(RUN1, 'b'))
+  await expect(ad.getByRole('link', { name: 'Review' })).toHaveAttribute('href', LEGACY + '/marketing-generation')
+  await expect(ad.getByRole('checkbox', { name: 'Select Ad 2 · Onboarding Audit' })).toBeVisible()
+  await expect(row(page, AD(RUN1, 'c'))).toContainText('Calm photo')
+  await expect(row(page, AD(RUN2, 'a')).locator('b').first()).toHaveText('Ad 1 · Campaign')
+  await expect(row(page, AD(RUN2, 'a'))).toContainText('Onboarding in days, not weeks')
+  // a picture that is not a web address is left out
+  await expect(row(page, AD(RUN2, 'b')).locator('img')).toHaveCount(0)
+  for (const k of [AD(RUN1, 'a'), AD(RUN3, 'a'), AD(RUN4, 'a'), AD(RUN1, 'z')]) await expect(row(page, k)).toHaveCount(0)
+
+  // a content draft: checked and approved on its own page
+  const draft = row(page, 'draft:' + DR(1))
+  await expect(draft.locator('b').first()).toHaveText('Why onboarding stalls')
+  await expect(draft).toContainText('Most firms lose a week to onboarding.')
+  await expect(draft).toContainText('Thought leadership')
+  await expect(draft.getByRole('link', { name: 'Check and approve' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(draft.getByRole('checkbox')).toHaveCount(0)
+  await expect(row(page, 'draft:' + DR(2)).locator('b').first()).toHaveText('Content draft')
+  await expect(row(page, 'draft:' + DR(3))).toHaveCount(0)
+})
+
+test('approve the ads together; their tab empties and All becomes the choice; undo brings them back', async ({ page }) => {
+  await seedB(page)
+  await signIn(page, '/approvals?tab=ads')
+  await expect(tabs(page).nth(2)).toHaveAttribute('aria-selected', 'true')
+  await expect(list(page)).toHaveCount(4)
+  await page.getByRole('button', { name: 'Select all' }).click()
+  await expect(bulk(page)).toContainText('4 selected')
+  await bulk(page).getByRole('button', { name: 'Approve 4' }).click()
+  await expect(toast(page, 'Approved 4')).toBeVisible()
+  await expect(tabs(page)).toHaveText(['All 12', 'Briefs 2', 'Drafts 2', 'Replies 6', 'Failed 2'])
+  await expect(tabs(page).first()).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/\/approvals$/)
+  const ads = [AD(RUN1, 'b'), AD(RUN1, 'c'), AD(RUN2, 'a'), AD(RUN2, 'b')].map((k) => k.split(':').slice(2).join(':'))
+  expect((await said()).slice(5)).toEqual(ads.map((f) => `low_ticket_content | ad_image_variant | ${f} | approved | Approved in Approvals | ${TEAM.email}`))
+
+  await undo(page).click()
+  await expect(toast(page, 'Undone. They are waiting again.')).toBeVisible()
+  await expect(tabs(page)).toHaveText(['All 16', 'Briefs 2', 'Ads 4', 'Drafts 2', 'Replies 6', 'Failed 2'])
+  // the ads are back, and the page stays on All
+  await expect(tabs(page).first()).toHaveAttribute('aria-selected', 'true')
+  await expect(row(page, AD(RUN2, 'b'))).toBeVisible()
+  expect((await said()).slice(9)).toEqual(ads.map((f) => `low_ticket_content | ad_image_variant | ${f} | reopened | Undone in Approvals | ${TEAM.email}`))
 })

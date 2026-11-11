@@ -417,7 +417,14 @@ function Row({
                       : 'bg-sunk text-ink-2'
                 }`}
               >
-                {'day' in t ? <LocalDay iso={t.day} /> : t.text}
+                {'day' in t ? (
+                  <>
+                    {t.before}
+                    <LocalDay iso={t.day} />
+                  </>
+                ) : (
+                  t.text
+                )}
               </span>
             ))}
           </span>
@@ -439,7 +446,7 @@ function Row({
             Review
           </button>
         ) : (
-          <a href={review.href} className={btn}>
+          <a href={review.href} className={btn} title={review.out ? 'Opens in the current dashboard' : undefined}>
             {review.label ? <ArrowRight size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
             {review.label ?? 'Review'}
           </a>

@@ -32,9 +32,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   and the Edit lead panel (broken in the current dashboard: it saves a column e1_leads does not have).
 - Touchpoint, in three parts (Nov 11): 1. Tasks; 2. Approvals; 3. Today, which reads Approvals' list for Needs you.
   Part 1 (Nov 11, branch `touchpoint/tasks`, PR #8 into `dev`): the post-call to-dos. Part 2 (Nov 11, branch
-  `touchpoint/approvals`, on top of part 1): Approvals, in pieces: A, the briefs and the Intel Tracker's replies (done);
-  B, ads, drafts and failed requests; C, leads and comments, as Kser decides. `dev` goes to `main` only once Approvals
-  lists every kind the current page does, so production never shows fewer things waiting. See Touchpoint below.
+  `touchpoint/approvals`, on top of part 1, PR #9): Approvals, in pieces: A, the briefs and the Intel Tracker's replies,
+  and B, ad images waiting for a decision, content drafts and failed requests (both done); C, leads and comments, as
+  Kser decides. `dev` goes to `main` only once Approvals lists every kind the current page does (or Kser leaves some
+  out), so production never shows fewer things waiting. See Touchpoint below.
 - Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
@@ -51,7 +52,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Product | Pages | Status |
 |---|---|---|
 | Touchpoint | Today | current dashboard |
-| Touchpoint | Approvals: the briefs and the Intel Tracker's replies (ads, drafts, failed requests, leads and comments to come) | here (Touchpoint part 2, not released) |
+| Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests (leads and comments wait on Kser) | here (Touchpoint part 2, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
@@ -272,26 +273,40 @@ signed-in teammate's token, as the current dashboard's do.
   current dashboard's order, Client work before Internal development (the Calls port had them the other way round).
 - Approvals (part 2, `approvals.ts` pure rules, `approvals-load.ts`, `src/components/approvals/approvals-view.tsx`,
   `src/app/(app)/approvals`; nwApprovalsHtml as v117 and v127 left it): one list of everything waiting for a person.
-  - What waits (`approvalItems`): the newest organic brief (agent_outputs, intel_tracker intel_brief) and the newest
-    ads brief (creative_briefs) while undecided (no brief_approval decision, or the newest one is reopened or edited),
-    then the Intel Tracker's pending replies (engagement_drafts), newest first. A brief's line is the first item of its
-    snapshot (agent_outputs.snapshot by run id, the newest that reads), else its TL;DR or its hooks; an ads brief 14 days
-    old or more says so. A brief's Review opens the briefs page, still in the current dashboard.
+  - What waits (`approvalItems`), in the current dashboard's order:
+    - failed content requests (content_requests with status error, among the newest 60), opened on Content
+      Transformation;
+    - the newest organic brief (agent_outputs, intel_tracker intel_brief) and the newest ads brief (creative_briefs)
+      while undecided (no brief_approval decision, or the newest one is reopened or edited). A brief's line is the
+      first item of its snapshot (agent_outputs.snapshot by run id, the newest that reads), else its TL;DR or its
+      hooks; an ads brief 14 days old or more says so. Review opens the briefs page;
+    - the ad images of the three newest book a call and low-ticket campaigns (agent_outputs low_ticket_content, the
+      newest row per run; its data is a JSON string) that nobody has approved or turned down (agent_feedback
+      ad_image_variant by file, the newest decision): "Ad 2 · <offer>", the campaign's hook for that image
+      (funnel_packages ad_variations.hook_variations, empty ones dropped first, as v97LtLoad does) else the image's
+      label, and how many of the campaign's ads are approved. Review opens Marketing Generation;
+    - content drafts not marked ready (agent_outputs content_generation content_draft, newest 60; a draft_review row
+      with action ready), with Check and approve to Content Transformation, where drafts are approved;
+    - the Intel Tracker's pending replies (engagement_drafts), newest first.
+    Every page Review opens is still in the current dashboard (`out`: "Opens in the current dashboard"); none of them
+    can be opened at the exact draft or campaign from here.
   - The tabs (`viewOf`): All, each kind with something waiting, then Skipped. The tab is the address's (`?tab=`); a tab
     left with nothing in it shows All and All becomes the choice (as V107D.filter does), so a later skip or undo does
     not jump back. All shows five replies and a line for the rest. Replies more than a week old are out of the counts
     and sit under Older than a week on Replies (v117: Replies says 0 when only those are left). 20 rows at a time.
   - Approve, one or several (the boxes, Select all; `approveItems`, one at a time, the first failure stops the rest):
-    a brief's decision in agent_feedback (brief_approval, approved, "Approved in Approvals"), a reply's status in
-    engagement_drafts with its agent_feedback row (engagement_draft, "Reviewed on the dashboard"), author the teammate's
-    email. The message that confirms has Undo (`undoItems`: reopened, "Undone in Approvals"; a reply back to pending).
+    a brief's decision in agent_feedback (brief_approval, approved, "Approved in Approvals"), an ad image's
+    (low_ticket_content, ad_image_variant, target_id the image's file; Marketing Generation and Landing pages count
+    these), a reply's status in engagement_drafts with its agent_feedback row (engagement_draft, "Reviewed on the
+    dashboard"), author the teammate's email. Drafts and failed requests are not approved from the list. The message
+    that confirms has Undo (`undoItems`: reopened, "Undone in Approvals"; a reply back to pending).
   - Skip keeps a row out for now in this browser only (localStorage `ap.nw.skip`, as the current dashboard; the two
     apps are on different addresses, so they do not share it), with Undo and Bring back. Nothing is saved.
   - A reply's Review opens it in full: the post it answers (only a web address), the draft to change (saved when it
     changed, then approved), Copy, Approve, and Reject, which asks why first (v127: six reasons and a note, `whyText`,
     saved as the decision's feedback); Cancel, the X or Esc keep the reply.
-  - Not here yet: the ad images of book a call and low-ticket campaigns waiting for a decision, content drafts and
-    failed requests (part B); leads and comments (part C).
+  - Not here yet: leads and comments (part C, waiting on Kser). On Nov 11 the live data had 4 ad images waiting (two
+    campaigns), no content requests and no content drafts.
 - Changed on purpose on Approvals (reported to Kser): a reply's approval or rejection is credited to the teammate's
   email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
   page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only

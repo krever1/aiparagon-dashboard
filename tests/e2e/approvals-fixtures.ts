@@ -67,3 +67,75 @@ export function approvalRows(now = Date.now()) {
     agent_feedback: [] as Record<string, unknown>[],
   }
 }
+
+/** Where the made-up ad images live: the stand-in's address, which the browser tests answer with a tiny picture. */
+export const IMG = 'http://127.0.0.1:54399/storage/v1/object/public/creatives/'
+export const RUN1 = 'agent3_2026-11-08_1000'
+export const RUN2 = 'agent3_2026-11-05_0900'
+export const RUN3 = 'agent3_2026-11-02_0800'
+export const RUN4 = 'agent3_2026-10-30_0800'
+export const file = (run: string, v: string) => `onboarding-audit-${run}-${v}.png`
+export const RQ = (n: number) => `71000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+export const DR = (n: number) => `72000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+
+/**
+ * Part B's rows: campaigns of book a call and low-ticket (agent_outputs, data kept as a JSON string, as the live rows
+ * are), their packages' hooks and their images' decisions, content requests and content drafts.
+ */
+export function campaignRows(now = Date.now()) {
+  const ago = (ms: number) => new Date(now - ms).toISOString()
+  const img = (run: string, v: string, label: string) => ({ file: file(run, v), url: IMG + file(run, v), label, variant: v.toUpperCase() })
+  const camp = (n: number, run: string, age: number, data: Record<string, unknown>) => ({
+    id: `62000000-0000-4000-8000-${String(n).padStart(12, '0')}`, agent: 'low_ticket_content', output_type: 'campaign', run_id: run,
+    created_at: ago(age), data: JSON.stringify(data),
+  })
+  const fb = (n: number, target: string, action: string, age: number, type = 'ad_image_variant') => ({
+    id: `63000000-0000-4000-8000-${String(n).padStart(12, '0')}`, agent: 'low_ticket_content', target_type: type, target_id: target, action,
+    feedback: '', author: 'someone@aiparagonconsulting.com', created_at: ago(age),
+  })
+  return {
+    campaigns: [
+      // an earlier row of the newest campaign: only the newest row of a run counts
+      camp(1, RUN1, 3 * D + H, { offer_name: 'Old draft of the audit', ad_images: [img(RUN1, 'z', 'Gone')] }),
+      camp(2, RUN1, 3 * D, {
+        offer_name: 'Onboarding Audit',
+        ad_images: [img(RUN1, 'a', 'Checklist'), img(RUN1, 'b', 'Bold headline'), img(RUN1, 'c', 'Calm photo'), { label: 'No file yet' }],
+      }),
+      camp(3, RUN2, 6 * D, { ad_images: [img(RUN2, 'a', 'Scorecard layout'), { ...img(RUN2, 'b', 'Minimal headline'), url: 'javascript:alert(1)' }] }),
+      camp(4, RUN3, 9 * D, { offer_name: 'Decided', ad_images: [img(RUN3, 'a', 'Approved already')] }),
+      // a fourth campaign: only the three newest are read
+      camp(5, RUN4, 12 * D, { offer_name: 'Too old', ad_images: [img(RUN4, 'a', 'Not shown')] }),
+    ],
+    funnel_packages: [
+      { id: 'pk-2', run_id: RUN2, status: 'pending_approval', created_at: ago(6 * D), ad_variations: JSON.stringify({ hook_variations: [{ hook: 'Onboarding in days, not weeks' }] }) },
+      { id: 'pk-1', run_id: RUN1, status: 'pending_approval', created_at: ago(3 * D), ad_variations: JSON.stringify({ hook_variations: ['Stop losing a week to paperwork', '', 'Your first workflow, automated'] }) },
+    ],
+    adFeedback: [
+      fb(1, file(RUN1, 'a'), 'approved', 2 * D),
+      // turned down, then undone: waiting again
+      fb(2, file(RUN1, 'b'), 'rejected', 2 * D),
+      fb(3, file(RUN1, 'b'), 'reopened', 1 * D),
+      fb(4, file(RUN3, 'a'), 'approved', 8 * D),
+      { ...fb(5, DR(3), 'ready', 1 * D, 'draft_review'), agent: 'content_generation' },
+    ],
+    content_requests: [
+      { id: RQ(1), title: 'LinkedIn post from the webinar', status: 'error', error: 'The transcript could not be read.', created_at: ago(4 * H) },
+      { id: RQ(2), title: 'Newsletter from the report', status: 'done', error: null, created_at: ago(5 * H) },
+      { id: RQ(3), title: null, status: 'error', error: null, created_at: ago(2 * D) },
+    ],
+    drafts: [
+      {
+        id: DR(1), agent: 'content_generation', output_type: 'content_draft', run_id: 'cg-1', title: 'Draft title', created_at: ago(6 * H),
+        data: JSON.stringify({ title: 'Draft title', brief: { title: 'Why onboarding stalls' }, format: 'thought_leadership', hooks: [{ text: 'Most firms lose a week to onboarding.' }] }),
+      },
+      {
+        id: DR(2), agent: 'content_generation', output_type: 'content_draft', run_id: 'cg-2', title: null, created_at: ago(1 * D),
+        data: { format: 'report', body: 'Onboarding takes too long. '.repeat(20) },
+      },
+      {
+        id: DR(3), agent: 'content_generation', output_type: 'content_draft', run_id: 'cg-3', title: 'Marked ready', created_at: ago(2 * D),
+        data: { title: 'Marked ready', format: 'email' },
+      },
+    ],
+  }
+}

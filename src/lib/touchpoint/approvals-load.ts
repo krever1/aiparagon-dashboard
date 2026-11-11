@@ -1,10 +1,15 @@
 import 'server-only'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import { createClient } from '@/lib/supabase/server'
-import { type AdsBrief, type IntelBrief, type Item, type ReplyRow, approvalItems, snapItems } from './approvals'
+import {
+  type AdsBrief, type Campaign, type ContentDraft, type ContentRequest, type IntelBrief, type Item, type ReplyRow, adImages, approvalItems, hookText,
+  snapItems,
+} from './approvals'
 
-// Approvals' data, read as the signed-in teammate (apCfLoad, e9SnapLoad and apLoad, the parts Approvals uses): the
-// newest organic and ads briefs with their decisions and snapshots, and the replies waiting. Read fresh on every visit.
+// Approvals' data, read as the signed-in teammate (apCfLoad, v97LtLoad, e9SnapLoad and apLoad, the parts Approvals
+// uses): the newest organic and ads briefs with their decisions and snapshots, failed content requests, content drafts
+// not marked ready, the ad images of the three newest campaigns with their decisions, and the replies waiting. Read
+// fresh on every visit.
 
 export type ApprovalsData = {
   items: Item[]
@@ -14,6 +19,7 @@ export type ApprovalsData = {
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 
+/** A JSON column as an object: some are kept as text (a campaign's data is a JSON string inside jsonb). */
 function json(v: unknown): Record<string, unknown> {
   if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
   if (typeof v === 'string') {
@@ -26,10 +32,24 @@ function json(v: unknown): Record<string, unknown> {
   }
   return {}
 }
+const arr = (v: unknown): unknown[] => {
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v)
+      return Array.isArray(p) ? p : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+type Row = Record<string, unknown>
+const rowsOf = (r: { data: unknown }) => (r.data ?? []) as Row[]
 
 export async function loadApprovals(): Promise<ApprovalsData> {
   const supabase = await createClient()
-  const [ib, ab, dr] = await Promise.all([
+  const [ib, ab, dr, rq, df, lt] = await Promise.all([
     supabase
       .from('agent_outputs')
       .select('run_id,created_at,content_md,data')
@@ -44,34 +64,82 @@ export async function loadApprovals(): Promise<ApprovalsData> {
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(500),
+    supabase.from('content_requests').select('id,title,status,error,created_at').order('created_at', { ascending: false }).limit(60),
+    supabase
+      .from('agent_outputs')
+      .select('id,title,created_at,data')
+      .eq('agent', 'content_generation')
+      .eq('output_type', 'content_draft')
+      .order('created_at', { ascending: false })
+      .limit(60),
+    supabase.from('agent_outputs').select('run_id,created_at,data').eq('agent', 'low_ticket_content').order('created_at', { ascending: false }).limit(40),
   ])
-  const errors = [ib.error, ab.error, dr.error].filter(Boolean).map((e) => e!.message)
+  const errors = [ib.error, ab.error, dr.error, rq.error, df.error, lt.error].filter(Boolean).map((e) => e!.message)
 
-  const i0 = (ib.data ?? [])[0] as Record<string, unknown> | undefined
-  const a0 = (ab.data ?? [])[0] as Record<string, unknown> | undefined
+  const i0 = rowsOf(ib)[0]
+  const a0 = rowsOf(ab)[0]
   const intel: IntelBrief | null = i0
     ? { run_id: str(i0.run_id), created_at: str(i0.created_at), content_md: str(i0.content_md), n_items: Number(json(i0.data).n_items) || 0 }
     : null
   const ads: AdsBrief | null = a0
     ? { run_id: str(a0.run_id), created_at: str(a0.created_at), winning_hooks: a0.winning_hooks, core_pain_points: a0.core_pain_points }
     : null
-
-  // the briefs' decisions and snapshots, by run id
-  const runs = [intel?.run_id, ads?.run_id].filter((r): r is string => !!r)
-  const decisions: Record<string, { action: string }[]> = {}
-  const snaps: Record<string, unknown> = {}
-  if (runs.length) {
-    const [fb, sn] = await Promise.all([
-      supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'brief_approval').in('target_id', runs).order('created_at', { ascending: false }).limit(100),
-      supabase.from('agent_outputs').select('run_id,snapshot').not('snapshot', 'is', null).in('run_id', runs).order('created_at', { ascending: false }).limit(20),
-    ])
-    if (fb.error) errors.push(fb.error.message)
-    for (const r of (fb.data ?? []) as { target_id: string; action: string }[]) (decisions[str(r.target_id)] ??= []).push({ action: str(r.action) })
-    // the newest snapshot that reads, as e9SnapLoad keeps it (one that does not parse gives way to an older one)
-    for (const r of (sn.data ?? []) as { run_id: string; snapshot: unknown }[]) if (!(r.run_id in snaps) && snapItems(r.snapshot)) snaps[r.run_id] = r.snapshot
+  const requests: ContentRequest[] = rowsOf(rq).map((r) => ({
+    id: str(r.id),
+    title: str(r.title),
+    status: str(r.status),
+    error: str(r.error),
+    created_at: str(r.created_at),
+  }))
+  const drafts: ContentDraft[] = rowsOf(df).map((o) => ({ id: str(o.id), title: str(o.title), created_at: str(o.created_at), data: json(o.data) }))
+  // the newest row of each campaign, then the three newest campaigns (as nwApprovalAll takes them)
+  const campaigns: Campaign[] = []
+  for (const o of rowsOf(lt)) {
+    const run = str(o.run_id)
+    if (!run || campaigns.some((c) => c.run_id === run)) continue
+    campaigns.push({ run_id: run, created_at: str(o.created_at), data: json(o.data) })
   }
+  const shown = campaigns.slice(0, 3)
+  const files = shown.flatMap((c) => adImages(c).map((i) => i.file))
 
-  const replies: ReplyRow[] = ((dr.data ?? []) as Record<string, unknown>[]).map((d) => ({
+  // what the first reads point to, read together: the briefs' decisions and snapshots, the drafts marked ready, the
+  // campaigns' hooks and their images' decisions
+  const runs = [intel?.run_id, ads?.run_id].filter((r): r is string => !!r)
+  const none = Promise.resolve({ data: [] as Row[], error: null })
+  const [fb, sn, rd, pk, ad] = await Promise.all([
+    runs.length
+      ? supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'brief_approval').in('target_id', runs).order('created_at', { ascending: false }).limit(100)
+      : none,
+    runs.length
+      ? supabase.from('agent_outputs').select('run_id,snapshot').not('snapshot', 'is', null).in('run_id', runs).order('created_at', { ascending: false }).limit(20)
+      : none,
+    drafts.length
+      ? supabase.from('agent_feedback').select('target_id').eq('target_type', 'draft_review').eq('action', 'ready').in('target_id', drafts.map((d) => d.id)).limit(200)
+      : none,
+    shown.length
+      ? supabase.from('funnel_packages').select('run_id,ad_variations').in('run_id', shown.map((c) => c.run_id)).order('created_at', { ascending: false }).limit(20)
+      : none,
+    files.length
+      ? supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'ad_image_variant').in('target_id', files).order('created_at', { ascending: false }).limit(300)
+      : none,
+  ])
+  for (const r of [fb, rd, pk, ad]) if (r.error) errors.push(r.error.message)
+
+  const decisions: Record<string, { action: string }[]> = {}
+  for (const r of rowsOf(fb)) (decisions[str(r.target_id)] ??= []).push({ action: str(r.action) })
+  // the newest snapshot that reads, as e9SnapLoad keeps it (one that does not parse gives way to an older one)
+  const snaps: Record<string, unknown> = {}
+  for (const r of rowsOf(sn)) if (!(str(r.run_id) in snaps) && snapItems(r.snapshot)) snaps[str(r.run_id)] = r.snapshot
+  // a campaign's hooks from its newest package (v97LtLoad), each image's newest decision
+  const hooks: Record<string, string[]> = {}
+  for (const p of rowsOf(pk)) {
+    const run = str(p.run_id)
+    if (!(run in hooks)) hooks[run] = arr(json(p.ad_variations).hook_variations).map(hookText).filter(Boolean)
+  }
+  const adDecisions: Record<string, string> = {}
+  for (const r of rowsOf(ad)) if (!(str(r.target_id) in adDecisions)) adDecisions[str(r.target_id)] = str(r.action)
+
+  const replies: ReplyRow[] = rowsOf(dr).map((d) => ({
     id: str(d.id),
     competitor: str(d.competitor_name),
     platform: str(d.platform),
@@ -82,7 +150,21 @@ export async function loadApprovals(): Promise<ApprovalsData> {
   }))
 
   return {
-    items: approvalItems({ intel, ads, decisions, snaps, replies, legacy: LEGACY_DASHBOARD_URL, now: Date.now() }),
+    items: approvalItems({
+      intel,
+      ads,
+      decisions,
+      snaps,
+      replies,
+      requests,
+      drafts,
+      ready: rowsOf(rd).map((r) => str(r.target_id)),
+      campaigns,
+      hooks,
+      adDecisions,
+      legacy: LEGACY_DASHBOARD_URL,
+      now: Date.now(),
+    }),
     error: errors.length ? errors[0] : null,
   }
 }

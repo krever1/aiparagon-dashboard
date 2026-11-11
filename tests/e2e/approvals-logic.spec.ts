@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import {
-  type ApprovalInput, type Item, PAGE, approvalItems, clip, kindLabel, parseKey, safeUrl, snapItems, tabFromWord, tldr, undecided, viewOf, waitingChips,
-  whyText, wordOf,
+  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, clip, draftTitle, hookText, kindLabel, parseKey, safeUrl, snapItems, tabFromWord, tldr,
+  undecided, viewOf, waitingChips, whyText, wordOf,
 } from '../../src/lib/touchpoint/approvals'
-import { INTEL_MD, RID, approvalRows, reply } from './approvals-fixtures'
+import { DR, IMG, INTEL_MD, RID, RQ, RUN1, RUN2, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
 
 // Approvals' rules, checked without a browser: what is waiting, what each row says, the tabs and their counts, the
 // reason a reply was rejected, and which keys a write takes. The rows are made up (tests/e2e/approvals-fixtures.ts).
@@ -187,4 +187,109 @@ test('the keys a write takes, and the links a reply may open', () => {
   }
   expect(safeUrl('https://www.linkedin.com/feed/update/urn:li:activity:1')).toBe('https://www.linkedin.com/feed/update/urn:li:activity:1')
   for (const bad of ['javascript:alert(1)', 'data:text/html,x', '//example.com', 'https://exa mple.com', '']) expect(safeUrl(bad)).toBe('')
+})
+
+// ---------- part B: failed requests, ad images, content drafts ----------
+
+const B = () => campaignRows(NOW)
+/** Part B's rows as the loader hands them on: the newest row of each campaign, data read, hooks and decisions by key. */
+function inputB(over: Partial<ApprovalInput> = {}): ApprovalInput {
+  const b = B()
+  const campaigns: Campaign[] = []
+  for (const o of [...b.campaigns].sort((x, y) => y.created_at.localeCompare(x.created_at))) {
+    if (!campaigns.some((c) => c.run_id === o.run_id)) campaigns.push({ run_id: o.run_id, created_at: o.created_at, data: JSON.parse(o.data) })
+  }
+  const adDecisions: Record<string, string> = {}
+  for (const f of [...b.adFeedback].filter((f) => f.target_type === 'ad_image_variant').sort((x, y) => y.created_at.localeCompare(x.created_at))) {
+    if (!(f.target_id in adDecisions)) adDecisions[f.target_id] = f.action
+  }
+  return input({
+    requests: b.content_requests.map((r) => ({ id: r.id, title: r.title ?? '', status: r.status, error: r.error ?? '', created_at: r.created_at })),
+    drafts: b.drafts.map((o) => ({ id: o.id, title: o.title ?? '', created_at: o.created_at, data: typeof o.data === 'string' ? JSON.parse(o.data) : o.data })),
+    ready: [DR(3)],
+    campaigns,
+    hooks: { [RUN1]: ['Stop losing a week to paperwork', 'Your first workflow, automated'], [RUN2]: ['Onboarding in days, not weeks'] },
+    adDecisions,
+    ...over,
+  })
+}
+
+test('part B: failed requests first, then the briefs, the ads, the drafts and the replies', () => {
+  const items = approvalItems(inputB())
+  expect(keys(items).slice(0, 10)).toEqual([
+    'req:' + RQ(1),
+    'req:' + RQ(3),
+    'brief:intel_tracker:intel_run_new',
+    'brief:ad_strategist:ads_run_new',
+    `ad:${RUN1}:${file(RUN1, 'b')}`,
+    `ad:${RUN1}:${file(RUN1, 'c')}`,
+    `ad:${RUN2}:${file(RUN2, 'a')}`,
+    `ad:${RUN2}:${file(RUN2, 'b')}`,
+    'draft:' + DR(1),
+    'draft:' + DR(2),
+  ])
+  expect(keys(items).slice(10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => 'reply:' + RID(n)))
+
+  const [failed, untitled] = items
+  expect(failed).toMatchObject({
+    kind: 'failed',
+    title: 'LinkedIn post from the webinar did not finish',
+    text: 'The transcript could not be read.',
+    tags: [{ text: 'Failed', tone: 'bad' }, { text: 'Content Transformation' }, { day: B().content_requests[0].created_at }],
+    approve: false,
+    review: { kind: 'link', href: LEGACY + '/content-transformation', out: true },
+  })
+  expect([untitled.title, untitled.text]).toEqual(['A content request did not finish', 'Open it to see why and try again.'])
+  // a brief's Review opens the briefs page, which is still in the current dashboard
+  expect(items[2].review).toEqual({ kind: 'link', href: LEGACY + '/briefs', out: true, label: undefined })
+})
+
+test('part B: the ad images of the three newest campaigns that nobody has approved or turned down', () => {
+  const ads = approvalItems(inputB()).filter((x) => x.kind === 'ad')
+  expect(ads.map((x) => x.title)).toEqual(['Ad 2 · Onboarding Audit', 'Ad 3 · Onboarding Audit', 'Ad 1 · Campaign', 'Ad 2 · Campaign'])
+  // the campaign's hook for that image, else the image's label
+  expect(ads.map((x) => x.text)).toEqual(['Your first workflow, automated', 'Calm photo', 'Onboarding in days, not weeks', 'Minimal headline'])
+  expect(ads[0]).toMatchObject({
+    icon: 'megaphone',
+    img: IMG + file(RUN1, 'b'),
+    approve: true,
+    review: { kind: 'link', href: LEGACY + '/marketing-generation', out: true },
+    tags: [{ text: 'Ad' }, { day: B().campaigns[1].created_at, before: 'Campaign of ' }, { text: '1 of 3 approved' }],
+  })
+  expect(ads[2].tags[2]).toEqual({ text: '0 of 2 approved' })
+  // a picture that is not a web address is not shown
+  expect(ads[3].img).toBeUndefined()
+  // one turned down and then undone waits again; one approved does not; a fourth campaign is not read
+  const decided = { ...inputB().adDecisions, [file(RUN1, 'b')]: 'rejected', [file(RUN1, 'c')]: 'approved' }
+  const none = approvalItems(inputB({ adDecisions: decided })).filter((x) => x.kind === 'ad')
+  expect(none.map((x) => x.key)).toEqual([`ad:${RUN2}:${file(RUN2, 'a')}`, `ad:${RUN2}:${file(RUN2, 'b')}`])
+  expect(keys(approvalItems(inputB()))).not.toContain(`ad:${RUN4}:${file(RUN4, 'a')}`)
+  expect([hookText('Plain'), hookText({ hook: 'A' }), hookText({ text: 'B' }), hookText({ line: 'C' }), hookText(null)]).toEqual(['Plain', 'A', 'B', 'C', ''])
+})
+
+test('part B: content drafts not marked ready, opened on their own page to check and approve', () => {
+  const drafts = approvalItems(inputB()).filter((x) => x.kind === 'draft')
+  expect(drafts.map((x) => [x.title, x.tags[1]])).toEqual([
+    ['Why onboarding stalls', { text: 'Thought leadership' }],
+    ['Content draft', { text: 'Content' }],
+  ])
+  expect(drafts[0].text).toBe('Most firms lose a week to onboarding.')
+  expect(drafts[1].text.length).toBeLessThanOrEqual(200)
+  expect(drafts[1].text.endsWith('…')).toBe(true)
+  expect(drafts[0]).toMatchObject({ approve: false, review: { kind: 'link', href: LEGACY + '/content-transformation', label: 'Check and approve', out: true } })
+  expect(draftTitle({ id: 'x', title: '', created_at: '', data: { title: 'draft title' } })).toBe('Content draft')
+  expect(draftTitle({ id: 'x', title: 'Row title', created_at: '', data: {} })).toBe('Row title')
+
+  // the tabs and Today's chips count them all
+  const items = approvalItems(inputB())
+  expect(tabs(viewOf(items, {}, 'all', PAGE))).toEqual(['All 16', 'Briefs 2', 'Ads 4', 'Drafts 2', 'Replies 6', 'Failed 2'])
+  expect(waitingChips(items, {}).map((c) => c.label)).toEqual(['2 briefs', '4 ads', '2 drafts', '6 replies', '2 failed requests'])
+})
+
+test('part B: the key an ad image’s approval takes', () => {
+  expect(parseKey(`ad:${RUN1}:${file(RUN1, 'b')}`)).toEqual({ kind: 'ad', runId: RUN1, file: file(RUN1, 'b') })
+  expect(parseKey('ad:run_1:folder/a:b.png')).toEqual({ kind: 'ad', runId: 'run_1', file: 'folder/a:b.png' })
+  for (const bad of ['ad::a.png', 'ad:run_1:', 'ad:run 1:a.png', 'ad:run_1:a b.png', 'ad:run_1:<x>.png', 'ad:' + 'r'.repeat(121) + ':a.png']) {
+    expect(parseKey(bad)).toBeNull()
+  }
 })
