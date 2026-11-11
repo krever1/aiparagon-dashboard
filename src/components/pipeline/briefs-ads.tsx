@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, ArrowUpRight, Clock, Eye, Megaphone, Rocket } from 'lucide-react'
+import { ArrowRight, Clock, Eye, Megaphone, Rocket } from 'lucide-react'
 import { Drawer } from '@/components/ui/drawer'
 import { dateText, dayText } from '@/components/ui/local-date'
 import type { Ad } from '@/lib/pipeline/ads'
@@ -34,10 +34,9 @@ export function AdsTabView({ ctx }: { ctx: BCtx }) {
         title="No ads brief yet"
         text="Run the Ad Strategist, or build a brief from the ads you upload."
         action={
-          <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn}>
+          <Link href="/ad-strategist" className={btn}>
             Open the Ad Strategist
-            <ArrowUpRight size={14} aria-hidden="true" />
-          </a>
+          </Link>
         }
       />
     )
@@ -229,10 +228,9 @@ function AdsBrief({ ctx, b }: { ctx: BCtx; b: AdsTab }) {
           <span className="min-w-0 grow">
             <b className="text-ink">Refresh before the next paid draft.</b> This brief is {age} days old. Run time is observed; sales and return are not connected.
           </span>
-          <a href={legacy('ad-strategist')} title={OUT_TIP} className={btn}>
+          <Link href="/ad-strategist" className={btn}>
             Run the Ad Strategist
-            <ArrowUpRight size={14} aria-hidden="true" />
-          </a>
+          </Link>
         </div>
       ) : null}
       {b.adsError ? <p className="mb-4 text-[13.5px] text-bad">Could not read every ad behind this brief: {b.adsError}</p> : null}
@@ -316,7 +314,11 @@ function AdEvidence({ b }: { b: AdsTab }) {
                 return (
                   <tr key={r.rec} className="border-b border-line align-top last:border-0" data-testid="ev-row">
                     <td className="py-2 pr-2">
-                      {url ? (
+                      {r.ad?.id ? (
+                        <Link href={'/ad-strategist?ad=' + encodeURIComponent(r.ad.id)} className="font-semibold text-ink hover:underline">
+                          {r.rec}
+                        </Link>
+                      ) : url ? (
                         <a href={url} target="_blank" rel="noopener noreferrer" className="font-semibold text-ink hover:underline">
                           {r.rec}
                         </a>
@@ -345,10 +347,9 @@ function AdEvidence({ b }: { b: AdsTab }) {
       )}
       <p className="mt-3 text-[13px] text-ink-3">
         Run time shows an advertiser kept paying for the ad, not that it brought leads or sales.{' '}
-        <a href={legacy('ad-strategist')} title={OUT_TIP} className={linkCls + ' text-[13px]'}>
+        <Link href={'/ad-strategist?tab=all&run=' + encodeURIComponent(b.runId) + '&sort=cap'} className={linkCls + ' text-[13px]'}>
           See every ad from this run, and why each one was picked or not
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
+        </Link>
       </p>
     </Sec>
   )
@@ -366,7 +367,12 @@ function AdRow({ a, extra }: { a: Ad; extra: string[] }) {
       </span>
     </>
   )
-  return url ? (
+  // the ad's own panel on the Ad Strategist; one with no record opens in the Meta Ad Library
+  return a.id ? (
+    <Link href={'/ad-strategist?ad=' + encodeURIComponent(a.id)} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-sunk">
+      {body}
+    </Link>
+  ) : url ? (
     <a href={url} target="_blank" rel="noopener noreferrer" className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-sunk">
       {body}
     </a>

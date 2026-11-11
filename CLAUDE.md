@@ -45,8 +45,12 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   editor); 3. results (Ad Testing, Landing pages); 4. Content Transformation, with the creation kit it shares; 5.
   Marketing Generation. Part 1 comes as two PRs: 1a the Intel Tracker (Nov 11, branch `pipeline/intel-tracker`, on top
   of the finishing PR, PR #12), 1b the Overview and the Market Intelligence Briefs (Nov 11, branch
-  `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. See Pipeline below.
-- Next: Pipeline parts 2 to 5, then Atlas, Canvas, Settings. Then the cutover.
+  `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. Part 2 comes as two PRs too: 2a the Ad
+  Strategist (Nov 11, branch `pipeline/ads`, on top of 1b), 2b Runs & uploads, the upload, build-a-brief and ad copy
+  windows, Read this ad and the brief editor (next). See Pipeline below.
+- Next: Pipeline 2b, then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover. Before 2b, a small PR so a
+  link into a page that was open a moment ago shows what the link asks for (see Gotchas: React Activity); the Ad
+  Strategist already does.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -70,7 +74,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
-| Pipeline | Ad Strategist, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
+| Pipeline | Ad Strategist (its upload, build-a-brief and ad copy windows and Read this ad open the current dashboard until 2b) | here (Pipeline part 2a, not released) |
+| Pipeline | Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -397,7 +402,7 @@ signed-in teammate's token, as the current dashboard's do.
 ## Pipeline
 - Notes for the later parts, from the map of the current pages: the old Company profile loaders write while they read
   (v104ReadSync and v104SyncDerived rewrite ai_rules), so that goes with the Company profile port, not a reader;
-  `winner_creatives` is a view (check it takes writes before writing to it); the low-ticket rows keep their data as a
+  `winner_creatives` is a view of ad_records (the Ad Strategist writes to ad_records); the low-ticket rows keep their data as a
   JSON string; Content Transformation's transcription has size limits to keep; a run in progress is kept for the team
   in ai_settings, as Catalyst's are; the ad-upload, ad-brief, regen-ad-image and e3-content-run webhooks need `auth` in
   the body, like every other; the ads part needs Storage rules for the creatives bucket first, as lead-files did.
@@ -516,10 +521,69 @@ signed-in teammate's token, as the current dashboard's do.
   page showed the stored word, such as call); an angle is quoted from double quotes only (the apostrophe in firm's
   could start a quote); "uploaded by your team" is said once per ad; a shift from the brief's own list no longer
   repeats its note as the reading; a pattern from another market kept as an object reads as its words; the copy
-  formula's arrows are spaced once; an ad row opens the ad in the Ad Library (its own panel is on the Ad Strategist,
-  still in the current dashboard); Combined reads personas, offers and proof directly (the old loader rewrote house
-  rules as it read); Approve cannot save twice on a double click; the brief links on Approvals, Today, the Intel
-  Tracker and the Overview open the brief here, at its run.
+  formula's arrows are spaced once; an ad opens in its own panel on the Ad Strategist here (`/ad-strategist?ad=<id>`;
+  one with no record opens in the Meta Ad Library), and "See every ad from this run" opens that run's ads there;
+  Combined reads personas, offers and proof directly (the old loader rewrote house rules as it read); Approve cannot
+  save twice on a double click; the brief links on Approvals, Today, the Intel Tracker and the Overview open the brief
+  here, at its run.
+- The Ad Strategist (part 2a, `src/lib/pipeline/ad-strategist.ts` pure rules, `ads-load.ts`,
+  `src/components/pipeline/ads-*.tsx`, `src/app/(app)/ad-strategist`; NW_PAGES['e3.ads'] as v109, v111 and v113 left it,
+  with v99's "which brief an ad went into"):
+  - What it reads, as the teammate, fresh on every visit: the 1,000 newest ads (`winner_creatives`, a view of every
+    ad_records row), the Ad Strategist's brief rows (agent_outputs ad_strategist creative_brief, for section 8 of their
+    markdown) and its ads briefs (creative_briefs, one per run, the twelve newest), its runs (`runs`, agent
+    ad_strategist), the snapshots of those briefs, who it follows (`competitors`), the team settings agent_runs,
+    ads_follow, ad_industries, ad_industries_ai and ad_runs, the company profile and the ad copy written from uploads
+    (agent_outputs ad_copywriter). An ad asked for in the address that is older than the 1,000 is read on its own.
+  - The address: `?tab=` (top when none; the old words winners, swipe, copy, brief and follow still work), `?ad=` (the
+    open ad), `?brief=` (the Takeaways brief when not the newest, read on the server) and All ads' filters (`st`, `adv`,
+    `ind`, `run`, `cap`, `sort`); search starts afresh. A run with no ads among those read shows the ads in a brief, as
+    the briefs page's link did.
+  - The header: a run started (for 45 minutes, until a newer run or brief lands), the last run and how long ago, Runs
+    after each Intel Tracker run (agent_runs.ads.after_intel), Upload ads, Run now, what it does and five numbers that
+    open the list they count (a number clears the search, as the old one did not).
+  - The industries banner on Top and All ads (some advertisers with none: Suggest them, Set by hand). Once per browser
+    tab (sessionStorage `ap.ads.indAuto`), as the old page did once per page load, the page asks the industry agent
+    (Engine 3 · Advertiser Industries, `e3-ad-industries`) for the advertisers with none; the server works out which,
+    from the settings read fresh, and keeps the answers in `ad_industries_ai`.
+  - Top: the n best scored Ad Library ads (agent_runs.ads.top, 5 when none, 3 to 10), real copy first when there are
+    enough, at most two per advertiser; Top 5, 8, 10 and the team's own number; How the score works.
+  - All ads: search, Still running and Uploaded, Advertiser, Industry, Found in and Captured in, eight columns that
+    sort, 20 at a time; each ad's line says which brief it went into, or why not (`whyShort`).
+  - Uploads: what they show (patterns, takeaways, offers, the average fit), the cards and the ad copy sets (search, ten a
+    page, each opening in place with Copy). Upload ads, Build a brief from these and Write ad copy open the current
+    dashboard until 2b.
+  - Takeaways: the brief's five things (its snapshot, else four hooks and a pain), each with the ads closest to it in a
+    side panel, the short version, a brief picker and an old brief's warning. Run library: the twelve newest runs with
+    their rule, numbers and lead finding; Open takeaways, Its ads, Brief.
+  - An ad in full (`ads-panel.tsx`): the preview, key takeaways and how it fits the strategy (the findings of the six
+    newest briefs it backs), the offer, the score and its four parts, the fit with what the team follows, the briefs it
+    went into (with the pick and the brief's rule) or why not, the copy (Copy the copy), its patterns, Next ads brief
+    (`ad_records.in_brief`) and its details. Change the score keeps 0 to 100 on the ad (`performance_score` / 100,
+    `score_overridden`) with an agent_feedback row (`performance_score_override`, "Score manually set to N (was M)").
+    Read this ad (an upload not read yet) and Utilize this ad copy open the current dashboard.
+  - Following: the accounts followed for ads (`competitors` with a Facebook page, not posts only): Add an account,
+    Ads only or Ads and posts, Stop following or Stop reading ads (asks first), and those followed for posts only (Pull
+    their ads too, Add page); the searches and filters (ai_settings `ads_follow`: keywords up to 10, industries up to 8,
+    ad types, running now or not, country), saved with Save; what each advertiser sells, with Suggest the missing ones
+    and the window that sets them (`ad_industries`).
+  - Run now: Start a run calls Engine 3 · Ad Strategist's `ad-strategist-run` with the team's limits and keeps the run
+    for the team in ai_settings `ad_runs` ({runs: [{run_id, names, t, by, cascade}]}); From the ads you uploaded opens
+    the current dashboard until 2b.
+  - Writes go to `ad_records` (the table under the view) and `competitors` as the teammate; both take a team account's
+    update.
+- Changed on purpose on the Ad Strategist (reported to Kser): the tab, the open ad and the filters are in the address;
+  a run still going says so (the old page said it did not finish); runs are the Ad Strategist's own (the old page took
+  the 40 newest runs of every agent); a number above the tabs clears the search; an ad switched out of the next brief
+  says so on any ad (the old page said it only on uploads); no price stored no longer reads as free; Change the score
+  works on 0 to 100 as the page shows scores (the old window worked on 0 to 1), saves as the teammate and checks the
+  ad took it, and the next-brief switch checks too; the Top choices include the team's own number; All ads with no ads
+  says so (the old page said "Nothing matches"); the score's text says 0 to 100; the industry agent gets no catalog
+  template words or "Untitled ad"; the industries window saves only the boxes changed, so an agent's suggestion left
+  alone stays the agent's, and an emptied box removes the agent's too (the old window saved every suggestion as the
+  team's and could not remove one); adding an account keeps what was typed when it fails and finds the account by its
+  id for Add page; the searches' Save keeps its message; an ad opened from another page opens here
+  (`?ad=<id>`), and one not found says so.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -565,8 +629,14 @@ signed-in teammate's token, as the current dashboard's do.
   `briefs-logic.spec.ts` (without a browser) and `briefs.spec.ts` the Market Intelligence Briefs, on
   `briefs-fixtures.ts` (two organic briefs, the newest in the live markdown with its snapshot and posts, an older
   custom run someone edited; two ads briefs, the newest naming its ads by id, an older one listing them in its
-  markdown; a creative brief; a persona, an offer and approved proof). Helpers in `helpers.ts`: `stubCalls`,
-  `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  markdown; a creative brief; a persona, an offer and approved proof); `ad-strategist-logic.spec.ts` (without a
+  browser) and `ad-strategist.spec.ts` the Ad Strategist, on `ads-fixtures.ts` (nine ads in ad_records: six from the
+  Ad Library, two uploads, one from the swipe file; three ads briefs, one built from uploads and an old one with no
+  snapshot; four runs, one that did not finish; who it follows, the searches, the industries and a set of ad copy;
+  dates count back from now). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+- The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
+  `winner_creatives` itself (the briefs suite does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and
+  answers the industry agent with no industries; a test gives its own answer with `stubHook`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
   keeps, and `{deny: true}` turns signed-in teammates away, as Storage does before its rules for them. File Ingest saves
@@ -645,6 +715,14 @@ signed-in teammate's token, as the current dashboard's do.
 - A grid with no column template sizes its one column to its widest child: a line that does not wrap (`truncate`) or
   a table that scrolls sideways (`min-w-[640px]`) widens every card in it, and the page scrolls sideways on a phone.
   Grids that hold such things get `grid-cols-[minmax(0,1fr)]` (the briefs page's, Today's lists).
+- Next.js 16 with Cache Components keeps the last three pages alive (React Activity, hidden with `display: none`): a
+  link back to one of them shows it with the state it had, and only its address changes. A view that sets itself up
+  from the address must adopt an address that asks for something else, or a link to a tab lands on the old one (the
+  Ad Strategist compares the address with what its state would write, during render; `bfcacheId` keys reset on every
+  link instead). Tests that query by test id can match a hidden page's copy: use `getByRole` or `.filter({ visible:
+  true })`.
+- The clock (`useNow`) is to the minute, so something exactly two days old can read "yesterday" for up to a minute:
+  test rows that a "days ago" line reads are dated a little past the whole day (`RUN1_AT` in `ads-fixtures.ts`).
 - A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls
   the loader and the server's Supabase client into the browser bundle and the build fails. Constants the page and its
   loader share go in the rules module (the briefs' tabs are in `briefs.ts`).

@@ -2,7 +2,7 @@ import { type Page, expect, test } from '@playwright/test'
 import { spanText } from '../../src/components/pipeline/dates'
 import { dateText, dayText } from '../../src/components/ui/local-date'
 import { LEGACY, TEAM, serveLogo, signIn, stubReset, stubRows, stubSeed } from './helpers'
-import { ADS1, ADS2, CR, LIB, ORG1, ORG2, POST, briefRows } from './briefs-fixtures'
+import { ADS1, ADS2, CR, ORG1, ORG2, POST, W, briefRows } from './briefs-fixtures'
 
 // The Market Intelligence Briefs: the Organic tab (the record bar, the five things and their posts, what changed,
 // developments, themes, the posts behind the brief, the review), the Ads tab (hooks and where each was seen, offers,
@@ -328,7 +328,8 @@ test('the newest ads brief: the ads behind it, its hooks and where each was seen
   await hooks.nth(0).getByRole('button', { name: 'Seen in Northwind Advisors · 1 ad' }).click()
   const hd = page.getByTestId('hook-drawer')
   await expect(hd.getByRole('heading', { level: 2 })).toHaveText('Your clients want proof, not promises')
-  await expect(hd.getByRole('link')).toHaveAttribute('href', LIB(1))
+  // an ad opens in its own panel on the Ad Strategist
+  await expect(hd.getByRole('link')).toHaveAttribute('href', '/ad-strategist?ad=' + W(1))
   await expect(hd.getByRole('link')).toContainText('Northwind Advisors · Call to action: Book now · 60 days running')
   await page.keyboard.press('Escape')
 
@@ -344,9 +345,10 @@ test('the newest ads brief: the ads behind it, its hooks and where each was seen
   const rows = page.getByTestId('brief-evidence').getByTestId('ev-row')
   await expect(rows).toHaveCount(3)
   await expect(rows.nth(0).locator('td')).toHaveText(['P1Northwind Advisors', 'Your clients want proof, not promises', 'Book now', 'Free readiness review', '60 daysStill running'])
-  await expect(rows.nth(0).getByRole('link', { name: 'P1' })).toHaveAttribute('href', LIB(1))
+  await expect(rows.nth(0).getByRole('link', { name: 'P1' })).toHaveAttribute('href', '/ad-strategist?ad=' + W(1))
   await expect(rows.nth(1).locator('td')).toHaveText(['P2Example Ridge Advisors', 'Onboarding in days, not weeks', 'Learn more', 'Onboarding audit', 'Hand-picked by your team'])
-  await expect(rows.nth(1).getByRole('link')).toHaveCount(0)
+  // an upload with no Ad Library link still has its panel
+  await expect(rows.nth(1).getByRole('link', { name: 'P2' })).toHaveAttribute('href', '/ad-strategist?ad=' + W(2))
   await expect(rows.nth(2).locator('td')).toHaveText(['P3Example Retail', 'Dynamic catalog ad · Example Retail', 'Shop now', 'n/a', '12 daysStopped'])
   await expect(page.getByTestId('brief-glance').getByRole('listitem')).toHaveText([
     '3 adsBehind the patterns, from 3 advertisers',
@@ -360,7 +362,7 @@ test('the newest ads brief: the ads behind it, its hooks and where each was seen
   const d = page.getByTestId('brief-five-drawer')
   await expect(d.getByRole('heading', { level: 2 })).toHaveText('Proof-first openings keep running')
   await expect(d).toContainText('Ad Strategist · ' + dayText(made, 'UTC') + ' brief')
-  await expect(d.getByRole('link', { name: /Your clients want proof/ })).toHaveAttribute('href', LIB(1))
+  await expect(d.getByRole('link', { name: /Your clients want proof/ })).toHaveAttribute('href', '/ad-strategist?ad=' + W(1))
   await expect(d.getByRole('link', { name: /Your clients want proof/ })).toContainText('Northwind Advisors · 60 days running · still running')
   await expect(d.getByRole('link', { name: 'Make ads with this' })).toHaveAttribute('href', LEGACY + '/marketing-generation')
   await page.keyboard.press('Escape')
@@ -376,7 +378,7 @@ test('an old ads brief: refresh it, the ads its markdown lists, and the five fro
   await signIn(page, '/briefs?tab=ads&run=' + ADS2)
   await expect(page).toHaveURL('/briefs?tab=ads&run=' + ADS2)
   await expect(page.getByTestId('brief-stale')).toContainText('Refresh before the next paid draft. This brief is 32 days old.')
-  await expect(page.getByTestId('brief-stale').getByRole('link', { name: 'Run the Ad Strategist' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(page.getByTestId('brief-stale').getByRole('link', { name: 'Run the Ad Strategist' })).toHaveAttribute('href', '/ad-strategist')
   await expect(page.getByTestId('sec-short')).toContainText('This brief has no angle written up.')
   const five = page.getByTestId('brief-five')
   await expect(five.getByRole('heading', { level: 2 })).toHaveText('One thing working')
@@ -408,7 +410,7 @@ test('an old ads brief: refresh it, the ads its markdown lists, and the five fro
   ])
   await five.getByRole('button').click()
   const d = page.getByTestId('brief-five-drawer')
-  await expect(d.getByRole('link', { name: /Stop losing a week to paperwork/ })).toHaveAttribute('href', LIB(5))
+  await expect(d.getByRole('link', { name: /Stop losing a week to paperwork/ })).toHaveAttribute('href', '/ad-strategist?ad=' + W(5))
   await expect(d.getByRole('link', { name: /Stop losing a week to paperwork/ })).toContainText('Uploaded')
 
   // the tabs keep no run: each opens its newest
@@ -545,7 +547,7 @@ test('with no briefs: what each tab says', async ({ page }) => {
   for (const t of await tabs(page).all()) await expect(t.getByLabel('Needs review')).toHaveCount(0)
   await tabs(page).nth(1).click()
   await expect(page.getByText('No ads brief yet')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open the Ad Strategist' })).toHaveAttribute('href', LEGACY + '/ad-strategist')
+  await expect(page.getByRole('link', { name: 'Open the Ad Strategist' })).toHaveAttribute('href', '/ad-strategist')
   await tabs(page).nth(2).click()
   await expect(page.getByTestId('combo-using')).toHaveText('Built from both briefs and your company profile. It updates when either brief is approved.')
 })

@@ -298,36 +298,11 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
     let cands: Cand[] | null = null
     let adsError: string | null = picked.error?.message ?? null
     if (!pickedAds.length) {
-      const listed = adSources(mdText, [], b.run_id).map((s) => s.url).filter(Boolean)
-      const [recs, byRun] = await Promise.all([
-        listed.length
-          ? supabase.from('ad_records').select('id,advertiser_name,hook,cta,offer_inferred,ad_library_url,destination_url,days_running,is_active,run_id,uploaded_by,performance_score').in('ad_library_url', listed).limit(200)
-          : Promise.resolve({ data: [] as Row[], error: null }),
-        supabase
-          .from('ad_records')
-          .select('id,advertiser_name,hook,cta,offer_inferred,ad_library_url,destination_url,days_running,is_active,run_id,uploaded_by,performance_score')
-          .eq('run_id', b.run_id)
-          .order('performance_score', { ascending: false, nullsFirst: false })
-          .limit(60),
-      ])
-      const records = [...rowsOf(recs), ...rowsOf(byRun)]
-      sources = adSources(mdText, records, b.run_id)
-      const urls = sources.map((s) => s.url).filter((u) => /^https?:/.test(u))
-      const wc = urls.length
-        ? await supabase.from('winner_creatives').select('*').in('ad_library_url', urls).limit(200)
-        : await supabase.from('winner_creatives').select('*').eq('run_id', b.run_id).order('performance_score', { ascending: false, nullsFirst: false }).limit(60)
-      adsError = adsError || recs.error?.message || wc.error?.message || null
-      pool = rowsOf(wc).map((r) => adOf(r, now))
-      const byUrl: Record<string, Row> = {}
-      for (const r of records) if (r.ad_library_url) byUrl[str(r.ad_library_url)] = r
-      // the ads the five things are matched against (v96AdCands): the listed ads with their records, else the run's own
-      cands = sources.length
-        ? sources.map((s) => {
-            const m = (s.url && byUrl[s.url]) || records.find((r) => str(r.id) === s.recordId) || {}
-            const c = { url: s.url || str(m.ad_library_url), who: (s.advertiser || str(m.advertiser_name)).trim(), hook: s.hook || str(m.hook), offer: str(m.offer_inferred), days: s.days ?? num(m.days_running), id: '' }
-            return { ...c, text: [c.hook, '', str(m.cta), c.offer, ''].join(' ') }
-          })
-        : pool.map((a) => ({ url: /^https?:/.test(a.url) ? a.url : '', who: a.adv, hook: a.hook, offer: a.offer, days: a.days, id: '', text: [a.hook, a.body, a.cta, a.offer, a.copyFormula, a.patterns.join(' ')].join(' ') }))
+      const fb = await adsFallback(supabase, mdText, b.run_id, now)
+      sources = fb.sources
+      pool = fb.pool
+      cands = fb.cands
+      adsError = adsError || fb.error
     }
 
     const parts = adsParts(b)
@@ -413,6 +388,44 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
     profileError: pe.error?.message || of.error?.message || pf.error?.message || null,
   }
   return base
+}
+
+const AD_RECORD_COLS = 'id,advertiser_name,hook,cta,offer_inferred,ad_library_url,destination_url,days_running,is_active,run_id,uploaded_by,performance_score'
+
+/**
+ * The ads behind an ads brief that names none by id (v96AdCands, apAdSources): the list in its markdown, matched to the
+ * kept ads by link, else the run's own ads by score; and the ads its five things are matched against. The Ad
+ * Strategist's Takeaways read the same.
+ */
+export async function adsFallback(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  mdText: string,
+  runId: string,
+  now: number,
+): Promise<{ sources: Source[]; pool: Ad[]; cands: Cand[]; error: string | null }> {
+  const listed = adSources(mdText, [], runId).map((s) => s.url).filter(Boolean)
+  const [recs, byRun] = await Promise.all([
+    listed.length ? supabase.from('ad_records').select(AD_RECORD_COLS).in('ad_library_url', listed).limit(200) : Promise.resolve({ data: [] as Row[], error: null }),
+    supabase.from('ad_records').select(AD_RECORD_COLS).eq('run_id', runId).order('performance_score', { ascending: false, nullsFirst: false }).limit(60),
+  ])
+  const records = [...rowsOf(recs), ...rowsOf(byRun)]
+  const sources = adSources(mdText, records, runId)
+  const urls = sources.map((s) => s.url).filter((u) => /^https?:/.test(u))
+  const wc = urls.length
+    ? await supabase.from('winner_creatives').select('*').in('ad_library_url', urls).limit(200)
+    : await supabase.from('winner_creatives').select('*').eq('run_id', runId).order('performance_score', { ascending: false, nullsFirst: false }).limit(60)
+  const pool = rowsOf(wc).map((r) => adOf(r, now))
+  const byUrl: Record<string, Row> = {}
+  for (const r of records) if (r.ad_library_url) byUrl[str(r.ad_library_url)] = r
+  // the listed ads with their records, else the run's own
+  const cands: Cand[] = sources.length
+    ? sources.map((s) => {
+        const m = (s.url && byUrl[s.url]) || records.find((r) => str(r.id) === s.recordId) || {}
+        const c = { url: s.url || str(m.ad_library_url), who: (s.advertiser || str(m.advertiser_name)).trim(), hook: s.hook || str(m.hook), offer: str(m.offer_inferred), days: s.days ?? num(m.days_running), id: '' }
+        return { ...c, text: [c.hook, '', str(m.cta), c.offer, ''].join(' ') }
+      })
+    : pool.map((a) => ({ url: /^https?:/.test(a.url) ? a.url : '', who: a.adv, hook: a.hook, offer: a.offer, days: a.days, id: '', text: [a.hook, a.body, a.cta, a.offer, a.copyFormula, a.patterns.join(' ')].join(' ') }))
+  return { sources, pool, cands, error: (recs as { error: { message: string } | null }).error?.message || wc.error?.message || null }
 }
 
 /** The organic brief's TL;DR: each line's title tidied, its text cut to 380 characters (the short version). */

@@ -18,6 +18,12 @@ const KEYS = {
   catalyst_sources: 'id',
 }
 
+/**
+ * Views, as in the project: winner_creatives is every ad_records row, so a write to ad_records shows in it. A test that
+ * seeds winner_creatives itself reads its own rows there instead.
+ */
+const VIEWS = { winner_creatives: 'ad_records' }
+
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
 /** PostgREST's text form of a value, for comparing (filters always arrive as text). */
@@ -172,7 +178,8 @@ export function createRest(initial, claimsOf) {
   }
 
   function handle(req, res, url, rawBody) {
-    const name = decodeURIComponent(url.pathname.replace(/^\/rest\/v1\//, '').split('/')[0])
+    const asked = decodeURIComponent(url.pathname.replace(/^\/rest\/v1\//, '').split('/')[0])
+    const name = VIEWS[asked] && !(asked in tables) ? VIEWS[asked] : asked
     const claims = claimsOf(req)
     if (!claims || claims.role !== 'authenticated') {
       return send(res, 401, { code: 'PGRST301', message: 'stub: this app reads and writes as the signed-in person only' })

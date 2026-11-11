@@ -278,6 +278,10 @@ http
           const names = (body.competitors || []).map((c) => c.name).filter(Boolean)
           return send(res, 200, { ok: true, run_id: 'agent1_custom_stub', tracking: names })
         }
+        // Engine 3 · Ad Strategist: a run starts; Engine 3 · Advertiser Industries: names an industry for the advertisers
+        // whose ads say what they sell (a test gives its own answer with /__hook)
+        if (name === 'ad-strategist-run') return send(res, 200, { ok: true, run_id: 'agent2_stub' })
+        if (name === 'e3-ad-industries') return send(res, 200, { ok: true, industries: {} })
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })
         }
