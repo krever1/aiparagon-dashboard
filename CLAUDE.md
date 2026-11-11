@@ -494,6 +494,8 @@ signed-in teammate's token, as the current dashboard's do.
 - Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
   `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
   no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
+  Chromium's system packages are a CI step of their own that may fail without failing CI: they come from Ubuntu's
+  mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
 - With Cache Components, reading `cookies()` outside `<Suspense>` fails the build, `dynamicParams` is not supported,
