@@ -7,6 +7,7 @@ import {
   type Persona, type Proof, type Review, type Shift, type Tab, adEvidence, adFive, adsParts, combinedPick, devsOf, fiveItems, layoutOf, newestFor, newestPerRun,
   orgEvidence, orgFive, orgGlance, provenOf, reviewOf, shiftsOf, stateOf, topicWatch,
 } from './briefs'
+import { type CB, type Snap, cbOf, snapOf } from './brief-edit'
 import { type Five, type ThemeCount, briefThemes, competitorOf, json, num, rankPosts, windowIso } from './intel'
 import { type PostView, type ReplyView, postsOf, repliesOf } from './intel-load'
 
@@ -34,6 +35,9 @@ export type Record_ = {
 
 export type OrgTab = Record_ & {
   d: Record<string, unknown>
+  /** the brief as stored, for the editor: its markdown and the run's snapshot */
+  md: string
+  snap: Snap | null
   window: { a: string; z: string | null } | null
   industry: string
   custom: boolean
@@ -54,6 +58,9 @@ export type OrgTab = Record_ & {
 }
 
 export type AdsTab = Record_ & {
+  /** the ads brief's fields as stored, and the run's snapshot, for the editor */
+  cb: CB
+  snap: Snap | null
   parts: ReturnType<typeof adsParts>
   five: AdFive[]
   evidence: AdEvRow[]
@@ -100,6 +107,8 @@ export type BriefsData = {
   ads: AdsTab | null
   combo: ComboTab | null
   layout: Record<Kind, Layout>
+  /** whether the team saved a layout for each kind (else it is the usual one) */
+  layoutSaved: Record<Kind, boolean>
   profile: { id: number | null; industry: string; targetMarket: string }
   error: string | null
   now: number
@@ -186,6 +195,7 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
   const waiting = [pending(orgs[0]?.run_id), pending(adsList[0]?.run_id), pending(newestCreative)].filter(Boolean).length
   const saved = rowsOf(st)[0]?.value
   const layout = { org: layoutOf(saved, 'org'), ads: layoutOf(saved, 'ads') }
+  const layoutSaved = { org: !!Object.keys(json(json(saved).org)).length, ads: !!Object.keys(json(json(saved).ads)).length }
   const p0 = rowsOf(pr)[0]
   const profile = { id: p0 && Number.isFinite(Number(p0.id)) ? Number(p0.id) : null, industry: str(p0?.industry).trim(), targetMarket: str(p0?.target_market).trim() }
 
@@ -200,6 +210,7 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
     ads: null,
     combo: null,
     layout,
+    layoutSaved,
     profile,
     error: errors.length ? errors.join('; ') : null,
     now,
@@ -247,6 +258,8 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
         return { runId: x.run_id, createdAt: x.created_at, custom: /custom/i.test(str(xd.run_source || xd.run_type)), edited: !!reviewOf(xd)?.by, at: x.created_at }
       }),
       d,
+      md: str(o.content_md),
+      snap: snapOf(snaps[o.run_id]),
       window: windowIso(d.window_start) ? { a: windowIso(d.window_start)!, z: windowIso(d.window_end) } : null,
       industry: str(d.industry).trim() || profile.industry,
       custom: /custom/i.test(str(d.run_source || d.run_type)),
@@ -332,6 +345,8 @@ export async function loadBriefs(tab: Tab, asked: string | null, now = Date.now(
         edited: false,
         at: runAt[x.run_id] || x.created_at || runDateOf(x.run_id) || '',
       })),
+      cb: cbOf(b as unknown as Row),
+      snap: snapOf(snap),
       parts,
       five: adFive(b, snap, !!review?.hidden.includes('five'), pickedAds, cands, pool),
       evidence: adEvidence(pickedAds, sources, pool, review?.removed ?? []),

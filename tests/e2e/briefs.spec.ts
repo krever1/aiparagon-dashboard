@@ -49,12 +49,12 @@ test('the newest organic brief: its record, the five things, the short version a
     dayText(made, 'UTC') + ' · newest',
     dayText(at(R.agent_outputs, '97000000-0000-4000-8000-000000000003'), 'UTC') + ' · custom run · edited',
   ])
-  // Structure and Edit are still in the current dashboard
-  for (const name of ['Structure', 'Edit']) {
-    const a = bar.getByRole('link', { name })
-    await expect(a).toHaveAttribute('href', LEGACY + '/briefs')
-    await expect(a).toHaveAttribute('title', 'Opens in the current dashboard')
-  }
+  // the brief or its layout, and Edit, all here
+  const view = bar.getByRole('group', { name: 'View' })
+  await expect(view.getByRole('button')).toHaveText(['Brief', 'Structure'])
+  await expect(view.getByRole('button', { name: 'Brief' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(bar.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expect(bar.getByRole('link')).toHaveCount(0)
 
   // the five things from the brief's snapshot
   const five = page.getByTestId('brief-five')
@@ -209,9 +209,16 @@ test('approve the organic brief, from the record bar; the count and the tab foll
   await expect(page.getByTestId('brief-decision')).toHaveText('Approved by qa.teammate just now')
 })
 
-test('request changes asks what should change, saves it for AI settings, and the brief says so', async ({ page }) => {
+test('request changes opens the editor; a note instead asks what should change and saves it for AI settings', async ({ page }) => {
   await signIn(page, '/briefs')
-  await page.getByTestId('sec-review').getByRole('button', { name: 'Request changes' }).click()
+  const ask = async () => {
+    await page.getByTestId('sec-review').getByRole('button', { name: 'Request changes' }).click()
+    await expect(page.getByTestId('brief-editor')).toBeVisible()
+    await page.getByTestId('edit-head').getByRole('button', { name: 'Leave a note instead' }).click()
+    await expect(page.getByTestId('brief-editor')).toHaveCount(0)
+  }
+  await expect(page.getByTestId('sec-review').getByRole('button', { name: 'Request changes' })).toHaveAttribute('title', 'Edit the brief, or leave a note for the agent')
+  await ask()
   const d = page.getByRole('dialog', { name: 'What needs to change in this brief?' })
   await expect(d).toContainText('Organic brief · ' + dayText(at(R.agent_outputs, '97000000-0000-4000-8000-000000000001'), 'UTC'))
   await expect(d.getByLabel('What needs to change')).toBeFocused()
@@ -224,7 +231,7 @@ test('request changes asks what should change, saves it for AI settings, and the
   await expect(d).toHaveCount(0)
   expect(await decisions()).toHaveLength(0)
 
-  await page.getByTestId('sec-review').getByRole('button', { name: 'Request changes' }).click()
+  await ask()
   await d.getByLabel('What needs to change').fill('The second shift has no post from this run. Leave it out.')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(toast(page, 'Saved. It shows on AI settings, where it can become a rule.')).toBeVisible()
@@ -257,7 +264,7 @@ test('another version, an edited one: the address names it, and its own sections
   await expect(page.getByTestId('brief-meta')).toContainText('Agent Intel Tracker, custom run')
   const edited = (JSON.parse(String(R.agent_outputs[2].data)) as { review: { at: string } }).review.at
   await expect(page.getByTestId('brief-meta')).toContainText('Edited by erin ' + dayText(edited, 'UTC') + ' · Put back the agent’s version')
-  await expect(page.getByTestId('brief-meta').getByRole('link', { name: 'Put back the agent’s version' })).toHaveAttribute('href', LEGACY + '/briefs')
+  await expect(page.getByTestId('brief-meta').getByRole('button', { name: 'Put back the agent’s version' })).toBeVisible()
   // no snapshot: the five things come from its TL;DR; the edit hid its developments
   const five = page.getByTestId('brief-five')
   await expect(five.getByRole('heading', { level: 2 })).toHaveText('One thing working')

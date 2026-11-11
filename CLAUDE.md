@@ -48,11 +48,13 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. Part 2 comes as three PRs: 2a the Ad
   Strategist (Nov 11, branch `pipeline/ads`, on top of 1b, PR #14), 2b Runs & uploads and the upload, build-a-brief and
   ad copy windows, with Read this ad and Send to Marketing Generation (Nov 11, branch `pipeline/uploads`, on top of the
-  link fix), 2c the brief editor and its Structure tab (next). See Pipeline below.
+  link fix, PR #16), 2c the brief editor and its Structure view (Nov 11, branch `pipeline/brief-editor`, on top of 2b).
+  With 2c, part 2 is done. See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Pipeline 2c (the brief editor), then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover.
+- Next: Pipeline part 3 (Ad Testing, Landing pages), then parts 4 and 5, then Atlas, Canvas, Settings. Then the
+  cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -78,6 +80,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
 | Pipeline | Ad Strategist | here (Pipeline part 2a, not released) |
 | Pipeline | Runs & uploads; the upload, build-a-brief and ad copy windows; Read this ad | here (Pipeline part 2b, not released) |
+| Pipeline | The briefs' editor (Edit, Preview, Put back the agent's version) and Structure view | here (Pipeline part 2c, not released) |
 | Pipeline | Content Transformation, Marketing Generation, Landing pages, Ad Testing | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
@@ -493,8 +496,8 @@ signed-in teammate's token, as the current dashboard's do.
     bare address follows new briefs. A run older than the newest is read on its own; one nobody has opens the newest.
   - The header: how many of the newest briefs (organic, ads, creative) wait for a review, and a dot on each tab whose
     newest brief waits.
-  - Organic: the record bar (published, the period, the agent, the industry with Change, the versions, the state,
-    Approve brief; Structure and Edit open the current dashboard), the evidence note, the five things (the snapshot,
+  - Organic: the record bar (published, the period, the agent, the industry with Change, the versions, Brief or
+    Structure, the state, Approve brief and Edit), the evidence note, the five things (the snapshot,
     else the TL;DR), each opening what the agent saw and the closest posts, the short version, what changed (the
     first shift open, its evidence opening the post), notable developments, themes (each opening the Intel Tracker on
     it) and topic watch, the content handoff, the posts behind the brief (sortable by engagement; a row opens the
@@ -508,17 +511,43 @@ signed-in teammate's token, as the current dashboard's do.
     the team's own material, each with Approve and Request changes.
   - Approve and Request changes (`decideBrief`): an agent_feedback row (target_type brief_approval, target_id the run
     or `content:<request id>`, agent intel_tracker, ad_strategist or content_generation, action approved or changes,
-    the reason as feedback, author the teammate's email), the rows Approvals writes and AI settings reads. Request
-    changes asks what should change first.
+    the reason as feedback, author the teammate's email), the rows Approvals writes and AI settings reads. On an
+    organic or ads brief Request changes opens the editor, whose Leave a note instead asks what should change (the
+    old page did both); on a creative brief it asks what should change first.
   - The team's layout (`layoutOf`): the sections in its order, those switched off left out (the record, the evidence
     and the review cannot be), and its options (how many five things, shifts, developments, hooks and offers; short or
     full reasons; topic watch). A section the team added to the layout says it is counted in the current dashboard. A
     saved review (the brief editor's) hides its sections too, and the bar says who edited the brief.
   - The three review checks are kept in this browser (localStorage `ap.nw.brchk`, as the current dashboard; the two
     apps do not share them). `briefs-parts.tsx` holds what the tabs share (the bar, a section, the rail, the review).
-- Changed on purpose on the Briefs (reported to Kser): Request changes asks what should change and saves it (the old
-  page opened the brief editor; editing a brief, its layout and putting back the agent's version stay in the current
-  dashboard for now); a section the team added to the layout points there instead of being counted here; a brief
+  - Structure (part 2c, `briefs-structure.tsx`, `saveLayout`; v111StHtml): the record bar's Brief or Structure. Every
+    section of the kind in its order, shown or hidden (the record, the evidence and the review always in; an ads
+    brief's creative structure is needed for drafts), moved up or down (the record and the five things lead, the review
+    closes), its options (how many, detail, topic watch), the sections a team can add (Added, Take it out), Standard
+    layout, Cancel and Save layout. Saved for the team in ai_settings `brief_structure` ({org, ads, updated_by,
+    updated_at}; the other kind's layout is kept as it was), read fresh before the save and cleaned (`cleanLayout`:
+    known sections, locked ones never off, options with one of their choices). Another tab opens on its brief again.
+  - The brief editor (part 2c, `src/lib/pipeline/brief-edit.ts` pure rules, `briefs-edit.tsx`,
+    `src/app/(app)/briefs/edit-actions.ts`; v111EdStart, v111EdHtml, v111EdSide, v111EdSave, v111Restore): Edit (or
+    Request changes) on an organic or ads brief. A card per section, each row with Edit (its own fields, `FORM`; the
+    same words close it, all empty is refused), Remove and, for a post or an ad, Open; Remove section, except the
+    sections drafts need and the evidence (single posts or ads come out instead). Removing a post takes it out of the
+    brief's lists, topic watch and developments and flags the shifts and lines that quoted it; removing an ad takes it
+    out of `source_ad_ids`; the last hook stays. Each change has Undo (the bar, and the message); the bar holds Edit or
+    Preview, the count, Undo, Discard (asks when there are changes) and Save changes; the head has the note for the
+    record and Leave a note instead. Preview draws the brief as it now stands, every list in full, and the review card
+    waits for the edit. The editing state is the page's (`useEditor` in BriefsView): it stays open while another tab
+    is looked at, and another brief's Edit asks before dropping it.
+  - Save (`saveOrgEdit`, `saveAdsEdit`), as the teammate: an organic brief's words, data (with the review) and
+    `edited_by_human` on its intel_brief row, its five things on the run's snapshot row; an ads brief's changed columns
+    on creative_briefs (lists kept as JSON text stay text) and the review on the run's Ad Strategist rows. The review
+    (`reviewNew`) keeps who, when, what changed (`sumOf`), the note, the sections taken out, the posts or ads removed,
+    the agent's own version from the first edit and the last 12 edits. An `edited` decision in agent_feedback (the
+    summary and the note) sends the brief back to Needs review, and the decision line says who edited it. Put back the
+    agent's version (`restoreBrief`, asks first) writes the kept version back, drops the review and leaves an edited
+    decision, "Put back the agent’s own version."; a kept version without its words leaves the words as they are.
+- Changed on purpose on the Briefs (reported to Kser): a section the team added to the layout points to the current
+  dashboard instead of being counted here; a brief
   older than the newest is read on its own (the old page opened the newest); the tab and the brief are in the address;
   the Call to action card names the action as the company profile does, Book a call when the offer has none (the old
   page showed the stored word, such as call); an angle is quoted from double quotes only (the apostrophe in firm's
@@ -658,6 +687,12 @@ signed-in teammate's token, as the current dashboard's do.
   goes (the old panel called every link the Meta Ad Library); the copy sets show the picture and the pattern under the
   names the copy writer saves them by (the 2a port read other names and showed neither).
 
+- Changed on purpose in the brief editor (reported to Kser): an ad's Open in the editor opens the ad in a new tab, so
+  the edits stay (the old one opened its panel in place); Put back says so when a brief has no agent's version kept
+  (the old page stopped without a word) and, for an organic brief kept without its words, leaves the words alone; a
+  save that fails says why in the editor, which stays open (the old page did too, with the error's raw text); the
+  Edit and Preview buttons are a group of their own, named Editing view.
+
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
    CLAUDE.md (section 1) names its functions; its "Where it stands" notes say what each round changed and why.
@@ -706,8 +741,10 @@ signed-in teammate's token, as the current dashboard's do.
   browser) and `ad-strategist.spec.ts` the Ad Strategist, on `ads-fixtures.ts` (nine ads in ad_records: six from the
   Ad Library, two uploads, one from the swipe file; three ads briefs, one built from uploads and an old one with no
   snapshot; four runs, one that did not finish; who it follows, the searches, the industries and a set of ad copy;
-  dates count back from now); `uploads-logic.spec.ts` (without a browser) and `uploads.spec.ts` the upload, build-a-brief
-  and ad copy windows and Read this ad, on the same rows; `runs.spec.ts` Runs & uploads, on `runs-fixtures.ts` (the ads
+  dates count back from now); `brief-edit-logic.spec.ts` (without a browser) and `brief-edit.spec.ts` the brief editor
+  and the Structure view, on the briefs' rows (confirms answered with `page.once('dialog')`: Playwright dismisses
+  them otherwise); `uploads-logic.spec.ts` (without a browser) and `uploads.spec.ts` the upload, build-a-brief and ad
+  copy windows and Read this ad, on the same rows; `runs.spec.ts` Runs & uploads, on `runs-fixtures.ts` (the ads
   rows plus a newer ads brief built from uploads, two campaigns, a scheduled and a custom Intel brief, and a custom
   Intel run still reading). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
@@ -818,3 +855,6 @@ signed-in teammate's token, as the current dashboard's do.
 - A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls
   the loader and the server's Supabase client into the browser bundle and the build fails. Constants the page and its
   loader share go in the rules module (the briefs' tabs are in `briefs.ts`).
+- The briefs page draws one `BriefsView` for every tab and brief (no key), so a brief being edited stays open while
+  another tab is looked at, as in the old page. State that belongs to one brief goes in `OrgBrief` or `AdsBrief`,
+  which are keyed by run; the view only resets Brief or Structure when the tab changes.

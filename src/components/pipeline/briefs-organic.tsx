@@ -10,10 +10,13 @@ import { Drawer } from '@/components/ui/drawer'
 import { dateText, dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { type Kind, ADDED, RAIL, devsShown, fiveHeading, optOf } from '@/lib/pipeline/briefs'
+import type { OrgDoc } from '@/lib/pipeline/brief-edit'
 import type { OrgTab } from '@/lib/pipeline/briefs-load'
 import { fmtN, platLabel, themeKey, themeLabel } from '@/lib/pipeline/intel'
 import type { PostView, ReplyView } from '@/lib/pipeline/intel-load'
 import { Empty, Ring, Tag, ValPill, btn, linkCls, primary } from './bits'
+import { BriefEditor, EditSide, editPosts, orgBase, orgPreview } from './briefs-edit'
+import { StructureView } from './briefs-structure'
 import { AddedSec, type BCtx, EditedLine, Glance, type MetaItem, OUT_TIP, Rail, RecordBar, ReviewCard, Sec, legacy } from './briefs-parts'
 import { spanText } from './dates'
 import { InfoButton } from './intel-info'
@@ -49,9 +52,14 @@ export function OrgTabView({ ctx }: { ctx: BCtx }) {
   return <OrgBrief key={o.runId} ctx={ctx} o={o} />
 }
 
-function OrgBrief({ ctx, o }: { ctx: BCtx; o: OrgTab }) {
+function OrgBrief({ ctx, o: o0 }: { ctx: BCtx; o: OrgTab }) {
   const router = useRouter()
-  const { tz, data } = ctx
+  const { tz, data, ed } = ctx
+  // while the brief is edited it reads as it now stands (v111OrgRow), every list in full
+  const editing = ed.on(KIND, o0.runId) ? ed.st : null
+  const cur = editing?.cur as OrgDoc | undefined
+  const o = useMemo(() => (cur ? orgPreview(o0, cur) : o0), [cur, o0])
+  const full = !!editing
   const L = data.layout.org
   const hidden = new Set(o.review?.hidden ?? [])
   const show = (k: string) => !L.off.includes(k) && !hidden.has(k)
@@ -86,11 +94,11 @@ function OrgBrief({ ctx, o }: { ctx: BCtx; o: OrgTab }) {
         <Short key={k} o={o} />
       ) : k === 'shift' ? (
         o.shifts.length ? (
-          <Shifts key={k} o={o} n={optOf(L, KIND, 'shift', 'n')} recOf={recOf} onPost={(url) => openUrl(url)} />
+          <Shifts key={k} o={o} n={full ? 'all' : optOf(L, KIND, 'shift', 'n')} recOf={recOf} onPost={(url) => openUrl(url)} />
         ) : null
       ) : k === 'dev' ? (
         o.devs.length ? (
-          <Devs key={k} o={o} per={optOf(L, KIND, 'dev', 'n')} />
+          <Devs key={k} o={o} per={full ? 'all' : optOf(L, KIND, 'dev', 'n')} />
         ) : null
       ) : k === 'themes' ? (
         o.themes.length || (o.watch.length && optOf(L, KIND, 'themes', 'tw') === 'on') ? (
@@ -100,7 +108,7 @@ function OrgBrief({ ctx, o }: { ctx: BCtx; o: OrgTab }) {
         <Handoff key={k} />
       ) : k === 'ev' ? (
         o.evidence.length ? (
-          <Evidence key={k} o={o} n={optOf(L, KIND, 'ev', 'n')} onRow={(url, postId) => (postId ? setPost(postId) : WEB.test(url) ? window.open(url, '_blank', 'noopener') : null)} />
+          <Evidence key={k} o={o} n={full ? 'all' : optOf(L, KIND, 'ev', 'n')} onRow={(url, postId) => (postId ? setPost(postId) : WEB.test(url) ? window.open(url, '_blank', 'noopener') : null)} />
         ) : null
       ) : k in ADDED.org ? (
         <AddedSec key={k} id={k} name={ADDED.org[k]} />
@@ -134,70 +142,22 @@ function OrgBrief({ ctx, o }: { ctx: BCtx; o: OrgTab }) {
   const rail = [...(fives.length ? [{ id: 'five', label: RAIL.org.five }] : []), ...sections.map((s) => ({ id: s.id, label: s.label })), { id: 'review', label: RAIL.org.review }]
   const p = post ? byId.get(post) : undefined
 
-  return (
+  const bar = (
+    <RecordBar
+      ctx={ctx}
+      kind={KIND}
+      title={title}
+      meta={meta.filter((m): m is MetaItem => !!m && m.value !== '')}
+      versions={versions}
+      run={o.runId}
+      state={o.state}
+      editedLine={o0.review && !editing ? <EditedLine ctx={ctx} kind={KIND} run={o0.runId} by={o0.review.by} at={o0.review.at} original={o0.review.original} /> : null}
+      side={editing ? <EditSide ed={ed} /> : undefined}
+      onEdit={() => ed.start(KIND, o0.runId, orgBase(o0))}
+    />
+  )
+  const drawers = (
     <>
-      <RecordBar
-        ctx={ctx}
-        kind={KIND}
-        title={title}
-        meta={meta.filter((m): m is MetaItem => !!m && m.value !== '')}
-        versions={versions}
-        run={o.runId}
-        state={o.state}
-        editedLine={o.review ? <EditedLine by={o.review.by} at={o.review.at} original={o.review.original} tz={tz} /> : null}
-      />
-      <p className="mb-4 flex items-start gap-2 rounded-md border border-info/20 bg-info-soft px-3 py-2.5 text-[14px] text-ink-2">
-        <Info size={17} aria-hidden="true" className="mt-0.5 shrink-0 text-info" />
-        <span>
-          <b className="text-ink">Evidence note.</b> Engagement counts are observed on the source posts. Themes and angles are the agent’s reading. Check any outside
-          figure before you quote it.
-        </span>
-      </p>
-      {o.postsError ? <p className="mb-4 text-[13.5px] text-bad">Could not read this run’s posts: {o.postsError}</p> : null}
-
-      {fives.length ? (
-        <section id="br-five" className="mb-4 scroll-mt-24" data-testid="brief-five" aria-label={fiveHeading(fives.length)}>
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-display text-[22px] font-semibold text-ink">{fiveHeading(fives.length)}</h2>
-            <span className="text-[13px] text-ink-3">Select one for what the agent saw and its sources</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 min-[641px]:grid-cols-2 min-[1081px]:grid-cols-5">
-            {fives.map((f, i) => (
-              <button key={i} type="button" onClick={() => setFive(i)} className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-line bg-panel p-3.5 text-left shadow-card hover:border-line-2">
-                <span className="text-[12px] font-semibold text-ink-3">{i + 1}</span>
-                {f.tag ? <Tag gold>{f.tag}</Tag> : null}
-                <b className="text-[14.5px] font-semibold leading-snug text-ink">{f.text}</b>
-                {fiveWhy && f.why ? <small className="text-[13px] text-ink-2">{f.why}</small> : null}
-                <span className="mt-auto inline-flex items-center gap-1 pt-1 text-[13px] font-semibold text-accent-text">
-                  {f.ids.length ? plural(f.ids.length, 'source') : 'Read across the run'}
-                  <ArrowRight size={14} aria-hidden="true" />
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <div className="grid grid-cols-1 items-start gap-4 min-[1081px]:grid-cols-[minmax(0,1fr)_270px]">
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
-          {sections.map((s) => s.node)}
-          <ReviewCard ctx={ctx} kind={KIND} run={o.runId} title={title} state={o.state} decision={o.decision} />
-        </div>
-        <div className="max-[1080px]:order-first">
-          <Rail
-            items={rail}
-            glance={
-              <Glance
-                testid="brief-glance"
-                title="Evidence at a glance"
-                rows={o.glance}
-                note="Engagement is counted on the source posts. It does not measure your own content."
-              />
-            }
-          />
-        </div>
-      </div>
-
       {five !== null && fives[five] ? (
         <OrgFiveDrawer
           o={o}
@@ -244,6 +204,90 @@ function OrgBrief({ ctx, o }: { ctx: BCtx; o: OrgTab }) {
       ) : null}
       {why ? <WhyWindow reply={why} onClose={() => setWhy(null)} /> : null}
       {industry ? <IndustryDialog industry={data.profile.industry || o.industry} market={data.profile.targetMarket} onClose={() => setIndustry(false)} followLink /> : null}
+    </>
+  )
+  // a post's Open in the editor: its panel when the run kept it, else its own page
+  const openTarget = (t: string) => (byId.has(t) ? setPost(t) : WEB.test(t) ? window.open(t, '_blank', 'noopener') : null)
+
+  if (editing && cur && editing.view === 'edit') {
+    return (
+      <>
+        {bar}
+        <BriefEditor
+          ed={ed}
+          posts={editPosts(o0, cur)}
+          onNoteOnly={() => (ed.quit('Drop your changes and only leave a note?') ? ctx.askChanges('organic', o0.runId, title) : undefined)}
+          onOpen={openTarget}
+        />
+        {drawers}
+      </>
+    )
+  }
+  if (ctx.view === 'structure' && !editing) {
+    return (
+      <>
+        {bar}
+        <StructureView key={JSON.stringify(L)} kind={KIND} saved={L} savedAny={data.layoutSaved.org} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      {bar}
+      <p className="mb-4 flex items-start gap-2 rounded-md border border-info/20 bg-info-soft px-3 py-2.5 text-[14px] text-ink-2">
+        <Info size={17} aria-hidden="true" className="mt-0.5 shrink-0 text-info" />
+        <span>
+          <b className="text-ink">Evidence note.</b> Engagement counts are observed on the source posts. Themes and angles are the agent’s reading. Check any outside
+          figure before you quote it.
+        </span>
+      </p>
+      {o.postsError ? <p className="mb-4 text-[13.5px] text-bad">Could not read this run’s posts: {o.postsError}</p> : null}
+
+      {fives.length ? (
+        <section id="br-five" className="mb-4 scroll-mt-24" data-testid="brief-five" aria-label={fiveHeading(fives.length)}>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-[22px] font-semibold text-ink">{fiveHeading(fives.length)}</h2>
+            <span className="text-[13px] text-ink-3">Select one for what the agent saw and its sources</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 min-[641px]:grid-cols-2 min-[1081px]:grid-cols-5">
+            {fives.map((f, i) => (
+              <button key={i} type="button" onClick={() => setFive(i)} className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-line bg-panel p-3.5 text-left shadow-card hover:border-line-2">
+                <span className="text-[12px] font-semibold text-ink-3">{i + 1}</span>
+                {f.tag ? <Tag gold>{f.tag}</Tag> : null}
+                <b className="text-[14.5px] font-semibold leading-snug text-ink">{f.text}</b>
+                {fiveWhy && f.why ? <small className="text-[13px] text-ink-2">{f.why}</small> : null}
+                <span className="mt-auto inline-flex items-center gap-1 pt-1 text-[13px] font-semibold text-accent-text">
+                  {f.ids.length ? plural(f.ids.length, 'source') : 'Read across the run'}
+                  <ArrowRight size={14} aria-hidden="true" />
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="grid grid-cols-1 items-start gap-4 min-[1081px]:grid-cols-[minmax(0,1fr)_270px]">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
+          {sections.map((s) => s.node)}
+          <ReviewCard ctx={ctx} kind={KIND} run={o.runId} title={title} state={o.state} decision={o.decision} onEdit={() => ed.start(KIND, o0.runId, orgBase(o0))} />
+        </div>
+        <div className="max-[1080px]:order-first">
+          <Rail
+            items={rail}
+            glance={
+              <Glance
+                testid="brief-glance"
+                title="Evidence at a glance"
+                rows={o.glance}
+                note="Engagement is counted on the source posts. It does not measure your own content."
+              />
+            }
+          />
+        </div>
+      </div>
+
+      {drawers}
     </>
   )
 }

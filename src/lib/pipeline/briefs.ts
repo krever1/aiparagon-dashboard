@@ -592,6 +592,87 @@ export function optOf(st: Layout, kind: Kind, k: string, o: string): string {
   return v !== undefined && d[1].includes(v) ? v : d[2]
 }
 
+/** What each section is, as the Structure tab lists it (V111_SECS, V111_ADD): its title and what it shows. */
+export const SEC_TEXT: Readonly<Record<Kind, Readonly<Record<string, readonly [string, string]>>>> = {
+  org: {
+    rec: ['Record and scope', 'When it was published, the period the run covers, the agent, who it is for and whether it is approved.'],
+    five: ['Five things working', 'The strongest points, each with what the agent saw and the posts behind it.'],
+    short: ['The short version', 'What changed in the conversation, in a few lines.'],
+    shift: ['What changed', 'Shifts in how the market talks, each with its evidence and how you could use it.'],
+    dev: ['Notable developments', 'Thought leadership, product news and offers worth a closer look.'],
+    themes: ['Themes and topic watch', 'Posts per theme, and the topics you watch, such as security and governance.'],
+    hand: ['Content handoff', 'How the signals feed posts, newsletters and emails, and what stays yours.'],
+    ev: ['Post evidence', 'The posts behind the brief, with engagement and why each one matters.'],
+    review: ['Review', 'Three checks, then approve. Approved briefs shape every draft.'],
+    x_formats: ['Formats that work', 'Which kinds of post drew the most engagement, counted from the posts in the brief.'],
+    x_accounts: ['Who is driving it', 'The accounts behind the most posts and engagement in the brief.'],
+    x_rising: ['Rising themes', 'Themes with more posts than in the brief before, and themes that went quiet.'],
+    x_reg: ['Regulation watch', 'Posts about rules, regulators and compliance deadlines.'],
+    x_questions: ['Questions buyers ask', 'Questions that come up in the posts, word for word.'],
+  },
+  ads: {
+    rec: ['Record and scope', 'When it was published, the ads it read, the agent and whether it is approved.'],
+    five: ['Five things working', 'The strongest hooks and offers, each with the ads behind it.'],
+    short: ['One-minute read', 'The angle that sets you apart from what everyone else is running.'],
+    arch: ['Creative structure', 'One body with several openings to test, built on the copy formula the winners share.'],
+    offer: ['Offer ideas', 'Offer shapes that keep running, with price points as observed.'],
+    pain: ['Buyer pains and objections', 'What the ads and the organic brief say buyers worry about.'],
+    cross: ['Borrowed from other markets', 'Patterns from outside your market that travel.'],
+    test: ['Test plan', 'What stays fixed, what changes and how each version is judged.'],
+    ev: ['Ad evidence', 'Every ad behind the patterns, with how long it ran.'],
+    review: ['Review', 'Three checks, then approve. Approved briefs shape every ad.'],
+    x_cta: ['Calls to action', 'The buttons the ads behind the brief use most.'],
+    x_formats: ['Ad formats', 'Image, text, carousel or video, counted from the ads behind the brief.'],
+    x_prices: ['Price points', 'Prices the ads show, and which offers look self-liquidating.'],
+    x_landing: ['Where the ads send people', 'The pages behind the ads: booking, webinar, download, quiz or checkout.'],
+    x_longest: ['Longest running', 'The ads that have run the longest, a sign the advertiser keeps paying for them.'],
+  },
+}
+
+/** An option's label on a section, and a choice's words (V111_SECS). */
+export function optLabel(k: string, o: string): string {
+  if (o === 'why') return 'Detail'
+  if (o === 'tw') return 'Topic watch'
+  return k === 'dev' ? 'Per group' : k === 'ev' ? 'Show' : k === 'arch' ? 'Hooks' : 'How many'
+}
+export const choiceLabel = (v: string) =>
+  ({ all: 'All', full: 'With what it saw', short: 'Points only', on: 'Shown', off: 'Hidden' })[v] ?? v
+
+/** The usual layout of a kind: every section in its usual order, none off, no options. */
+export const standardLayout = (kind: Kind): Layout => ({ order: SECS[kind].map((x) => x.k), off: [], opt: {} })
+
+/** Whether a section can be switched off, and why not when it cannot. */
+export function lockOf(kind: Kind, k: string): { short: string; long: string } | null {
+  const d = SECS[kind].find((x) => x.k === k)
+  if (d?.lock === 'always') return { short: 'Always in the brief', long: 'Every brief has it.' }
+  if (d?.lock === 'drafts') return { short: 'Needed for drafts', long: 'Every ad is built on it, so it stays.' }
+  return null
+}
+
+/** Why a section has no move buttons: the record opens, the five things lead and the review closes every brief. */
+export const FIXED: Readonly<Record<string, string>> = {
+  rec: 'The record opens every brief.',
+  five: 'The five things lead every brief.',
+  review: 'Review closes every brief.',
+}
+
+/**
+ * A layout as it is saved (v111StSave): only known sections, rec and five first and review last, locked sections
+ * never off, and only the options a section has, with one of their choices.
+ */
+export function cleanLayout(kind: Kind, input: unknown): Layout {
+  const L = layoutOf({ [kind]: input }, kind)
+  const raw = json(json(input).opt)
+  const opt: Record<string, Record<string, string>> = {}
+  for (const d of SECS[kind]) {
+    for (const [o, choices] of d.opt ?? []) {
+      const v = str(json(raw[d.k])[o])
+      if (choices.includes(v)) (opt[d.k] ??= {})[o] = v
+    }
+  }
+  return { order: L.order, off: L.off, opt }
+}
+
 /** "Five things working" as the layout counts them (V111_NUM). */
 export const fiveHeading = (n: number) => ['No things', 'One thing', 'Two things', 'Three things', 'Four things', 'Five things'][Math.max(0, Math.min(5, n))] + ' working'
 

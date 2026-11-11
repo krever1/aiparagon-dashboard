@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Clock, Eye, Megaphone, Rocket } from 'lucide-react'
 import { Drawer } from '@/components/ui/drawer'
@@ -8,11 +8,14 @@ import { dateText, dayText } from '@/components/ui/local-date'
 import type { Ad } from '@/lib/pipeline/ads'
 import { adClean } from '@/lib/pipeline/ads'
 import { type Kind, ADDED, RAIL, TEST_PLAN, ageDays, fiveHeading, optOf } from '@/lib/pipeline/briefs'
+import type { AdsDoc } from '@/lib/pipeline/brief-edit'
 import type { AdsTab } from '@/lib/pipeline/briefs-load'
 import { valOf } from '@/lib/pipeline/intel'
 import { tidy } from '@/lib/touchpoint/approvals'
 import { whenText } from '@/lib/touchpoint/today'
 import { Empty, Ring, Tag, btn, linkCls, primary } from './bits'
+import { BriefEditor, EditSide, adsBase, adsPreview, editAds } from './briefs-edit'
+import { StructureView } from './briefs-structure'
 import { AddedSec, type BCtx, EditedLine, Glance, OUT_TIP, Rail, RecordBar, ReviewCard, Sec, legacy } from './briefs-parts'
 
 // The Ads tab (nwBrAdHtml as v110 and v111 left it): the record bar, a note when the brief is old, the five things with
@@ -44,8 +47,12 @@ export function AdsTabView({ ctx }: { ctx: BCtx }) {
   return <AdsBrief key={b.runId} ctx={ctx} b={b} />
 }
 
-function AdsBrief({ ctx, b }: { ctx: BCtx; b: AdsTab }) {
-  const { tz, data } = ctx
+function AdsBrief({ ctx, b: b0 }: { ctx: BCtx; b: AdsTab }) {
+  const { tz, data, ed } = ctx
+  // while the brief is edited it reads as it now stands
+  const editing = ed.on(KIND, b0.runId) ? ed.st : null
+  const cur = editing?.cur as AdsDoc | undefined
+  const b = useMemo(() => (cur ? adsPreview(b0, cur) : b0), [cur, b0])
   const L = data.layout.ads
   const hidden = new Set(b.review?.hidden ?? [])
   const show = (k: string) => !L.off.includes(k) && !hidden.has(k)
@@ -210,18 +217,46 @@ function AdsBrief({ ctx, b }: { ctx: BCtx; b: AdsTab }) {
   ]
   const rail = [...(fives.length ? [{ id: 'five', label: RAIL.ads.five }] : []), ...sections.map((s) => ({ id: s.id, label: s.label })), { id: 'review', label: RAIL.ads.review }]
 
+  const bar = (
+    <RecordBar
+      ctx={ctx}
+      kind={KIND}
+      title={title}
+      meta={meta}
+      versions={versions}
+      run={b.runId}
+      state={b.state}
+      editedLine={b0.review && !editing ? <EditedLine ctx={ctx} kind={KIND} run={b0.runId} by={b0.review.by} at={b0.review.at} original={b0.review.original} /> : null}
+      side={editing ? <EditSide ed={ed} /> : undefined}
+      onEdit={() => ed.start(KIND, b0.runId, adsBase(b0))}
+    />
+  )
+  if (editing && editing.view === 'edit') {
+    return (
+      <>
+        {bar}
+        <BriefEditor
+          ed={ed}
+          ads={editAds(b0)}
+          onNoteOnly={() => (ed.quit('Drop your changes and only leave a note?') ? ctx.askChanges('ads', b0.runId, title) : undefined)}
+          // an ad opens in a new tab, so the edits stay where they are
+          onOpen={(t) => window.open(t, '_blank', 'noopener')}
+        />
+      </>
+    )
+  }
+  if (ctx.view === 'structure' && !editing) {
+    return (
+      <>
+        {bar}
+        <StructureView key={JSON.stringify(L)} kind={KIND} saved={L} savedAny={data.layoutSaved.ads} />
+      </>
+    )
+  }
+
   return (
     <>
-      <RecordBar
-        ctx={ctx}
-        kind={KIND}
-        title={title}
-        meta={meta}
-        versions={versions}
-        run={b.runId}
-        state={b.state}
-        editedLine={b.review ? <EditedLine by={b.review.by} at={b.review.at} original={b.review.original} tz={tz} /> : null}
-      />
+      {bar}
       {age > 21 ? (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-warn/30 bg-warn-soft px-3 py-2.5 text-[14px] text-ink-2" data-testid="brief-stale">
           <Clock size={17} aria-hidden="true" className="shrink-0 text-warn" />
@@ -261,7 +296,7 @@ function AdsBrief({ ctx, b }: { ctx: BCtx; b: AdsTab }) {
       <div className="grid grid-cols-1 items-start gap-4 min-[1081px]:grid-cols-[minmax(0,1fr)_270px]">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
           {sections.map((s) => s.node)}
-          <ReviewCard ctx={ctx} kind={KIND} run={b.runId} title={title} state={b.state} decision={b.decision} />
+          <ReviewCard ctx={ctx} kind={KIND} run={b.runId} title={title} state={b.state} decision={b.decision} onEdit={() => ed.start(KIND, b0.runId, adsBase(b0))} />
         </div>
         <div className="max-[1080px]:order-first">
           <Rail items={rail} glance={<Glance testid="brief-glance" title="Signal quality" rows={glance} note="Running time shows the ad was active when it was pulled, not that it made sales." />} />

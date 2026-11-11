@@ -10,6 +10,7 @@ import { CHECKS, type DecRow, HELPER, type Kind, PILL, decLine } from '@/lib/pip
 import type { BriefsData } from '@/lib/pipeline/briefs-load'
 import { Pill, btn, linkCls, primary, selectCls } from './bits'
 import { toggleCheck, useChecks } from './briefs-checks'
+import { type Ed, PutBack } from './briefs-edit'
 
 // The parts the briefs page's Organic and Ads tabs share: the record bar, a section, the rail and its numbers, and the
 // review card with its checks.
@@ -31,6 +32,11 @@ export type BCtx = {
   busy: string | null
   /** another version of the brief on screen */
   goVersion: (run: string) => void
+  /** the brief itself, or the team's layout for briefs of its kind (Structure) */
+  view: 'brief' | 'structure'
+  setView: (v: 'brief' | 'structure') => void
+  /** the brief editor: which brief is being edited, its changes, Save */
+  ed: Ed
 }
 
 // ---------- shared parts of the Organic and Ads tabs ----------
@@ -47,6 +53,8 @@ export function RecordBar({
   run,
   state,
   editedLine,
+  side,
+  onEdit,
 }: {
   ctx: BCtx
   kind: Kind
@@ -56,6 +64,10 @@ export function RecordBar({
   run: string
   state: 'ok' | 'changes' | 'pending'
   editedLine: ReactNode
+  /** the editor's controls, in place of the bar's own while the brief is edited */
+  side?: ReactNode
+  /** opens the brief in the editor */
+  onEdit?: () => void
 }) {
   const I = kind === 'org' ? Radar : Megaphone
   const [tone, word] = PILL[state]
@@ -75,6 +87,7 @@ export function RecordBar({
           {editedLine}
         </p>
       </div>
+      {side ?? (
       <div className="flex flex-wrap items-center gap-2">
         {versions.length > 1 ? (
           <select aria-label="Version" className={selectCls} value={run} onChange={(e) => ctx.goVersion(e.target.value)}>
@@ -86,12 +99,19 @@ export function RecordBar({
           </select>
         ) : null}
         <div role="group" aria-label="View" className="inline-flex overflow-hidden rounded-sm border border-line">
-          <span aria-pressed="true" role="button" aria-disabled="true" className="bg-sunk px-2.5 py-1.5 text-[13px] font-semibold text-ink">
-            Brief
-          </span>
-          <a href={legacy('briefs')} title={OUT_TIP} className="border-l border-line px-2.5 py-1.5 text-[13px] font-semibold text-ink-3 hover:text-ink">
-            Structure
-          </a>
+          {(['brief', 'structure'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={ctx.view === v}
+              onClick={() => ctx.setView(v)}
+              className={`px-2.5 py-1.5 text-[13px] font-semibold ${v === 'structure' ? 'border-l border-line ' : ''}${
+                ctx.view === v ? 'bg-sunk text-ink' : 'text-ink-3 hover:text-ink'
+              }`}
+            >
+              {v === 'brief' ? 'Brief' : 'Structure'}
+            </button>
+          ))}
         </div>
         <Pill tone={tone}>{word}</Pill>
         {state !== 'ok' ? (
@@ -100,29 +120,29 @@ export function RecordBar({
             {ctx.busy === run ? 'Approving…' : 'Approve brief'}
           </button>
         ) : null}
-        <a href={legacy('briefs')} title={OUT_TIP} className={btn}>
-          <PenLine size={15} aria-hidden="true" />
-          Edit
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
+        {ctx.view === 'brief' && onEdit ? (
+          <button type="button" className={btn} onClick={onEdit}>
+            <PenLine size={15} aria-hidden="true" />
+            Edit
+          </button>
+        ) : null}
       </div>
+      )}
     </section>
   )
 }
 
 /** The line a saved review adds to the record bar: who edited the brief, and putting the agent's version back. */
-export function EditedLine({ by, at, original, tz }: { by: string; at: string; original: boolean; tz: string | undefined }) {
+export function EditedLine({ ctx, kind, run, by, at, original }: { ctx: BCtx; kind: Kind; run: string; by: string; at: string; original: boolean }) {
   if (!by) return null
   return (
-    <span>
+    <span data-testid="brief-edited">
       <PenLine size={13} aria-hidden="true" className="mr-1 inline align-[-2px]" />
-      <b className="text-ink">Edited</b> by {by.split('@')[0]} {dayText(at, tz)}
+      <b className="text-ink">Edited</b> by {by.split('@')[0]} {dayText(at, ctx.tz)}
       {original ? (
         <>
           {' · '}
-          <a href={legacy('briefs')} title={OUT_TIP} className={linkCls + ' text-[13px]'}>
-            Put back the agent’s version
-          </a>
+          <PutBack kind={kind} run={run} onDone={() => ctx.ed.drop(run)} />
         </>
       ) : null}
     </span>
@@ -205,7 +225,24 @@ export function Glance({ title, rows, note, testid }: { title: string; rows: { v
 }
 
 /** The review card (nwBrReview): three checks kept in this browser, Approve, Request changes and who decided. */
-export function ReviewCard({ ctx, kind, run, title, state, decision }: { ctx: BCtx; kind: Kind; run: string; title: string; state: 'ok' | 'changes' | 'pending'; decision: DecRow | null }) {
+export function ReviewCard({
+  ctx,
+  kind,
+  run,
+  title,
+  state,
+  decision,
+  onEdit,
+}: {
+  ctx: BCtx
+  kind: Kind
+  run: string
+  title: string
+  state: 'ok' | 'changes' | 'pending'
+  decision: DecRow | null
+  /** Request changes opens the brief in the editor */
+  onEdit?: () => void
+}) {
   const key = kind + ':' + run
   const checks = useChecks(key)
   const hydrated = useHydrated()
@@ -230,20 +267,34 @@ export function ReviewCard({ ctx, kind, run, title, state, decision }: { ctx: BC
           </button>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        <span className="text-[13px] text-ink-3">{done} of 3 checks done</span>
-        <span className="grow" />
-        {state !== 'ok' ? (
-          <button type="button" className={primary} disabled={ctx.busy === run} onClick={() => void ctx.approve(kind === 'org' ? 'organic' : 'ads', run)}>
-            <Check size={15} aria-hidden="true" />
-            {ctx.busy === run ? 'Approving…' : 'Approve brief'}
+      {ctx.ed.on(kind, run) ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3" data-testid="review-editing">
+          <span className="grow text-[13.5px] text-ink-2">You are editing this brief. Save or discard the changes, then approve it.</span>
+          <button type="button" className={btn} onClick={() => ctx.ed.setView('edit')}>
+            Back to editing
           </button>
-        ) : null}
-        <button type="button" className={btn} onClick={() => ctx.askChanges(kind === 'org' ? 'organic' : 'ads', run, title)}>
-          <PenLine size={15} aria-hidden="true" />
-          Request changes
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="text-[13px] text-ink-3">{done} of 3 checks done</span>
+          <span className="grow" />
+          {state !== 'ok' ? (
+            <button type="button" className={primary} disabled={ctx.busy === run} onClick={() => void ctx.approve(kind === 'org' ? 'organic' : 'ads', run)}>
+              <Check size={15} aria-hidden="true" />
+              {ctx.busy === run ? 'Approving…' : 'Approve brief'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={btn}
+            title={onEdit ? 'Edit the brief, or leave a note for the agent' : undefined}
+            onClick={() => (onEdit ? onEdit() : ctx.askChanges(kind === 'org' ? 'organic' : 'ads', run, title))}
+          >
+            <PenLine size={15} aria-hidden="true" />
+            Request changes
+          </button>
+        </div>
+      )}
       <p className="mt-2 text-[13px] text-ink-3" data-testid="brief-decision">
         {decLine(decision, HELPER[kind], (iso) => (hydrated ? agoText(iso) : dayText(iso, 'UTC')))}
       </p>

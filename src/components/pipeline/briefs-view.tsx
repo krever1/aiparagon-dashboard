@@ -12,6 +12,7 @@ import type { BriefsData } from '@/lib/pipeline/briefs-load'
 import { ghost, inputCls, primary } from './bits'
 import { AdsTabView } from './briefs-ads'
 import { ComboView } from './briefs-combined'
+import { useEditor } from './briefs-edit'
 import { OrgTabView } from './briefs-organic'
 import type { BCtx, DecideKind } from './briefs-parts'
 
@@ -34,6 +35,15 @@ export function BriefsView({ data }: { data: BriefsData }) {
   const tz = hydrated ? undefined : 'UTC'
   const [busy, setBusy] = useState<string | null>(null)
   const [ask, setAsk] = useState<{ kind: DecideKind; id: string; title: string } | null>(null)
+  // the brief being edited, kept while the tab or Edit and Preview change
+  const ed = useEditor()
+  // Structure is the tab's own: another tab opens on its brief again (nwBrGoTab)
+  const [view, setView] = useState<'brief' | 'structure'>('brief')
+  const [seenTab, setSeenTab] = useState(data.tab)
+  if (data.tab !== seenTab) {
+    setSeenTab(data.tab)
+    setView('brief')
+  }
 
   // the address names the tab and, when it is not the newest, the brief
   useEffect(() => {
@@ -43,6 +53,10 @@ export function BriefsView({ data }: { data: BriefsData }) {
 
   const approve = async (kind: DecideKind, id: string) => {
     if (busy) return false
+    if (kind !== 'creative' && ed.on(kind === 'organic' ? 'org' : 'ads', id) && ed.st?.log.length) {
+      toast('Save or discard your changes first.', 'warn')
+      return false
+    }
     setBusy(id)
     const r = await decideBrief({ kind, id, action: 'approved' }).catch(() => ({ ok: false as const, error: 'Could not save: the dashboard could not be reached' }))
     setBusy(null)
@@ -60,6 +74,9 @@ export function BriefsView({ data }: { data: BriefsData }) {
     askChanges: (kind, id, title) => setAsk({ kind, id, title }),
     busy,
     goVersion: (run) => router.replace(addressOf(data.tab, run, data.latest), { scroll: false }),
+    view,
+    setView,
+    ed,
   }
   const line = waitingLine(data.waiting, data.anyBrief)
 

@@ -29,5 +29,6 @@ async function Briefs({ searchParams }: { searchParams: PageProps<'/briefs'>['se
   const tab = tabOf(typeof sp.tab === 'string' ? sp.tab : null)
   const run = typeof sp.run === 'string' && /^[\w.:-]{1,120}$/.test(sp.run) ? sp.run : null
   const data = await loadBriefs(tab, run)
-  return <BriefsView key={data.tab + ':' + data.run} data={data} />
+  // one view for every tab and brief: a brief being edited stays open while another tab is looked at (V111.ed)
+  return <BriefsView data={data} />
 }
