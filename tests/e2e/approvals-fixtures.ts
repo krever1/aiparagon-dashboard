@@ -23,7 +23,7 @@ export function reply(n: number, competitor: string, age: number, now = Date.now
     id: RID(n),
     competitor_name: competitor,
     platform: 'linkedin',
-    action: 'reply',
+    action: 'comment',
     status: 'pending',
     draft: `Thanks for sharing this, ${competitor}. We see the same with onboarding.`,
     source_url: `https://www.linkedin.com/feed/update/urn:li:activity:${7000000000000000000 + n}`,

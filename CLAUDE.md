@@ -40,7 +40,12 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   workspace, Recent runs and Latest sign-ups. The finishing PR (Nov 11, branch `touchpoint/finish`, on top of part 3;
   Kser: "fix the 3"): Approvals' leads and comments, the Catalyst line by the same rule, and Take the tour on Today.
   With it Approvals lists every kind the current page does. See Touchpoint below.
-- Next: Pipeline, in parts, then Atlas, Canvas, Settings. Then the cutover.
+- Pipeline, in five parts (agreed Nov 11): 1. reading the market (the Intel Tracker, the Market Intelligence Briefs,
+  the Overview); 2. ads (the Ad Strategist, Runs & uploads, the upload, build-a-brief and ad copy windows, the brief
+  editor); 3. results (Ad Testing, Landing pages); 4. Content Transformation, with the creation kit it shares; 5.
+  Marketing Generation. Part 1 comes as two PRs: 1a the Intel Tracker (Nov 11, branch `pipeline/intel-tracker`, on top
+  of the finishing PR, PR #12), 1b the briefs and the Overview. See Pipeline below.
+- Next: Pipeline 1b, then parts 2 to 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -62,7 +67,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
 | Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
 | Canvas | Deliverables | current dashboard |
-| Pipeline | Overview, Intel Tracker, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
+| Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
+| Pipeline | Overview, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -128,10 +134,11 @@ signed-in teammate's token, as the current dashboard's do.
 - `PORTED` and `HEADINGS` in `src/lib/nav.ts`: the pages that have moved here (the shell test expects the "Still in
   the current dashboard" card on every other page) and a page's h1 when it is not its title.
 - `src/lib/n8n.ts` `callN8n()`: a POST to an n8n webhook from server code, with the signed-in teammate's access token as
-  `auth`; errors in the current dashboard's words (a 404 says which workflow to switch on).
+  `auth`; errors in the current dashboard's words (a 404 says which workflow to switch on). `minLeftSec` renews the
+  token first when less time is left on it (a call whose workflow hands the token on).
 - `src/components/ui`: dates in the viewer's own time zone (`LocalDay`, `LocalDate`, `LocalDateTime`: UTC while the
-  server renders, then the browser's zone, with no hydration mismatch), the toast, and the dialog (the browser's
-  `<dialog>`).
+  server renders, then the browser's zone, with no hydration mismatch), the toast, the dialog (the browser's
+  `<dialog>`) and the side panel (`drawer.tsx`, a `<dialog>` on the right).
 
 ## Catalyst
 - `src/lib/catalyst/stages.ts`: the six meeting stages (V136_STAGES): key, name (the team's, from `ai_settings`
@@ -383,6 +390,56 @@ signed-in teammate's token, as the current dashboard's do.
   always opened the Intel Tracker); resolved_by is the teammate's name (the old page wrote the company profile's
   contact name).
 
+## Pipeline
+- Notes for the later parts, from the map of the current pages: the old Company profile loaders write while they read
+  (v104ReadSync and v104SyncDerived rewrite ai_rules), so that goes with the Company profile port, not a reader;
+  `winner_creatives` is a view (check it takes writes before writing to it); the low-ticket rows keep their data as a
+  JSON string; Content Transformation's transcription has size limits to keep; a run in progress is kept for the team
+  in ai_settings, as Catalyst's are; the ad-upload, ad-brief, regen-ad-image and e3-content-run webhooks need `auth` in
+  the body, like every other; the ads part needs Storage rules for the creatives bucket first, as lead-files did.
+- The Intel Tracker (part 1a, `src/lib/pipeline/intel.ts` pure rules, `intel-load.ts`, `src/components/pipeline`,
+  `src/app/(app)/intel-tracker`; the nwIntel and apIr functions as v96, v108, v111 and v127 left them):
+  - What it reads, as the teammate, fresh on every visit: the tracker's runs (`runs`, agent intel_tracker, the 40
+    newest), its organic briefs (agent_outputs intel_tracker intel_brief, the newest per run, and the brief of the run
+    on screen when it is older), the posts and drafted replies of the run on screen (intel_items, 400 at most, and
+    engagement_drafts), the briefs' snapshots, who it follows (`competitors`), the team settings agent_runs,
+    intel_focus, intel_follow, intel_keywords, ad_industries and intel_runs, and the company profile.
+  - The run on screen: the newest with posts, else the newest brief's, else the newest run (`pickRun`). The address
+    names a run (`?run=`) only when it is not that one (`latest`), so a bare /intel-tracker follows new runs. The tab
+    (`?tab=`) and the Posts filters (`val`, `theme`, `cap`, `five`) are in the address; search, sort and the view start
+    afresh with each run.
+  - The header: a run started (for 45 minutes, until its run shows), the last run, the next one (ai_settings
+    agent_runs.intel: cadence, day, time and zone; weekly, Monday 06:00 Pacific when none is saved), the window the run
+    covers, the run picker and Run now; what it does; five numbers (posts read, in the brief, high value, replies
+    drafted, themes), each opening its view.
+  - Posts: cards or a list, by score (`scoreFrom`, five factors weighted 35, 20, 15, 20 and 10), value, engagement or
+    date; Value chips, Theme, Captured in, search, Show N more. A post in full (the side panel): its score and factors,
+    why it is in the brief or not (`capOf`, `whyShort`, `whyFull`: from the brief's items, high-value signals, shifts
+    in language, drafted replies, topic watch and the run's keep count), the takeaways it feeds and its replies.
+  - Replies: by status; a reply opens in the window Approvals uses (`src/components/approvals/reply-window.tsx`), and
+    Reject asks why first (v127).
+  - Takeaways & themes: the five things from the brief (`fiveFor`: its snapshot's items, else its TL;DR), each with the
+    posts closest to it (`rankPosts`, the old page's tokens and stop words; ties go to engagement) and See them in Posts;
+    posts per theme; the shifts in language. Run library: each run with its numbers, themes and lead finding, and the
+    themes across the briefed runs.
+  - Following: Reads for (the company profile's industry and target market; Change), what it tracks (ai_settings
+    intel_focus: themes, the team's own, categories), who it follows (competitors: people and companies; those followed
+    for ads only apart, with Read their posts too; stopped ones below, with Follow again) and the searches (intel_follow,
+    with intel_keywords kept in step; 12 at most).
+  - Run now: the names (a card each or a pasted list; each needs a website or a social profile; 25 at most), only these
+    or everyone followed, and an ad strategy after it if ticked. `startRun` sends them to the Intel Tracker workflow's
+    intel-run with the teammate's token (renewed first when under 20 minutes are left, since a run that builds an ad
+    strategy hands it on) and keeps the run for the team in ai_settings `intel_runs` ({runs: [{run_id, names, t, by,
+    cascade}]}).
+  - Write a post on this and Open the brief open the current dashboard's Content Transformation and briefs, until those
+    pages move here.
+- Changed on purpose on the Intel Tracker (reported to Kser): a run started is kept for the team (the old page kept it
+  in one browser); the run picker lists the tracker's own runs (the old page took the 40 newest runs of every agent,
+  so a busy week hid older tracker runs); the address keeps the run, the tab and the filters, and a bare address always
+  opens the newest run; the "Social Listening" headings left over say the Intel Tracker; the switched-off message
+  names the workflow as n8n does, "(scheduled + custom)" (the old page said daily); Write a post on this opens Content
+  Transformation without filling it in (that page is still in the current dashboard).
+
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
    CLAUDE.md (section 1) names its functions; its "Where it stands" notes say what each round changed and why.
@@ -419,7 +476,9 @@ signed-in teammate's token, as the current dashboard's do.
   e1_leads and dashboard_comments, so the stand-in's own leads do not wait there, and `catalystRows` seeds leads and
   comments for their tests); `today-logic.spec.ts`
   (without a browser), `today.spec.ts` Today (the page's clock set to a Wednesday morning) and `today-catalyst.spec.ts`
-  its Catalyst card (contacts and calls dated from now). Helpers in
+  its Catalyst card (contacts and calls dated from now); `intel-logic.spec.ts` (without a browser) and `intel.spec.ts`
+  the Intel Tracker, on the rows in `intel-fixtures.ts` (three runs: the newest with six posts and two replies, one
+  whose posts are not stored, one that did not finish; JSON columns kept as text, as they are live). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
@@ -486,3 +545,11 @@ signed-in teammate's token, as the current dashboard's do.
 - Approvals' Skipped lives in the browser (`ap.nw.skip`), read with `useSyncExternalStore`: while the page hydrates it
   is empty, so anything that acts on Skipped being empty waits for `useHydrated()` (the tab falling back to All does,
   or a reload on `?tab=skipped` would lose the tab).
+- Several live jsonb columns hold JSON as a string: a brief's agent_outputs.data and snapshot, runs.stats, intel_items
+  themes, observed_engagement and score_parts. Read them through `json()` and `arr()` in `src/lib/pipeline/intel.ts`,
+  which also undo a double encoding.
+- The old dashboard does not read `intel_runs`: a run started here says "A run started" here only, and one started
+  there only there (it keeps them in the browser, `ap.intelPending`).
+- A required field's mark (`*`) is hidden from screen readers and the input says it is required, so the field's name
+  is its label alone: tests find it with `getByRole('textbox', { name, exact: true })` (`getByLabel` matches the
+  label's whole text, mark included).

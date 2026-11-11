@@ -4,7 +4,8 @@
 // n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
 // doc-reader, fathom-proxy (status, list a page at a time, transcript, access, connect, disconnect), catalyst-emails,
 // call-actions, slack-proxy and call-to-crm answer from fixtures.mjs or as the workflows would; the three stage runs (the
-// full run, the custom run, Meeting Prep) answer started; any webhook can be given a canned answer.
+// full run, the custom run, Meeting Prep) answer started; the Intel Tracker's custom run (intel-run) answers with its
+// run id and the names it tracks; any webhook can be given a canned answer.
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
@@ -271,6 +272,11 @@ http
           const all = hubspotEmails()
           const items = (body.emails || []).flatMap((e) => all[String(e).toLowerCase()] || []).slice(0, body.limit || 8)
           return send(res, 200, { ok: true, items, total: items.length })
+        }
+        // Engine 3 · Intel Tracker: a custom run starts and says which names it tracks
+        if (name === 'intel-run') {
+          const names = (body.competitors || []).map((c) => c.name).filter(Boolean)
+          return send(res, 200, { ok: true, run_id: 'agent1_custom_stub', tracking: names })
         }
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })
