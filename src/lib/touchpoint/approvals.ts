@@ -210,7 +210,7 @@ export function commentReview(target: string, leadIds: Record<string, string>, l
     const id = leadIds[str(p[1]).trim().toLowerCase()]
     return { kind: 'link', href: id ? leadHref(id, tabOfAgent(p.slice(2).join(':'))) : '/lead-pipeline', label: 'Open' }
   }
-  if (p[0] === 'brief') return at('briefs')
+  if (p[0] === 'brief') return { kind: 'link', href: briefHref(p.slice(1).join(':')), label: 'Open' }
   if (p[0] === 'funnel') return at('marketing-generation')
   return at('intel-tracker')
 }
@@ -285,7 +285,6 @@ export function approvalItems(x: ApprovalInput): Item[] {
       when: r.created_at,
     })
   }
-  const briefs = at('briefs')
   const ib = x.intel
   if (ib && ib.run_id && undecided(x.decisions[ib.run_id] ?? [])) {
     const items = (snapItems(x.snaps[ib.run_id]) ?? orgFallback(ib.content_md)).filter((s) => s.text).slice(0, 5)
@@ -298,7 +297,7 @@ export function approvalItems(x: ApprovalInput): Item[] {
       text: items[0] ? itemLine(items[0]) : 'What the people and topics you follow are talking about.',
       tags: [{ text: 'Brief' }, { text: 'From Intel Tracker' }, ...(ib.n_items ? [{ text: ib.n_items + (ib.n_items === 1 ? ' post' : ' posts') }] : [])],
       approve: true,
-      review: briefs,
+      review: { kind: 'link', href: briefHref(ib.run_id, 'organic') },
       when: ib.created_at,
     })
   }
@@ -315,7 +314,7 @@ export function approvalItems(x: ApprovalInput): Item[] {
       text: it ? itemLine(it) : 'The competitor ads that keep running, and why.',
       tags: [{ text: 'Brief' }, { text: 'From Ad Strategist' }, ...(days !== null && days >= 14 ? [{ text: days + ' days old', tone: 'warn' as const }] : [])],
       approve: true,
-      review: briefs,
+      review: { kind: 'link', href: briefHref(ab.run_id, 'ads') },
       when: ab.created_at,
     })
   }
@@ -521,6 +520,15 @@ export function parseKey(k: unknown): Key | null {
     return FILE.test(file) ? { kind: 'ad', runId: p[1], file } : null
   }
   return null
+}
+
+/**
+ * A brief on the Market Intelligence Briefs page: its tab from its kind, else from its run (agent2_… is the Ad
+ * Strategist's), and its run, so the brief that waits opens even after a newer one lands.
+ */
+export function briefHref(run: string, kind?: 'organic' | 'ads'): string {
+  const k = kind ?? (/^agent2_/.test(run) ? 'ads' : 'organic')
+  return '/briefs?' + (k === 'ads' ? 'tab=ads&' : '') + 'run=' + encodeURIComponent(run)
 }
 
 /** A link a reply answers, only when it is a web address. */

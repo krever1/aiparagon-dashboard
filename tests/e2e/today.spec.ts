@@ -69,8 +69,8 @@ test('the hello line, what needs you, and where each thing opens', async ({ page
   await expect(needs.getByRole('link', { name: '2 leads' })).toHaveAttribute('href', '/approvals?tab=leads')
   const next = needs.getByRole('list', { name: 'Next up' }).getByRole('link')
   await expect(next).toHaveText(['Organic briefBrief', 'Ads briefBrief', 'Reply to Northwind AdvisorsReply'])
-  await expect(next.first()).toHaveAttribute('href', LEGACY + '/briefs')
-  await expect(next.first()).toHaveAttribute('title', OUT)
+  await expect(next.first()).toHaveAttribute('href', '/briefs?run=intel_run_new')
+  await expect(next.first()).not.toHaveAttribute('title', OUT)
   await expect(next.nth(2)).toHaveAttribute('href', '/approvals?tab=replies&review=' + encodeURIComponent('reply:' + RID(1)))
   await expect(needs).toContainText('Nothing posts until you approve it.')
 

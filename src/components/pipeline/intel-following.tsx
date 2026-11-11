@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Building2, Check, ChevronDown, Plus, X } from 'lucide-react'
 import { followAdd, followSet, saveFocus, saveIndustry, termAdd, termRemove } from '@/app/(app)/intel-tracker/actions'
@@ -45,7 +46,8 @@ export function FollowingTab({ ctx }: { ctx: Ctx }) {
 
 // ---------- the industry it reads for ----------
 
-function IndustryDialog({ industry, market, onClose }: { industry: string; market: string; onClose: () => void }) {
+/** What industry the Intel Tracker and the Ad Strategist read for (e9IndEdit); the briefs page links to the Following tab. */
+export function IndustryDialog({ industry, market, onClose, followLink }: { industry: string; market: string; onClose: () => void; followLink?: boolean }) {
   const [i, setI] = useState(industry)
   const [a, setA] = useState(market)
   const [err, setErr] = useState('')
@@ -90,7 +92,17 @@ function IndustryDialog({ industry, market, onClose }: { industry: string; marke
         <span className="mb-1 block text-[13.5px] font-semibold text-ink">Who you sell to</span>
         <textarea className={inputCls} rows={2} value={a} onChange={(e) => setA(e.target.value)} placeholder="e.g. Growth-stage RIAs and independent advisory firms" />
       </label>
-      <p className="mt-3 text-[13px] text-ink-3">The people, companies, topics, technologies and industries it searches are on the Following tab.</p>
+      {followLink ? (
+        <p className="mt-3 text-[13px] text-ink-3">
+          The people, companies, topics, technologies and industries it searches are in{' '}
+          <Link href="/intel-tracker?tab=follow" className="font-semibold text-accent-text hover:underline">
+            Intel Tracker › Following
+          </Link>
+          .
+        </p>
+      ) : (
+        <p className="mt-3 text-[13px] text-ink-3">The people, companies, topics, technologies and industries it searches are on the Following tab.</p>
+      )}
       {err ? (
         <p role="alert" className="mt-2 text-[13.5px] font-semibold text-bad">
           {err}

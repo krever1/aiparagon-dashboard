@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { ArrowRight, ChevronDown, ChevronRight, History, Lightbulb, MessageSquare, PenLine, Repeat2 } from 'lucide-react'
 import { dayText } from '@/components/ui/local-date'
@@ -218,9 +219,9 @@ export function TakeawaysTab({ ctx }: { ctx: Ctx }) {
               </a>
             ) : null}
             {b ? (
-              <a href={legacy('briefs')} title={OUT_TIP} className={btn}>
+              <Link href={'/briefs?run=' + encodeURIComponent(b.runId)} className={btn}>
                 Open the brief
-              </a>
+              </Link>
             ) : null}
           </div>
           {b?.shifts.length ? (
@@ -315,9 +316,9 @@ export function LibraryTab({ ctx }: { ctx: Ctx }) {
                   {cur ? 'Open takeaways' : 'Open this run'}
                 </button>
                 {r.hasBrief ? (
-                  <a href={legacy('briefs')} title={OUT_TIP} className={ghost}>
+                  <Link href={'/briefs?run=' + encodeURIComponent(r.runId)} className={ghost}>
                     Brief
-                  </a>
+                  </Link>
                 ) : null}
               </div>
             </section>

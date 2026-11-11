@@ -284,7 +284,7 @@ function LeadCard({ data, tz, controls }: { data: OverviewData; tz: string | und
         <Out slug="content-transformation" className={btnPri}>
           Write a post
         </Out>
-        <Link href="/briefs?tab=organic" className={btnSm}>
+        <Link href={'/briefs?run=' + encodeURIComponent(L.runId)} className={btnSm}>
           Open the brief
         </Link>
       </div>

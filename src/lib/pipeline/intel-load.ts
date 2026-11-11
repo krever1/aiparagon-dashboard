@@ -35,6 +35,40 @@ export type ReplyView = {
   createdAt: string
 }
 
+/**
+ * A run's posts as the pages show them: who wrote each (its author, else the account it follows, else the name the
+ * brief gives its link), and why it is in the brief or left out. `brief` is the run's organic brief, null when it has
+ * none, undefined when the briefs could not be read.
+ */
+export function postsOf(itemRows: Row[], compName: Record<string, string>, brief: Row | null | undefined): PostView[] {
+  const d0 = brief ? json(brief.data) : {}
+  const briefName: Record<string, string> = {}
+  for (const x of [...arr(d0.items), ...arr(d0.high_value_items)].map(json)) if (x.url && x.competitor && !briefName[str(x.url)]) briefName[str(x.url)] = str(x.competitor)
+  const items = itemRows.map((r) => itemOf(r, whoOf(r, compName[str(r.competitor_id)] ?? '', briefName[str(r.url)] ?? '')))
+  const B: BriefSets | null | undefined =
+    brief === undefined ? undefined : brief ? briefSets(brief as { run_id: unknown; created_at: unknown; data: unknown; content_md: unknown }) : null
+  const ranks = ranksOf(items)
+  return items.map((i) => {
+    const cap = capOf(i, B)
+    return { ...i, cap, short: whyShort(i, cap, B, ranks[i.id]), full: cap === 'wait' ? null : whyFull(i, cap, B, ranks[i.id]) }
+  })
+}
+
+/** The tracker's drafted replies as the pages show them. */
+export function repliesOf(rows: Row[]): ReplyView[] {
+  return rows.map((d) => ({
+    id: str(d.id),
+    itemId: str(d.intel_item_id),
+    competitor: str(d.competitor_name || d.competitor),
+    platform: str(d.platform),
+    action: str(d.action),
+    sourceUrl: str(d.source_url),
+    draft: str(d.draft),
+    status: str(d.status) || 'pending',
+    createdAt: str(d.created_at),
+  }))
+}
+
 export type RunCard = {
   runId: string
   at: string
@@ -151,42 +185,23 @@ export async function loadIntel(asked: string | null, now = Date.now()): Promise
   const snaps: Record<string, unknown> = {}
   for (const r of rowsOf(sn)) if (!(str(r.run_id) in snaps) && snapItems(r.snapshot)) snaps[str(r.run_id)] = r.snapshot
 
-  // who wrote each post: its author, else the account it follows, else the name the brief gives its link
+  // who wrote each post, and which brief it went into: none when the run has no brief; unknown when the briefs could
+  // not be read
   const follow = rowsOf(co).map(competitorOf)
   const compName: Record<string, string> = {}
   for (const c of follow) compName[c.id] = c.name
   const B0 = briefOf(run)
   const d0 = B0 ? json(B0.data) : {}
-  const briefName: Record<string, string> = {}
-  for (const x of [...arr(d0.items), ...arr(d0.high_value_items)].map(json)) if (x.url && x.competitor && !briefName[str(x.url)]) briefName[str(x.url)] = str(x.competitor)
-  const items = rowsOf(it).map((r) => itemOf(r, whoOf(r, compName[str(r.competitor_id)] ?? '', briefName[str(r.url)] ?? '')))
-
-  // which brief each post went into: none when the run has no brief; unknown when the briefs could not be read
-  const B: BriefSets | null | undefined = br.error ? undefined : B0 ? briefSets(B0 as { run_id: unknown; created_at: unknown; data: unknown; content_md: unknown }) : null
-  const ranks = ranksOf(items)
-  const posts: PostView[] = items.map((i) => {
-    const cap = capOf(i, B)
-    return { ...i, cap, short: whyShort(i, cap, B, ranks[i.id]), full: cap === 'wait' ? null : whyFull(i, cap, B, ranks[i.id]) }
-  })
-
-  const replies: ReplyView[] = rowsOf(dr).map((d) => ({
-    id: str(d.id),
-    itemId: str(d.intel_item_id),
-    competitor: str(d.competitor_name || d.competitor),
-    platform: str(d.platform),
-    action: str(d.action),
-    sourceUrl: str(d.source_url),
-    draft: str(d.draft),
-    status: str(d.status) || 'pending',
-    createdAt: str(d.created_at),
-  }))
+  const posts = postsOf(rowsOf(it), compName, br.error ? undefined : B0)
+  const items: IntelItem[] = posts
+  const replies = repliesOf(rowsOf(dr))
 
   const five = fiveFor(snaps[run], str(B0?.content_md), items)
 
   // the header's numbers (nwIntelStats)
   const r0 = runs.find((r) => r.runId === run)
   const rs = r0?.stats ?? {}
-  const known = B !== undefined
+  const known = !br.error
   const stats = {
     read: items.length || num(rs.items) || num(d0.n_items) || 0,
     high: items.length ? items.filter((i) => i.val === 'high').length : num(rs.high_value) || num(d0.n_high_value) || 0,

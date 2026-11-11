@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { type LeadView, nextDocOf, waitsOnNext } from '../../src/lib/catalyst/view'
 import {
-  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, clip, commentReview, draftTitle, hookText, kindLabel, leadWaits, parseKey, safeUrl,
+  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, briefHref, clip, commentReview, draftTitle, hookText, kindLabel, leadWaits, parseKey, safeUrl,
   snapItems, tabFromWord, tldr, undecided, viewOf, waitingChips, whyText, wordOf,
 } from '../../src/lib/touchpoint/approvals'
 import { DR, IMG, INTEL_MD, RID, RQ, RUN1, RUN2, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
@@ -53,14 +53,17 @@ test('everything waiting, in the current dashboard’s order, with what each row
     text: 'Onboarding is the theme. Three firms you follow posted about slow client onboarding this week.',
     tags: [{ text: 'Brief' }, { text: 'From Intel Tracker' }, { text: '12 posts' }],
     approve: true,
-    review: { kind: 'link', href: LEGACY + '/briefs' },
+    review: { kind: 'link', href: '/briefs?run=intel_run_new' },
   })
   expect(ads).toMatchObject({
     title: 'Ads brief',
     text: 'Onboarding should take days, not weeks',
     tags: [{ text: 'Brief' }, { text: 'From Ad Strategist' }, { text: '20 days old', tone: 'warn' }],
-    review: { kind: 'link', href: LEGACY + '/briefs' },
+    review: { kind: 'link', href: '/briefs?tab=ads&run=ads_run_new' },
   })
+  // the briefs page is here now: Review opens the brief that waits, even once a newer one lands
+  expect(org.review).not.toHaveProperty('out')
+  expect(ads.review).not.toHaveProperty('out')
   const quote = items.find((x) => x.key === 'reply:' + RID(2))!
   expect(quote.title).toBe('Quote post on Sample Peak Partners')
   expect(quote.tags).toEqual([{ text: 'Reply' }, { text: 'X' }, { day: quote.when }])
@@ -241,8 +244,8 @@ test('part B: failed requests first, then the briefs, the ads, the drafts and th
     review: { kind: 'link', href: LEGACY + '/content-transformation', out: true },
   })
   expect([untitled.title, untitled.text]).toEqual(['A content request did not finish', 'Open it to see why and try again.'])
-  // a brief's Review opens the briefs page, which is still in the current dashboard
-  expect(items[2].review).toEqual({ kind: 'link', href: LEGACY + '/briefs', out: true, label: undefined })
+  // a brief's Review opens that brief on the briefs page
+  expect(items[2].review).toEqual({ kind: 'link', href: '/briefs?run=intel_run_new' })
 })
 
 test('part B: the ad images of the three newest campaigns that nobody has approved or turned down', () => {
@@ -364,7 +367,8 @@ test('part C: leads after the replies, then comments, each with what it says and
     tags: [{ text: 'Comment' }, { day: '2026-11-11T10:00:00Z' }], approve: true, approveLabel: 'Resolve',
     review: { kind: 'link', href: '/lead-pipeline/lee-ready-0123456789?tab=consultation', label: 'Open' },
   })
-  expect(c2).toMatchObject({ title: 'Comment from robin', review: { href: LEGACY + '/briefs', label: 'Open', out: true } })
+  expect(c2).toMatchObject({ title: 'Comment from robin', review: { href: '/briefs?run=agent1_2026-11-08_0700', label: 'Open' } })
+  expect(c2.review).not.toHaveProperty('out')
   expect(c3).toMatchObject({ title: 'Comment from someone', review: { href: LEGACY + '/marketing-generation', label: 'Open', out: true } })
 
   // their tabs and counts
@@ -389,11 +393,21 @@ test('part C: where a comment opens, by what it is about', () => {
   expect(href('e1: Lee.Ready@Example.com :lead_research')).toBe('/lead-pipeline/lee-ready-0123456789?tab=research')
   expect(href('e1:gone@example.com:lead_research')).toBe('/lead-pipeline')
   expect(commentReview('e1:gone@example.com:lead_research', ids, LEGACY)).toEqual({ kind: 'link', href: '/lead-pipeline', label: 'Open' })
-  // the rest are still in the current dashboard; anything else opens the Intel Tracker there, as before
-  expect(commentReview('brief:agent1_2026-11-08_0700', ids, LEGACY)).toEqual({ kind: 'link', href: LEGACY + '/briefs', label: 'Open', out: true })
+  // a brief's opens that brief here; the rest are still in the current dashboard, and anything else opens the Intel
+  // Tracker there, as before
+  expect(commentReview('brief:agent1_2026-11-08_0700', ids, LEGACY)).toEqual({ kind: 'link', href: '/briefs?run=agent1_2026-11-08_0700', label: 'Open' })
+  expect(href('brief:agent2_2026-11-08_0712')).toBe('/briefs?tab=ads&run=agent2_2026-11-08_0712')
   expect(href('funnel:agent3_2026-11-05_0900:tab5')).toBe(LEGACY + '/marketing-generation')
   expect(href('post:12345')).toBe(LEGACY + '/intel-tracker')
   expect(href('')).toBe(LEGACY + '/intel-tracker')
+})
+
+test('a brief’s address on the briefs page: its tab from its kind, else from its run', () => {
+  expect(briefHref('agent1_2026-11-09_1400')).toBe('/briefs?run=agent1_2026-11-09_1400')
+  expect(briefHref('agent2_2026-11-09_1412')).toBe('/briefs?tab=ads&run=agent2_2026-11-09_1412')
+  // the kind wins over the run's name; a run with odd characters is kept whole
+  expect(briefHref('agent2_x', 'organic')).toBe('/briefs?run=agent2_x')
+  expect(briefHref('run:2026-11-09T13:05', 'ads')).toBe('/briefs?tab=ads&run=run%3A2026-11-09T13%3A05')
 })
 
 test('part C: the key a comment’s Resolve takes; leads are never written', () => {

@@ -57,7 +57,9 @@ test('everything waiting: the tabs, the counts and what each row says', async ({
   await expect(org).toContainText('Onboarding is the theme. Three firms you follow posted about slow client onboarding this week.')
   await expect(org).toContainText('From Intel Tracker')
   await expect(org).toContainText('12 posts')
-  await expect(org.getByRole('link', { name: 'Review' })).toHaveAttribute('href', LEGACY + '/briefs')
+  await expect(org.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/briefs?run=intel_run_new')
+  await expect(org.getByRole('link', { name: 'Review' })).not.toHaveAttribute('title', 'Opens in the current dashboard')
+  await expect(row(page, ADS).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/briefs?tab=ads&run=ads_run_new')
   await expect(row(page, ADS)).toContainText('Onboarding should take days, not weeks')
   await expect(row(page, ADS)).toContainText('20 days old')
   await expect(row(page, R(1)).locator('b').first()).toHaveText('Reply to Northwind Advisors')
@@ -450,8 +452,8 @@ test('leads waiting on their next document open on their page; comments are reso
   await expect(c1.getByRole('link', { name: 'Open' })).toHaveAttribute('href', `/lead-pipeline/${LEE}?tab=consultation`)
   const c2 = row(page, 'cmt:' + CM(2))
   await expect(c2.locator('b').first()).toHaveText('Comment from robin')
-  await expect(c2.getByRole('link', { name: 'Open' })).toHaveAttribute('href', LEGACY + '/briefs')
-  await expect(c2.getByRole('link', { name: 'Open' })).toHaveAttribute('title', 'Opens in the current dashboard')
+  await expect(c2.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/briefs?run=agent1_2026-11-08_0700')
+  await expect(c2.getByRole('link', { name: 'Open' })).not.toHaveAttribute('title', 'Opens in the current dashboard')
 
   // Resolve: saved with who resolved it; Undo opens it again
   await c2.getByRole('button', { name: 'Resolve' }).click()

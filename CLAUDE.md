@@ -44,8 +44,9 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   the Overview); 2. ads (the Ad Strategist, Runs & uploads, the upload, build-a-brief and ad copy windows, the brief
   editor); 3. results (Ad Testing, Landing pages); 4. Content Transformation, with the creation kit it shares; 5.
   Marketing Generation. Part 1 comes as two PRs: 1a the Intel Tracker (Nov 11, branch `pipeline/intel-tracker`, on top
-  of the finishing PR, PR #12), 1b the briefs and the Overview. See Pipeline below.
-- Next: Pipeline 1b, then parts 2 to 5, then Atlas, Canvas, Settings. Then the cutover.
+  of the finishing PR, PR #12), 1b the Overview and the Market Intelligence Briefs (Nov 11, branch
+  `pipeline/briefs-overview`, on top of 1a). With 1b, part 1 is done. See Pipeline below.
+- Next: Pipeline parts 2 to 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -68,7 +69,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
-| Pipeline | Overview, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
+| Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
+| Pipeline | Ad Strategist, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -138,7 +140,9 @@ signed-in teammate's token, as the current dashboard's do.
   token first when less time is left on it (a call whose workflow hands the token on).
 - `src/components/ui`: dates in the viewer's own time zone (`LocalDay`, `LocalDate`, `LocalDateTime`: UTC while the
   server renders, then the browser's zone, with no hydration mismatch), the toast, the dialog (the browser's
-  `<dialog>`) and the side panel (`drawer.tsx`, a `<dialog>` on the right).
+  `<dialog>`) and the side panel (`drawer.tsx`, a `<dialog>` on the right). `useNow` (`clock.ts`) is the clock for
+  words that change with the time ("Good morning", "12 days ago"): the server's time while it renders, then the
+  browser's, by the minute (React's lint refuses `Date.now()` while drawing).
 
 ## Catalyst
 - `src/lib/catalyst/stages.ts`: the six meeting stages (V136_STAGES): key, name (the team's, from `ai_settings`
@@ -467,6 +471,55 @@ signed-in teammate's token, as the current dashboard's do.
   Transformation without the note filled in, and Log a result opens Ad Testing without its form open (both pages are
   still in the current dashboard); the How it fits together step that said Create says Content Transformation; a long
   title in Needs you stays inside its card on a phone (Today's had the same overflow).
+- The Market Intelligence Briefs (part 1b, `src/lib/pipeline/briefs.ts` and `ads.ts` pure rules, `briefs-load.ts`,
+  `src/components/pipeline/briefs-*.tsx`, `src/app/(app)/briefs`; NW_PAGES['e3.briefs'] and the nwBr functions as v109
+  to v127 left them):
+  - What it reads, as the teammate, fresh on every visit: the 14 newest organic briefs (agent_outputs intel_tracker
+    intel_brief, one per run), the 12 newest ads briefs (creative_briefs), the 300 newest brief_approval decisions
+    (agent_feedback), the content requests done with a brief (the creative briefs), the team's layout (ai_settings
+    brief_structure) and the company profile. Then the brief on screen in full: an organic brief with its snapshot,
+    its run's posts and replies; an ads brief with its snapshot and the ads it names by id (winner_creatives), else the
+    list in its markdown ("## 8.") matched to ad_records and winner_creatives by link; Combined with the personas,
+    offers and proof read directly.
+  - The address: `?tab=` (organic when none, ads, combined) and `?run=` only when the brief is not the newest, so a
+    bare address follows new briefs. A run older than the newest is read on its own; one nobody has opens the newest.
+  - The header: how many of the newest briefs (organic, ads, creative) wait for a review, and a dot on each tab whose
+    newest brief waits.
+  - Organic: the record bar (published, the period, the agent, the industry with Change, the versions, the state,
+    Approve brief; Structure and Edit open the current dashboard), the evidence note, the five things (the snapshot,
+    else the TL;DR), each opening what the agent saw and the closest posts, the short version, what changed (the
+    first shift open, its evidence opening the post), notable developments, themes (each opening the Intel Tracker on
+    it) and topic watch, the content handoff, the posts behind the brief (sortable by engagement; a row opens the
+    Intel Tracker's post panel), the review, and the rail with the numbers at a glance.
+  - Ads: the same bar, a note when the brief is more than 21 days old, the five things with the ads closest to each,
+    the angle and the organic brief it was built with, the creative structure (the copy formula and the hooks, each
+    with where it was seen, from the snapshot's hook sources), offers, pains and objections, other markets, the test
+    plan, the ads behind the brief (a row opens the Ad Library) and the signal quality numbers.
+  - Combined: six cards (angle, audience, hook to test, offer, proof, call to action) from the newest approved brief
+    of each kind, else the newest, and the company profile; then the creative briefs Content Transformation wrote from
+    the team's own material, each with Approve and Request changes.
+  - Approve and Request changes (`decideBrief`): an agent_feedback row (target_type brief_approval, target_id the run
+    or `content:<request id>`, agent intel_tracker, ad_strategist or content_generation, action approved or changes,
+    the reason as feedback, author the teammate's email), the rows Approvals writes and AI settings reads. Request
+    changes asks what should change first.
+  - The team's layout (`layoutOf`): the sections in its order, those switched off left out (the record, the evidence
+    and the review cannot be), and its options (how many five things, shifts, developments, hooks and offers; short or
+    full reasons; topic watch). A section the team added to the layout says it is counted in the current dashboard. A
+    saved review (the brief editor's) hides its sections too, and the bar says who edited the brief.
+  - The three review checks are kept in this browser (localStorage `ap.nw.brchk`, as the current dashboard; the two
+    apps do not share them). `briefs-parts.tsx` holds what the tabs share (the bar, a section, the rail, the review).
+- Changed on purpose on the Briefs (reported to Kser): Request changes asks what should change and saves it (the old
+  page opened the brief editor; editing a brief, its layout and putting back the agent's version stay in the current
+  dashboard for now); a section the team added to the layout points there instead of being counted here; a brief
+  older than the newest is read on its own (the old page opened the newest); the tab and the brief are in the address;
+  the Call to action card names the action as the company profile does, Book a call when the offer has none (the old
+  page showed the stored word, such as call); an angle is quoted from double quotes only (the apostrophe in firm's
+  could start a quote); "uploaded by your team" is said once per ad; a shift from the brief's own list no longer
+  repeats its note as the reading; a pattern from another market kept as an object reads as its words; the copy
+  formula's arrows are spaced once; an ad row opens the ad in the Ad Library (its own panel is on the Ad Strategist,
+  still in the current dashboard); Combined reads personas, offers and proof directly (the old loader rewrote house
+  rules as it read); Approve cannot save twice on a double click; the brief links on Approvals, Today, the Intel
+  Tracker and the Overview open the brief here, at its run.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -508,8 +561,12 @@ signed-in teammate's token, as the current dashboard's do.
   the Intel Tracker, on the rows in `intel-fixtures.ts` (three runs: the newest with six posts and two replies, one
   whose posts are not stored, one that did not finish; JSON columns kept as text, as they are live);
   `overview-logic.spec.ts` (without a browser) and `overview.spec.ts` the Pipeline Overview, on `overview-fixtures.ts`
-  (Approvals' rows plus runs, a brief's snapshot, results, ads, posts and the voice and context rows). Helpers in
-  `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  (Approvals' rows plus runs, a brief's snapshot, results, ads, posts and the voice and context rows);
+  `briefs-logic.spec.ts` (without a browser) and `briefs.spec.ts` the Market Intelligence Briefs, on
+  `briefs-fixtures.ts` (two organic briefs, the newest in the live markdown with its snapshot and posts, an older
+  custom run someone edited; two ads briefs, the newest naming its ads by id, an older one listing them in its
+  markdown; a creative brief; a persona, an offer and approved proof). Helpers in `helpers.ts`: `stubCalls`,
+  `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
   keeps, and `{deny: true}` turns signed-in teammates away, as Storage does before its rules for them. File Ingest saves
@@ -583,3 +640,9 @@ signed-in teammate's token, as the current dashboard's do.
 - A required field's mark (`*`) is hidden from screen readers and the input says it is required, so the field's name
   is its label alone: tests find it with `getByRole('textbox', { name, exact: true })` (`getByLabel` matches the
   label's whole text, mark included).
+- A grid with no column template sizes its one column to its widest child: a line that does not wrap (`truncate`) or
+  a table that scrolls sideways (`min-w-[640px]`) widens every card in it, and the page scrolls sideways on a phone.
+  Grids that hold such things get `grid-cols-[minmax(0,1fr)]` (the briefs page's, Today's lists).
+- A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls
+  the loader and the server's Supabase client into the browser bundle and the build fails. Constants the page and its
+  loader share go in the rules module (the briefs' tabs are in `briefs.ts`).

@@ -1,16 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { ArrowRight, ArrowUpRight, BarChart3, ChevronDown, Info, LayoutGrid, List, PenLine, Radar, Search } from 'lucide-react'
 import { Drawer } from '@/components/ui/drawer'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import { legacyUrl, pageBySlug } from '@/lib/nav'
-import { FACTORS, type IntelItem, fmtN, longDay, platLabel, themeCounts, themeKey, themeLabel } from '@/lib/pipeline/intel'
-import type { PostView } from '@/lib/pipeline/intel-load'
+import { FACTORS, type Five, type IntelItem, fmtN, longDay, platLabel, themeCounts, themeKey, themeLabel } from '@/lib/pipeline/intel'
+import type { PostView, ReplyView } from '@/lib/pipeline/intel-load'
 import { Avatar, Chip, Empty, Pill, Ring, Tag, ValPill, btn, inputCls, linkCls, primary, selectCls } from './bits'
-import { InfoButton, ScoreHow } from './intel-info'
+import { InfoButton, type Limits, ScoreHow } from './intel-info'
 import type { Ctx, Filters } from './intel-view'
 
 // The Posts tab (nwIntelPostsHtml): every post the run read, as cards or a list, by value, theme, the brief it went
@@ -381,10 +382,46 @@ export function PostDrawer({ ctx, id, onClose }: { ctx: Ctx; id: string; onClose
   const { data, tz } = ctx
   const p = data.posts.find((x) => x.id === id)
   if (!p) return null
-  const L = { read: data.schedule.read, keep: data.schedule.keep }
-  const runAt = data.runs.find((r) => r.runId === p.runId)?.at ?? ''
-  const feeds = data.five.filter((x) => x.ids.includes(p.id))
-  const reps = data.replies.filter((d) => (d.itemId && d.itemId === p.id) || (d.sourceUrl && p.url && d.sourceUrl === p.url))
+  return (
+    <PostPanel
+      p={p}
+      runAt={data.runs.find((r) => r.runId === p.runId)?.at ?? ''}
+      feeds={data.five.filter((x) => x.ids.includes(p.id))}
+      reps={repliesFor(p, data.replies)}
+      L={{ read: data.schedule.read, keep: data.schedule.keep }}
+      tz={tz}
+      briefHref={'/briefs?run=' + encodeURIComponent(p.runId)}
+      onTheme={(k) => ctx.goTab('posts', { theme: k, more: 12 })}
+      onReply={ctx.openReply}
+      onClose={onClose}
+    />
+  )
+}
+
+/** A post's drafted replies: by the post's id, else by its link. */
+export const repliesFor = (p: PostView, replies: ReplyView[]) =>
+  replies.filter((d) => (d.itemId && d.itemId === p.id) || (d.sourceUrl && p.url && d.sourceUrl === p.url))
+
+export type PostPanelProps = {
+  p: PostView
+  /** when its run finished */
+  runAt: string
+  /** the five things it feeds */
+  feeds: Five[]
+  reps: ReplyView[]
+  /** the tracker's read and keep counts, for How posts are picked */
+  L: Limits
+  tz: string | undefined
+  /** where Open the brief goes, when the post went into one */
+  briefHref: string | null
+  /** a theme chip: its posts */
+  onTheme: (key: string) => void
+  onReply: (r: ReplyView) => void
+  onClose: () => void
+}
+
+/** A post in full (nwPostOpen): its score and factors, why it is in the brief or not, its takeaways and replies. */
+export function PostPanel({ p, runAt, feeds, reps, L, tz, briefHref, onTheme, onReply, onClose }: PostPanelProps) {
   const copy = async (t: string) => {
     try {
       await navigator.clipboard.writeText(t)
@@ -492,11 +529,11 @@ export function PostDrawer({ ctx, id, onClose }: { ctx: Ctx; id: string; onClose
           </ul>
           <p className="mt-2 text-[13px] text-ink-3">
             {p.full.foot}{' '}
-            {p.full.brief ? (
-              <a href={legacy('briefs')} title={OUT_TIP} className={linkCls + ' text-[13px]'}>
+            {p.full.brief && briefHref ? (
+              <Link href={briefHref} className={linkCls + ' text-[13px]'}>
                 Open the brief
                 <ArrowRight size={14} aria-hidden="true" />
-              </a>
+              </Link>
             ) : null}
           </p>
         </section>
@@ -510,7 +547,7 @@ export function PostDrawer({ ctx, id, onClose }: { ctx: Ctx; id: string; onClose
                 type="button"
                 onClick={() => {
                   onClose()
-                  ctx.goTab('posts', { theme: themeKey(t), more: 12 })
+                  onTheme(themeKey(t))
                 }}
                 className="rounded-sm bg-sunk px-1.5 py-0.5 text-[12px] font-semibold text-ink-2 hover:bg-accent-soft hover:text-accent-text"
               >
@@ -556,7 +593,7 @@ export function PostDrawer({ ctx, id, onClose }: { ctx: Ctx; id: string; onClose
                       className={btn}
                       onClick={() => {
                         onClose()
-                        ctx.openReply(d)
+                        onReply(d)
                       }}
                     >
                       Edit and approve

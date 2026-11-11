@@ -74,7 +74,7 @@ test('this week’s lead, the newest campaign, what the agents know, the newest 
   const organic = rows.agent_outputs.find((o) => o.run_id === 'intel_run_new' && o.output_type === 'intel_brief')!.created_at
   await expect(lead).toContainText('From the brief of ' + dayText(organic, 'UTC'))
   await expect(lead.getByRole('link', { name: 'Write a post' })).toHaveAttribute('href', LEGACY + '/content-transformation')
-  await expect(lead.getByRole('link', { name: 'Open the brief' })).toHaveAttribute('href', '/briefs?tab=organic')
+  await expect(lead.getByRole('link', { name: 'Open the brief' })).toHaveAttribute('href', '/briefs?run=intel_run_new')
 
   const camp = page.getByTestId('camp')
   await expect(camp.getByRole('img')).toHaveCount(3)
