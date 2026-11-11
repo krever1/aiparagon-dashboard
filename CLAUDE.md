@@ -36,8 +36,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   and B, ad images waiting for a decision, content drafts and failed requests (both done); C, leads and comments, as
   Kser decides. `dev` goes to `main` only once Approvals lists every kind the current page does (or Kser leaves some
   out), so production never shows fewer things waiting. Part 3 (Nov 11, branch `touchpoint/today`, on top of part 2):
-  Today, in two pieces: A, the hello line, Needs you, Quick start, Your workspace, Recent runs and Latest sign-ups
-  (done); B, the Catalyst card (new clients from HubSpot, new transcripts), next. See Touchpoint below.
+  Today: the hello line, the Catalyst card (new clients from HubSpot, new transcripts), Needs you, Quick start, Your
+  workspace, Recent runs and Latest sign-ups. See Touchpoint below.
 - Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
@@ -53,7 +53,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 | Product | Pages | Status |
 |---|---|---|
-| Touchpoint | Today (the Catalyst card for new HubSpot clients and transcripts to come) | here (Touchpoint part 3, not released) |
+| Touchpoint | Today (Take the tour waits on Kser) | here (Touchpoint part 3, not released) |
 | Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests (leads and comments wait on Kser) | here (Touchpoint part 2, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
@@ -328,12 +328,26 @@ signed-in teammate's token, as the current dashboard's do.
   - Recent runs (`runs`, the four newest by start, a run with no start last), Latest sign-ups (`lp_signups`, the four
     newest, "5 minutes ago", the page's title on hover). The page reads its data again every 10 minutes while open
     (`html[data-today-refresh="on"]` while the timer is set).
-  - Not here yet: the Catalyst card (part B). Not ported: Take the tour (waiting on Kser).
+  - The Catalyst card (Catalyst · Before your next meetings; v137TodayCard and v137Load; `inbox.ts` pure rules,
+    `inbox-load.ts`, `src/components/today/crm-question.tsx`, `src/app/(app)/today/actions.ts`), first when there is
+    anything: new clients from HubSpot (hubspot_contacts first seen in the last 14 days, not a lead, not the team's,
+    not set aside in ai_settings `catalyst_inbox`) and new transcripts (Fathom's first page, waited for 4 seconds:
+    calls from the last 14 days with a lead among the guests, not filed in call_meta.lead_stage), newest first, four
+    at a time with Show N more, and counted in the hello line. They are checked against the leads, so nothing shows
+    as new when the leads could not be read.
+  - A new client's question: what the prospect brief reads (the template, the CRM record; the contact is looked up by
+    its email as HubSpot keeps it and in lower case), then Not a client (set aside for the team), Add without running
+    (an e1_leads row in Prospect research, lead_source HubSpot; a row there already only gets the stage when it has
+    none) or Run the prospect brief (the same, then the full run with `only: true`, the HubSpot title, company and
+    website and hearAboutUs HubSpot, kept in catalyst_runs). A new transcript opens the call question of a lead's
+    Calls tab (`CallQuestion`; its Reads list is `reads-box.tsx`, shared with the new client's).
+  - Not ported: Take the tour (waiting on Kser).
 - Changed on purpose on Today (reported to Kser): the Catalyst line counts the leads not a weak fit that are short of
   the last meeting stage (Client review), by the six stages; the old page counted leads missing any of the five older
   documents, so a lead without the retired follow-up guide always counted. Canvas's line says what it holds instead
   of counting documents (that count comes with the Deliverables port). Between 641 and 1080 px wide every card takes
-  the whole width. A read that fails says so in its card.
+  the whole width. A read that fails says so in its card. The Catalyst card's items past four open with Show N more
+  (the old page sent them to the bell, which this app does not have yet).
 - Changed on purpose on Approvals (reported to Kser): a reply's approval or rejection is credited to the teammate's
   email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
   page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only
@@ -373,7 +387,8 @@ signed-in teammate's token, as the current dashboard's do.
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`;
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
   `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day); `today-logic.spec.ts`
-  (without a browser) and `today.spec.ts` Today (the page's clock set to a Wednesday morning). Helpers in
+  (without a browser), `today.spec.ts` Today (the page's clock set to a Wednesday morning) and `today-catalyst.spec.ts`
+  its Catalyst card (contacts and calls dated from now). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
@@ -381,7 +396,8 @@ signed-in teammate's token, as the current dashboard's do.
   a stored file's text on its row (a file named "scan…" has none); Catalyst · Client Proposal and the HubSpot file sync
   answer as their workflows do, and a test writes the client_proposal row n8n would save. `tests/fixtures` holds a
   made-up Word file.
-- The Fathom stand-in keeps the team's key (`/__fathom`, `stubFathom({connected: false})` disconnects it), lists two
+- The Fathom stand-in keeps the team's key (`/__fathom`, `stubFathom({connected: false})` disconnects it; a test can
+  give its own first page with `stubFathom({connected: true, items})`), lists two
   pages (`fathomCalls()`, then `fathomOlderCalls()` for cursor `page2`), answers `access` with 'team' for a share token
   containing TeamOnly, and takes connect (a key starting "bad" is turned away) and disconnect. Slack, HubSpot sync
   and post-call actions answer as their workflows do; a test writes the `call_outputs` row the workflow would save.

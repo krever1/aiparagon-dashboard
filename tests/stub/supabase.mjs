@@ -9,8 +9,8 @@
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
 // GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
-// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, ...} (the
-// team's Fathom key as the Fathom proxy keeps it), GET /__storage (the files kept), POST /__storage {deny} (Storage
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, items?, ...}
+// (the team's Fathom key as the Fathom proxy keeps it, and the first page of calls it lists when a test gives one), GET /__storage (the files kept), POST /__storage {deny} (Storage
 // turns signed-in teammates away, as before its rules for them were added).
 // Storage (/storage/v1): an upload address signed for a signed-in session, the upload to it, public reads and removal,
 // for the lead-files bucket; it answers the browser's CORS checks. catalyst-proposal answers started;
@@ -237,7 +237,8 @@ http
           if (!fathom.connected) return send(res, 200, off)
           if (body.action === 'list') {
             if (body.cursor === 'page2') return send(res, 200, { ok: true, items: fathomOlderCalls(), next_cursor: null })
-            return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: 'page2' })
+            // a test can give its own first page ({connected: true, items}), dated from now
+            return send(res, 200, { ok: true, items: fathom.items ?? fathomCalls(), next_cursor: 'page2' })
           }
           if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
           if (body.action === 'access') {

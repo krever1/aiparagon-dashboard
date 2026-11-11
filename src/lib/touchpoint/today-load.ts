@@ -1,6 +1,7 @@
 import 'server-only'
+import { type InboxData, loadInbox } from '@/lib/catalyst/inbox-load'
 import { loadPipeline } from '@/lib/catalyst/load'
-import { STAGES } from '@/lib/catalyst/stages'
+import { STAGES, type StageNames } from '@/lib/catalyst/stages'
 import { viewStage } from '@/lib/catalyst/view'
 import { createClient } from '@/lib/supabase/server'
 import { type ApprovalsData, loadApprovals } from './approvals-load'
@@ -21,6 +22,9 @@ export type TodayData = {
   runsError: string | null
   signups: Signup[]
   signupsError: string | null
+  /** Catalyst's new clients from HubSpot and new transcripts, and the stages' names for their questions */
+  inbox: InboxData
+  names: StageNames
   /** when the server read it: the greeting and the date until the page is in the browser */
   now: number
 }
@@ -37,6 +41,10 @@ export async function loadToday(): Promise<TodayData> {
     supabase.from('runs').select('agent,status,started_at,finished_at,run_date').order('started_at', { ascending: false, nullsFirst: false }).limit(4),
     supabase.from('lp_signups').select('id,name,email,page_id,created_at').order('created_at', { ascending: false }).limit(4),
   ])
+
+  // new clients and transcripts are checked against the leads, so they wait for a good read of them
+  const now = Date.now()
+  const inbox: InboxData = pipeline && !pipeline.error ? await loadInbox(pipeline.leads, now).catch(() => ({ items: [], leads: [] })) : { items: [], leads: [] }
 
   const leads =
     pipeline && !(pipeline.error && !pipeline.leads.length)
@@ -64,6 +72,8 @@ export async function loadToday(): Promise<TodayData> {
     runsError: runs.error?.message ?? null,
     signups: rows.map((r) => ({ id: str(r.id), who: str(r.name).trim() || str(r.email), page: titles[str(r.page_id)] ?? '', at: str(r.created_at) })),
     signupsError: su.error?.message ?? null,
-    now: Date.now(),
+    inbox,
+    names: pipeline?.names ?? {},
+    now,
   }
 }

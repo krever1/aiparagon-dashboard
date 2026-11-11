@@ -1,15 +1,18 @@
 'use client'
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowRight, ArrowUpRight, CheckCircle2, History, LayoutTemplate, Megaphone, Radar, Repeat, Rocket, User, Users,
+  ArrowRight, ArrowUpRight, CheckCircle2, ChevronDown, History, LayoutTemplate, Megaphone, MessageSquare, Radar, Repeat, Rocket, User, Users,
 } from 'lucide-react'
 import { ItemIcon } from '@/components/approvals/item-icon'
 import { useSkips } from '@/components/approvals/skips'
+import { CallQuestion } from '@/components/catalyst/call-question'
 import { Icon } from '@/components/icon'
-import { dayText, useHydrated } from '@/components/ui/local-date'
+import { dayText, usDayText, useHydrated } from '@/components/ui/local-date'
+import { type CallItem, type CrmItem, type InboxItem, itemText } from '@/lib/catalyst/inbox'
+import { stageOfKey, stagesNamed } from '@/lib/catalyst/stages'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import { PRODUCTS, type ProductKey, legacyUrl, pageBySlug } from '@/lib/nav'
 import { type Item, wordOf } from '@/lib/touchpoint/approvals'
@@ -18,6 +21,7 @@ import {
   whenText,
 } from '@/lib/touchpoint/today'
 import type { TodayData } from '@/lib/touchpoint/today-load'
+import { CrmQuestion } from './crm-question'
 
 // Today (v115TodayHtml as v137 left it): the hello line, what needs you, quick starts, the five products with their
 // pages, the newest runs and sign-ups. The page reads its data again every 10 minutes while it is open, as the current
@@ -96,11 +100,12 @@ export function TodayView({ data, name }: { data: TodayData; name: string }) {
         </p>
         <h1 className="mt-1 break-words font-display text-[34px] font-semibold leading-tight text-ink sm:text-[38px]">{hello(hour, name)}</h1>
         <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2" data-testid="today-need">
-          {needLine(items.length)}
+          {needLine(items.length + data.inbox.items.length)}
         </p>
       </header>
 
       <div className="grid grid-cols-1 gap-4 min-[641px]:grid-cols-2 min-[1081px]:grid-cols-3">
+        {data.inbox.items.length ? <CatalystCard data={data} tz={tz} /> : null}
         <NeedsYou items={items} error={data.approvals.error} />
         <QuickStart />
         <Workspace data={data} waitingN={items.length} briefs={briefs} />
@@ -108,6 +113,63 @@ export function TodayView({ data, name }: { data: TodayData; name: string }) {
         <Signups data={data} now={t} hydrated={hydrated} />
       </div>
     </div>
+  )
+}
+
+const SHOWN = 4
+
+/** Catalyst · Before your next meetings (v137TodayCard): new clients from HubSpot and new transcripts, each with its question. */
+function CatalystCard({ data, tz }: { data: TodayData; tz: string | undefined }) {
+  const [all, setAll] = useState(false)
+  const [open, setOpen] = useState<InboxItem | null>(null)
+  const items = data.inbox.items
+  const shown = all ? items : items.slice(0, SHOWN)
+  const stages = stagesNamed(data.names)
+  const callLead = open?.kind === 'call' ? data.inbox.leads.find((l) => l.id === (open as CallItem).leadId) : null
+  return (
+    <Card w={3} title="Catalyst · Before your next meetings" testid="catalyst-inbox">
+      <ul className="grid gap-1">
+        {shown.map((x) => {
+          const t = itemText(x, data.names, x.kind === 'call' ? usDayText(x.at, tz) : '')
+          return (
+            <li key={x.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md px-2.5 py-2 hover:bg-sunk/60" data-testid="inbox-item" data-key={x.key}>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-sunk text-ink-2">
+                {x.kind === 'crm' ? <User size={17} aria-hidden="true" /> : <MessageSquare size={17} aria-hidden="true" />}
+              </span>
+              <span className="min-w-0 flex-[1_1_240px]">
+                <b className="block text-[14.5px] font-semibold text-ink">{t.t}</b>
+                <small className="block text-[13px] text-ink-3">{t.s}</small>
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(x)}
+                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm bg-action px-3 py-1.5 text-[13.5px] font-semibold text-action-ink hover:bg-action-hover"
+              >
+                {t.b}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {items.length > SHOWN ? (
+        <div className="mt-2 border-t border-line pt-2">
+          <button type="button" aria-expanded={all} onClick={() => setAll((v) => !v)} className={linkBtn}>
+            {all ? 'Show fewer' : `Show ${items.length - SHOWN} more`}
+            <ChevronDown size={15} aria-hidden="true" className={all ? 'rotate-180' : ''} />
+          </button>
+        </div>
+      ) : null}
+      {open?.kind === 'crm' ? <CrmQuestion item={open as CrmItem} research={stageOfKey('research', data.names)} onClose={() => setOpen(null)} /> : null}
+      {open?.kind === 'call' && callLead ? (
+        <CallQuestion
+          lead={callLead}
+          stages={stages}
+          call={{ id: open.id, title: open.title, start: open.start, minutes: open.minutes, stage: '' }}
+          onClose={() => setOpen(null)}
+          onDone={() => {}}
+        />
+      ) : null}
+    </Card>
   )
 }
 

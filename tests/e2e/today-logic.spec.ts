@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { normCall, normMeta } from '../../src/lib/catalyst/calls'
+import { callItems, crmItems, inboxItems, itemText, recent } from '../../src/lib/catalyst/inbox'
+import type { LeadView } from '../../src/lib/catalyst/view'
 import type { Item, Kind } from '../../src/lib/touchpoint/approvals'
 import {
   agentName, agoWords, catalystLine, firstName, greeting, hello, needChips, needLine, pipelineLine, runIcon, runState, todayText, touchLine, waiting,
@@ -6,7 +9,7 @@ import {
 } from '../../src/lib/touchpoint/today'
 
 // Today's rules, checked without a browser: the hello line, what is counted as waiting, the products' lines, the runs
-// and the sign-ups' times.
+// and the sign-ups' times, and Catalyst's new clients and transcripts.
 
 test('the hello line: the greeting by the hour, the first name, the date and how many things need you', () => {
   expect([0, 11, 12, 17, 18, 23].map(greeting)).toEqual(['Good morning', 'Good morning', 'Good afternoon', 'Good afternoon', 'Good evening', 'Good evening'])
@@ -63,4 +66,81 @@ test('a sign-up’s time, in words', () => {
     'just now', '1 minute ago', '5 minutes ago', '3 hours ago', 'yesterday', '2 days ago', '4 days ago',
   ])
   expect(agoWords('not a time')).toBe('')
+})
+
+// ---------- Catalyst's new clients and transcripts ----------
+
+
+const NOW_I = Date.parse('2026-11-11T12:00:00Z')
+const agoI = (ms: number) => new Date(NOW_I - ms).toISOString()
+const TEAMP = { name: 'QA Teammate', email: 'qa.teammate@aiparagonconsulting.com' }
+const lv = (name: string, email: string, stage: string) =>
+  ({ id: name.toLowerCase().replace(/\s+/g, '-') + '-0000000000', name, email, emails: [email], stored: stage, derived: 'research', run: null }) as unknown as LeadView
+
+test('new clients from HubSpot: seen lately, not a lead, not set aside, not the team’s', () => {
+  const c = (email: string, days: number | null, extra: Record<string, unknown> = {}) => ({
+    email, first_name: 'First', last_name: email.split('@')[0], first_seen: days === null ? null : agoI(days * 864e5), ...extra,
+  })
+  const items = crmItems(
+    [
+      c('Tom.Becker@Example.com', 2, { first_name: 'Tom', last_name: 'Becker', company: 'Halvern Foods', job_title: 'COO' }),
+      c('tom.becker@example.com', 1),
+      c('old@example.com', 20),
+      c('lead@example.com', 1),
+      c('aside@example.com', 1),
+      c('mate@aiparagonconsulting.com', 1),
+      c('never@example.com', null),
+      { email: 'noname@example.com', first_seen: agoI(864e5) },
+    ],
+    new Set(['lead@example.com']),
+    { 'aside@example.com': { by: 'x' } },
+    NOW_I,
+  )
+  expect(items.map((x) => [x.key, x.raw, x.name, x.company])).toEqual([
+    ['crm:tom.becker@example.com', 'Tom.Becker@Example.com', 'Tom Becker', 'Halvern Foods'],
+    ['crm:noname@example.com', 'noname@example.com', 'noname@example.com', ''],
+  ])
+  expect([recent(agoI(14 * 864e5 - 1000), NOW_I), recent(agoI(14 * 864e5 + 1000), NOW_I), recent('', NOW_I)]).toEqual([true, false, false])
+})
+
+test('new transcripts: recorded lately, with a lead among the guests, not filed yet', () => {
+  const call = (id: number, title: string, hoursAgo: number, guest?: { name: string; email: string }) =>
+    normCall({
+      id, title, start: agoI(hoursAgo * 36e5), end: new Date(NOW_I - hoursAgo * 36e5 + 40 * 60e3).toISOString(), recorded_by: TEAMP,
+      invitees: guest ? [TEAMP, { ...guest, external: true }] : [TEAMP],
+    })
+  const leads = [lv('Nia New', 'nia.new@example.com', 'research'), lv('Ria Review', 'ria.review@example.com', 'review')]
+  const metas = { '3': normMeta({ call_id: '3', lead_email: 'nia.new@example.com', lead_stage: 'research' }) }
+  const items = callItems(
+    [
+      call(1, 'Discovery call with Nia', 49, { name: 'Nia New', email: 'nia.new@example.com' }),
+      call(2, 'Old call with Nia', 20 * 24, { name: 'Nia New', email: 'nia.new@example.com' }),
+      call(3, 'Filed call with Nia', 24, { name: 'Nia New', email: 'nia.new@example.com' }),
+      call(4, 'Team sync', 24),
+      call(5, 'Review call with Ria', 3, { name: 'Ria Review', email: 'Ria.Review@example.com' }),
+    ],
+    metas,
+    leads,
+    NOW_I,
+  )
+  expect(items.map((x) => [x.key, x.leadName, x.cur, x.nx, x.minutes])).toEqual([
+    ['call:1', 'Nia New', 'research', 'consultation', 40],
+    ['call:5', 'Ria Review', 'review', 'review', 40],
+  ])
+  const crm = crmItems([{ email: 'tom@example.com', first_name: 'Tom', first_seen: agoI(48 * 36e5) }], new Set(), {}, NOW_I)
+  expect(inboxItems(crm, items).map((x) => x.key)).toEqual(['call:5', 'crm:tom@example.com', 'call:1'])
+
+  // what each row says, with the team's name for a stage
+  const names = { consultation: 'Kickoff call' }
+  expect(itemText(crm[0], names, '')).toEqual({ t: 'New client from HubSpot: Tom', s: 'Run the pre-meeting prospect brief?', b: 'Run the brief' })
+  expect(itemText(items[0], names, 'Nov 9')).toEqual({
+    t: 'New transcript: your call with Nia New on Nov 9',
+    s: 'In Prospect research. Run the kickoff call stage?',
+    b: 'Run kickoff call',
+  })
+  expect(itemText(items[1], {}, 'Nov 11')).toEqual({
+    t: 'New transcript: your call with Ria Review on Nov 11',
+    s: 'In Client review. Run the client review brief again with it?',
+    b: 'Run it again',
+  })
 })
