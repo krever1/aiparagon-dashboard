@@ -31,7 +31,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 - Not ported from a lead's page, on purpose: comments on a document (only in Full text there; six ever, all resolved)
   and the Edit lead panel (broken in the current dashboard: it saves a column e1_leads does not have).
 - Touchpoint, in three parts (Nov 11): 1. Tasks; 2. Approvals; 3. Today, which reads Approvals' list for Needs you.
-  Part 1 (Nov 11, branch `touchpoint/tasks`): the post-call to-dos. See Touchpoint below.
+  Part 1 (Nov 11, branch `touchpoint/tasks`, PR #8 into `dev`): the post-call to-dos. Part 2 (Nov 11, branch
+  `touchpoint/approvals`, on top of part 1): Approvals, in pieces: A, the briefs and the Intel Tracker's replies (done);
+  B, ads, drafts and failed requests; C, leads and comments, as Kser decides. `dev` goes to `main` only once Approvals
+  lists every kind the current page does, so production never shows fewer things waiting. See Touchpoint below.
 - Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
@@ -47,7 +50,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 | Product | Pages | Status |
 |---|---|---|
-| Touchpoint | Today, Approvals | current dashboard |
+| Touchpoint | Today | current dashboard |
+| Touchpoint | Approvals: the briefs and the Intel Tracker's replies (ads, drafts, failed requests, leads and comments to come) | here (Touchpoint part 2, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
@@ -264,8 +268,35 @@ signed-in teammate's token, as the current dashboard's do.
   "Touchpoint · Home and tasks" like every ported page (the old page said "Touchpoint"); the heading's tooltip leaves
   out Send to Asana; a failed read of the post-call actions says so (the old page said "None yet"); the open count is
   the calls shown under the picked button, before and after ticks (the old one changed what it counted after a tick);
-  a tick reads the tasks again first, so it never undoes a teammate's tick. On Calls too: the type buttons follow the current dashboard's order, Client work before Internal
-  development (the Calls port had them the other way round).
+  a tick reads the tasks again first, so it never undoes a teammate's tick. On Calls too: the type buttons follow the
+  current dashboard's order, Client work before Internal development (the Calls port had them the other way round).
+- Approvals (part 2, `approvals.ts` pure rules, `approvals-load.ts`, `src/components/approvals/approvals-view.tsx`,
+  `src/app/(app)/approvals`; nwApprovalsHtml as v117 and v127 left it): one list of everything waiting for a person.
+  - What waits (`approvalItems`): the newest organic brief (agent_outputs, intel_tracker intel_brief) and the newest
+    ads brief (creative_briefs) while undecided (no brief_approval decision, or the newest one is reopened or edited),
+    then the Intel Tracker's pending replies (engagement_drafts), newest first. A brief's line is the first item of its
+    snapshot (agent_outputs.snapshot by run id, the newest that reads), else its TL;DR or its hooks; an ads brief 14 days
+    old or more says so. A brief's Review opens the briefs page, still in the current dashboard.
+  - The tabs (`viewOf`): All, each kind with something waiting, then Skipped. The tab is the address's (`?tab=`); a tab
+    left with nothing in it shows All and All becomes the choice (as V107D.filter does), so a later skip or undo does
+    not jump back. All shows five replies and a line for the rest. Replies more than a week old are out of the counts
+    and sit under Older than a week on Replies (v117: Replies says 0 when only those are left). 20 rows at a time.
+  - Approve, one or several (the boxes, Select all; `approveItems`, one at a time, the first failure stops the rest):
+    a brief's decision in agent_feedback (brief_approval, approved, "Approved in Approvals"), a reply's status in
+    engagement_drafts with its agent_feedback row (engagement_draft, "Reviewed on the dashboard"), author the teammate's
+    email. The message that confirms has Undo (`undoItems`: reopened, "Undone in Approvals"; a reply back to pending).
+  - Skip keeps a row out for now in this browser only (localStorage `ap.nw.skip`, as the current dashboard; the two
+    apps are on different addresses, so they do not share it), with Undo and Bring back. Nothing is saved.
+  - A reply's Review opens it in full: the post it answers (only a web address), the draft to change (saved when it
+    changed, then approved), Copy, Approve, and Reject, which asks why first (v127: six reasons and a note, `whyText`,
+    saved as the decision's feedback); Cancel, the X or Esc keep the reply.
+  - Not here yet: the ad images of book a call and low-ticket campaigns waiting for a decision, content drafts and
+    failed requests (part B); leads and comments (part C).
+- Changed on purpose on Approvals (reported to Kser): a reply's approval or rejection is credited to the teammate's
+  email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
+  page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only
+  when it worked; changing tab clears the selection, so Approve N only takes rows on screen; the tab is in the address;
+  the link to a reply's post opens only when it is a web address.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -297,7 +328,9 @@ signed-in teammate's token, as the current dashboard's do.
   chart and client proposal rules; `catalyst.spec.ts` and `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts`
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
-  `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`. Helpers in
+  `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`;
+  `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
+  `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
@@ -360,3 +393,6 @@ signed-in teammate's token, as the current dashboard's do.
 - A `'use server'` file exports async functions only: constants the browser shares with it go in a plain module
   (`src/lib/catalyst/files.ts`).
 - The old dashboard does not read `catalyst_proposal_runs` either: a proposal started here shows "Writing…" here only.
+- Approvals' Skipped lives in the browser (`ap.nw.skip`), read with `useSyncExternalStore`: while the page hydrates it
+  is empty, so anything that acts on Skipped being empty waits for `useHydrated()` (the tab falling back to All does,
+  or a reload on `?tab=skipped` would lose the tab).
