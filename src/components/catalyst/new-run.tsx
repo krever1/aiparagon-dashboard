@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { Mic, Sparkles } from 'lucide-react'
 import { type CallPick, callText, newRun, recentCalls } from '@/app/(app)/lead-pipeline/actions'
 import { Dialog } from '@/components/ui/dialog'
@@ -36,9 +36,24 @@ const EMPTY: Form = { firstName: '', lastName: '', title: '', company: '', link:
 
 const input = 'h-10 w-full rounded-sm border border-line bg-panel px-3 text-[14.5px] text-ink focus:border-accent focus:outline-none'
 
+const noop = () => () => {}
+/** The address asks for the form (Today's Quick start links to /lead-pipeline?run=new); false while the server draws. */
+const askedNew = () => new URLSearchParams(window.location.search).get('run') === 'new'
+
 /** The header's New run: a lead that is not on the board yet, started at the stage the client is at. */
 export function NewRunButton() {
-  const [open, setOpen] = useState(false)
+  const asked = useSyncExternalStore(noop, askedNew, () => false)
+  const [state, setState] = useState<'asked' | 'open' | 'closed'>('asked')
+  const open = state === 'open' || (state === 'asked' && asked)
+  const close = () => {
+    setState('closed')
+    const u = new URL(window.location.href)
+    if (u.searchParams.get('run') === 'new') {
+      u.searchParams.delete('run')
+      window.history.replaceState(null, '', u.pathname + u.search)
+    }
+  }
+  const setOpen = (on: boolean) => (on ? setState('open') : close())
   return (
     <>
       <button

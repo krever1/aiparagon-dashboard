@@ -12,8 +12,14 @@ test('every page has its address, heading and tab title; a page not moved yet li
   expect(PAGES).toHaveLength(25)
   for (const p of PAGES) {
     await page.goto('/' + p.slug)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADINGS[p.slug] ?? p.title)
     await expect(page).toHaveTitle(p.title + ' · AI Paragon')
+    if (p.slug === 'today') {
+      // Today is headed by a greeting and the date, as in the current dashboard
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^Good (morning|afternoon|evening), QA\.$/)
+      await expect(page.getByTestId('today-date')).toHaveText(/^Touchpoint · [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+$/)
+      continue
+    }
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADINGS[p.slug] ?? p.title)
     const product = GROUPS.find((g) => g.key === p.product)!
     await expect(page.getByText(product.name + ' · ' + product.sub, { exact: true })).toBeVisible()
     const open = page.getByRole('link', { name: 'Open ' + p.label + ' in the current dashboard' })

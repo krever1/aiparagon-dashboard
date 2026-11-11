@@ -35,7 +35,9 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   `touchpoint/approvals`, on top of part 1, PR #9): Approvals, in pieces: A, the briefs and the Intel Tracker's replies,
   and B, ad images waiting for a decision, content drafts and failed requests (both done); C, leads and comments, as
   Kser decides. `dev` goes to `main` only once Approvals lists every kind the current page does (or Kser leaves some
-  out), so production never shows fewer things waiting. See Touchpoint below.
+  out), so production never shows fewer things waiting. Part 3 (Nov 11, branch `touchpoint/today`, on top of part 2):
+  Today, in two pieces: A, the hello line, Needs you, Quick start, Your workspace, Recent runs and Latest sign-ups
+  (done); B, the Catalyst card (new clients from HubSpot, new transcripts), next. See Touchpoint below.
 - Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
@@ -51,7 +53,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 | Product | Pages | Status |
 |---|---|---|
-| Touchpoint | Today | current dashboard |
+| Touchpoint | Today (the Catalyst card for new HubSpot clients and transcripts to come) | here (Touchpoint part 3, not released) |
 | Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests (leads and comments wait on Kser) | here (Touchpoint part 2, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
@@ -307,6 +309,31 @@ signed-in teammate's token, as the current dashboard's do.
     saved as the decision's feedback); Cancel, the X or Esc keep the reply.
   - Not here yet: leads and comments (part C, waiting on Kser). On Nov 11 the live data had 4 ad images waiting (two
     campaigns), no content requests and no content drafts.
+- Approvals opens a reply's window from the address once (`?review=reply:<id>`, Today's Next up); closing it drops
+  the word from the address. The Skip store is `src/components/approvals/skips.ts` (`useSkips`), shared with Today.
+- Today (part 3, `today.ts` pure rules, `today-load.ts`, `src/components/today/today-view.tsx`, `src/app/(app)/today`;
+  v115TodayHtml as v137 left it):
+  - The hello line: "Touchpoint · Wednesday 11 November", "Good morning, Kser." (the first word of the teammate's
+    name; morning before noon, afternoon until six) and "3 things need you." The server draws them in UTC, the
+    browser in the viewer's own time zone once the page is in it (`data.now`, then the clock by the minute).
+  - Needs you: what Approvals lists less this browser's skips and replies older than a week (`waiting`), the number,
+    a chip per kind (to that tab of Approvals), Next up (the first three; a reply opens in its window on Approvals,
+    the rest where Approvals sends them), Start reviewing. Nothing waiting: You are all caught up, Open Approvals.
+  - Quick start: Run Catalyst for a lead (`/lead-pipeline?run=new`, which opens New run once; `NewRunButton` reads
+    the address after hydrating) and Make an ad campaign, Turn content into a post, Put a landing page live, which
+    open their pages in the current dashboard (the old page opened the form itself).
+  - Your workspace: the five products with their pages and a line each: things waiting (with this browser's skips),
+    leads and how many wait on a next stage, Canvas's and Atlas's fixed lines, briefs to review (all undecided, skipped
+    or not, as before) and live landing pages.
+  - Recent runs (`runs`, the four newest by start, a run with no start last), Latest sign-ups (`lp_signups`, the four
+    newest, "5 minutes ago", the page's title on hover). The page reads its data again every 10 minutes while open
+    (`html[data-today-refresh="on"]` while the timer is set).
+  - Not here yet: the Catalyst card (part B). Not ported: Take the tour (waiting on Kser).
+- Changed on purpose on Today (reported to Kser): the Catalyst line counts the leads not a weak fit that are short of
+  the last meeting stage (Client review), by the six stages; the old page counted leads missing any of the five older
+  documents, so a lead without the retired follow-up guide always counted. Canvas's line says what it holds instead
+  of counting documents (that count comes with the Deliverables port). Between 641 and 1080 px wide every card takes
+  the whole width. A read that fails says so in its card.
 - Changed on purpose on Approvals (reported to Kser): a reply's approval or rejection is credited to the teammate's
   email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
   page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only
@@ -345,7 +372,8 @@ signed-in teammate's token, as the current dashboard's do.
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`;
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
-  `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day). Helpers in
+  `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day); `today-logic.spec.ts`
+  (without a browser) and `today.spec.ts` Today (the page's clock set to a Wednesday morning). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it

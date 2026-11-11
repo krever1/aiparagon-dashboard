@@ -1,17 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import {
-  AlertTriangle, ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock, Copy, Eye, FileText, Megaphone, MessageSquare, PenLine, Repeat2, Users,
-} from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock, Copy, Eye, MessageSquare, PenLine, Repeat2 } from 'lucide-react'
 import { approveItems, approveReply, rejectReply, undoItems } from '@/app/(app)/approvals/actions'
+import { ItemIcon } from '@/components/approvals/item-icon'
+import { addSkips, removeSkips, useSkips } from '@/components/approvals/skips'
 import { ErrorNotice } from '@/components/catalyst/bits'
 import { Dialog } from '@/components/ui/dialog'
 import { LocalDay, dayText, useHydrated } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import {
-  type Icon, type Item, type TabKey, PAGE, WHY, clip, kindLabel, platformLabel, safeUrl, tabFromWord, viewOf, whyText, wordOf,
+  type Item, type TabKey, PAGE, WHY, clip, kindLabel, platformLabel, safeUrl, tabFromWord, viewOf, whyText, wordOf,
 } from '@/lib/touchpoint/approvals'
 import type { ApprovalsData } from '@/lib/touchpoint/approvals-load'
 
@@ -25,63 +25,6 @@ const ghost = 'inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[1
 const primary =
   'inline-flex items-center gap-1.5 rounded-sm bg-action px-2.5 py-1.5 text-[13px] font-semibold text-action-ink hover:bg-action-hover disabled:opacity-60'
 
-// ---------- what is skipped: kept in this browser, as in the current dashboard (ap.nw.skip) ----------
-
-const SKIP_KEY = 'ap.nw.skip'
-type Skips = Record<string, number>
-const NO_SKIPS: Skips = {}
-let memSkips: Skips = {}
-let cache: { raw: string | null; val: Skips } = { raw: null, val: NO_SKIPS }
-const skipListeners = new Set<() => void>()
-
-function readSkips(): Skips {
-  let raw: string | null
-  try {
-    raw = localStorage.getItem(SKIP_KEY)
-  } catch {
-    return memSkips
-  }
-  if (raw === cache.raw) return cache.val
-  let val: Skips = {}
-  try {
-    const p = JSON.parse(raw || '{}')
-    if (p && typeof p === 'object' && !Array.isArray(p)) val = p
-  } catch {
-    // a broken entry is no skips
-  }
-  cache = { raw, val }
-  return val
-}
-function writeSkips(next: Skips) {
-  memSkips = next
-  try {
-    localStorage.setItem(SKIP_KEY, JSON.stringify(next))
-  } catch {
-    // kept for this page only
-  }
-  for (const l of skipListeners) l()
-}
-/** Skipped now, for this browser. */
-function addSkips(keys: string[]) {
-  const s = { ...readSkips() }
-  const at = Date.now()
-  for (const k of keys) s[k] = at
-  writeSkips(s)
-}
-function removeSkips(keys: string[]) {
-  const s = { ...readSkips() }
-  for (const k of keys) delete s[k]
-  writeSkips(s)
-}
-function subscribeSkips(l: () => void) {
-  skipListeners.add(l)
-  window.addEventListener('storage', l)
-  return () => {
-    skipListeners.delete(l)
-    window.removeEventListener('storage', l)
-  }
-}
-
 /** The tab in the address (?tab=replies), without a new history entry. */
 function writeTab(t: TabKey) {
   const u = new URL(window.location.href)
@@ -91,17 +34,18 @@ function writeTab(t: TabKey) {
   window.history.replaceState(null, '', u.pathname + u.search)
 }
 
-const ICONS: Record<Icon, typeof FileText> = { file: FileText, megaphone: Megaphone, pen: PenLine, message: MessageSquare, users: Users, alert: AlertTriangle }
-
 export function ApprovalsView({ data }: { data: ApprovalsData }) {
   const sp = useSearchParams()
-  const skips = useSyncExternalStore(subscribeSkips, readSkips, () => NO_SKIPS)
+  const skips = useSkips()
   const asked = tabFromWord(sp.get('tab'))
   const [more, setMore] = useState<{ tab: TabKey; n: number }>({ tab: asked, n: PAGE })
   const view = viewOf(data.items, skips, asked, more.tab === asked ? more.n : PAGE)
   const [sel, setSel] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [replyKey, setReplyKey] = useState<string | null>(null)
+  // Today's Next up opens a reply here (?review=reply:<id>), once
+  const [reviewed, setReviewed] = useState(false)
+  const askedReview = reviewed ? null : sp.get('review')
   const [whyFor, setWhyFor] = useState<Item | null>(null)
 
   // the selection only keeps rows that are still here and can be approved
@@ -172,7 +116,17 @@ export function ApprovalsView({ data }: { data: ApprovalsData }) {
       return n
     })
 
-  const replyItem = replyKey ? data.items.find((x) => x.key === replyKey && x.reply) : null
+  const openKey = replyKey ?? askedReview
+  const replyItem = openKey ? data.items.find((x) => x.key === openKey && x.reply) : null
+  const closeReply = () => {
+    setReplyKey(null)
+    setReviewed(true)
+    if (sp.get('review')) {
+      const u = new URL(window.location.href)
+      u.searchParams.delete('review')
+      window.history.replaceState(null, '', u.pathname + u.search)
+    }
+  }
 
   const row = (x: Item, selectable: boolean) => (
     <Row
@@ -313,13 +267,13 @@ export function ApprovalsView({ data }: { data: ApprovalsData }) {
       {replyItem ? (
         <ReplyWindow
           item={replyItem}
-          onClose={() => setReplyKey(null)}
+          onClose={closeReply}
           onReject={() => {
-            setReplyKey(null)
+            closeReply()
             setWhyFor(replyItem)
           }}
           onApproved={(done) => {
-            setReplyKey(null)
+            closeReply()
             drop(done)
             toast('Approved', 'ok', { label: 'Undo', run: () => void undo(done) })
           }}
@@ -364,7 +318,6 @@ function Row({
   onReview: () => void
   onApprove: () => void
 }) {
-  const I = ICONS[x.icon]
   const review = x.review
   return (
     <div
@@ -386,7 +339,7 @@ function Row({
           // eslint-disable-next-line @next/next/no-img-element -- an ad's image, from wherever the campaign kept it
           <img src={x.img} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
-          <I size={19} />
+          <ItemIcon icon={x.icon} />
         )}
       </span>
       <div className="min-w-0 flex-[1_1_240px]">
