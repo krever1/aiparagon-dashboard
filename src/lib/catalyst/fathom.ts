@@ -38,9 +38,9 @@ export async function ftStatus(): Promise<FtStatus> {
   return { connected: j.connected === true, hint: str(j.hint), updatedBy: str(j.updated_by), updatedAt: str(j.updated_at) }
 }
 
-/** A page of calls, newest first, and the cursor for the older ones. */
-export async function ftList(cursor?: string): Promise<{ items: FtCall[]; next: string | null }> {
-  const j = await ask(cursor ? { action: 'list', cursor } : { action: 'list' })
+/** A page of calls, newest first, and the cursor for the older ones; a time limit for a page that cannot wait long. */
+export async function ftList(cursor?: string, timeoutMs?: number): Promise<{ items: FtCall[]; next: string | null }> {
+  const j = await ask(cursor ? { action: 'list', cursor } : { action: 'list' }, timeoutMs)
   const items = (Array.isArray(j.items) ? j.items : []).filter((c) => c && (c as Record<string, unknown>).id != null).map(normCall)
   return { items, next: str(j.next_cursor) || null }
 }

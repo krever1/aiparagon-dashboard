@@ -12,7 +12,7 @@ until every page has moved; then aiparagon.vercel.app/dashboard forwards here.
 One repo per project (Kser, Nov 9): this repo is the internal dashboard only. The other projects (care portal, voice
 agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon until they get their own repos.
 
-## Where it stands (as of 2026-11-10)
+## Where it stands (as of 2026-11-11)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
   every current page address. A page not ported yet opens a card that links to it in the current dashboard.
 - Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
@@ -26,10 +26,13 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   (PR #4) and released to production on Nov 10 (PR #5). See Catalyst below.
 - Part 4 (Nov 10, branch `catalyst/proposal-files`): What should change? on a lead's documents, the client proposal
   (write, read, edit, Save as PDF), the charts in the proposal and the meeting prep, and file uploads on a lead's Files
-  tab. The Storage rules uploads need were added on Nov 10 (see Gotchas). See Catalyst below.
+  tab. The Storage rules uploads need were added on Nov 10 (see Gotchas). Merged into `dev` (PR #6) and released to
+  production on Nov 10 (PR #7). See Catalyst below.
 - Not ported from a lead's page, on purpose: comments on a document (only in Full text there; six ever, all resolved)
   and the Edit lead panel (broken in the current dashboard: it saves a column e1_leads does not have).
-- Next: Touchpoint, Pipeline, Atlas, Canvas, Settings. Then the cutover.
+- Touchpoint, in three parts (Nov 11): 1. Tasks; 2. Approvals; 3. Today, which reads Approvals' list for Needs you.
+  Part 1 (Nov 11, branch `touchpoint/tasks`): the post-call to-dos. See Touchpoint below.
+- Next: the rest of Touchpoint, then Pipeline, Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -44,10 +47,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 
 | Product | Pages | Status |
 |---|---|---|
-| Touchpoint | Today, Approvals, Tasks | current dashboard |
+| Touchpoint | Today, Approvals | current dashboard |
+| Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
-| Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (part 4) |
+| Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Overview, Intel Tracker, Ad Strategist, Market Intelligence Briefs, Content Transformation, Marketing Generation, Landing pages, Ad Testing, Runs & uploads | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
@@ -238,6 +242,31 @@ signed-in teammate's token, as the current dashboard's do.
   one said they land in the shared knowledge base, which lead uploads never did); the stage picker has no "✎ Type your
   own…".
 
+## Touchpoint
+- Tasks (part 1, `tasks.ts` pure rules, `tasks-load.ts`, `src/components/tasks/tasks-view.tsx`, `src/app/(app)/tasks`;
+  apTkHtml as v121 redefined it): the post-call to-dos.
+  - The cards: every call whose post-call actions are written (`call_outputs` status done) and have next steps, open
+    ones first, then the newest by `call_start` (else `created_at`), 40 at most (`taskCards`).
+  - The type buttons over them (`taskButtons`, the same as Calls'). The pick is the address's (`?type=`); a picked kind
+    with nothing in it shows everything again, unless it is one of Erica's three (`shownCat`).
+  - The calls are filed in client folders, the folder with the newest call first (`taskFolders`); a folder folds up.
+  - Each call: its title (the team's, else `call_outputs.call_title`, else "Call"), the day, "in Asana · <project>"
+    once its tasks were sent there, Open call (`/calls?call=<id>&seg=post`), the type picker with + New type…, the
+    people line, Edit people and client, and the ticks (`tickTask`, which reads the tasks again before saving).
+  - The reads are Calls': `readCallRows`, `callLeads`, and Fathom's first page, waited for 4 seconds
+    (`ftList(undefined, 4000)`), as the current dashboard waits. Without Fathom a call has only the people the team
+    saved on it, and its folder follows `folderOf` with no call (v121Folder: no people and no folder set means the team's
+    own call only when its type is internal or dev). A call Fathom did not list gets a stand-in call for Edit details,
+    built from its post-call actions, as apCxEdit does.
+  - The Asana panel (a personal token saved in the current dashboard's browser storage) and Send to Asana stay in the
+    current dashboard, behind a card that links to it. No call had ever been sent to Asana (`call_outputs.asana`, Nov 11).
+- Changed on purpose on Tasks (reported to Kser): Asana stays in the current dashboard (above); the heading line reads
+  "Touchpoint · Home and tasks" like every ported page (the old page said "Touchpoint"); the heading's tooltip leaves
+  out Send to Asana; a failed read of the post-call actions says so (the old page said "None yet"); the open count is
+  the calls shown under the picked button, before and after ticks (the old one changed what it counted after a tick);
+  a tick reads the tasks again first, so it never undoes a teammate's tick. On Calls too: the type buttons follow the current dashboard's order, Client work before Internal
+  development (the Calls port had them the other way round).
+
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
    CLAUDE.md (section 1) names its functions; its "Where it stands" notes say what each round changed and why.
@@ -267,7 +296,8 @@ signed-in teammate's token, as the current dashboard's do.
 - `catalyst-logic.spec.ts` checks the lead, call and follow rules without a browser, `proposal-logic.spec.ts` the
   chart and client proposal rules; `catalyst.spec.ts` and `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts`
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
-  `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files. Helpers in
+  `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
+  `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`. Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it
