@@ -439,6 +439,34 @@ signed-in teammate's token, as the current dashboard's do.
   opens the newest run; the "Social Listening" headings left over say the Intel Tracker; the switched-off message
   names the workflow as n8n does, "(scheduled + custom)" (the old page said daily); Write a post on this opens Content
   Transformation without filling it in (that page is still in the current dashboard).
+- The Pipeline Overview (part 1b, `src/lib/pipeline/overview.ts` pure rules, `overview-load.ts`,
+  `src/components/pipeline/overview-view.tsx` and `widget-store.ts`, `src/app/(app)/engine-3`; NW_PAGES['e3.overview'] as
+  v107 to v115 left it):
+  - The hello line ("Pipeline · Overview · <day>", the greeting, what needs you and when the Intel Tracker last ran),
+    Take the tour (Today's) and Customize.
+  - The cards, in this order until someone moves them: Needs you and Recent runs (Today's, now shared in
+    `src/components/today/cards.tsx`); Quick start (Make an ad campaign, Turn content into a post, Log a result, in the
+    current dashboard); Agents · open any section (six tiles, each with its number, a line, when it last ran and a dot:
+    bad when the last run failed, warn when the tracker or the Ad Strategist last ran over 9 days ago or something
+    waits; How it fits together opens six steps); This week's lead (the newest organic brief's five notes, from its
+    snapshot, else its TL;DR; Write a post, Open the brief); Latest campaign (the newest book a call or low-ticket
+    campaign: up to three pictures, its offer and kind, how many of its ads are approved); Voice and context (eight
+    things the agents read: the newest brand voice, its mission and values, the company profile's industry and ideal
+    client, ai_settings brand_context's offer and difference, the tracker's topics, the accounts followed); Latest
+    thought leadership (the newest content draft, Ready or To check).
+  - Customize moves cards earlier or later or hides them, in this browser only (localStorage `ap.nw.ord` and
+    `ap.nw.hidew`, as the current dashboard), with Reset.
+  - What it reads, as the teammate, on every visit: what Approvals lists (with the board's leads), the four newest runs
+    and the newest run of the tracker and of the Ad Strategist, the newest organic brief and its snapshot, the newest ads
+    brief, the 60 newest drafts and which are ready, the 40 newest campaign rows (one campaign per run), how many
+    results, ads and posts are kept, the newest strategy read, and the voice and context rows. A read that fails says
+    so in its card.
+- Changed on purpose on the Overview (reported to Kser): each tile's last run is that agent's own newest run (the old
+  page looked only among the 40 newest runs of every agent, so a quiet agent said Not run yet); ads and results are
+  counted (the old page counted what it had loaded, at most 1,000 ads and 500 results); Write a post opens Content
+  Transformation without the note filled in, and Log a result opens Ad Testing without its form open (both pages are
+  still in the current dashboard); the How it fits together step that said Create says Content Transformation; a long
+  title in Needs you stays inside its card on a phone (Today's had the same overflow).
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -478,7 +506,9 @@ signed-in teammate's token, as the current dashboard's do.
   (without a browser), `today.spec.ts` Today (the page's clock set to a Wednesday morning) and `today-catalyst.spec.ts`
   its Catalyst card (contacts and calls dated from now); `intel-logic.spec.ts` (without a browser) and `intel.spec.ts`
   the Intel Tracker, on the rows in `intel-fixtures.ts` (three runs: the newest with six posts and two replies, one
-  whose posts are not stored, one that did not finish; JSON columns kept as text, as they are live). Helpers in
+  whose posts are not stored, one that did not finish; JSON columns kept as text, as they are live);
+  `overview-logic.spec.ts` (without a browser) and `overview.spec.ts` the Pipeline Overview, on `overview-fixtures.ts`
+  (Approvals' rows plus runs, a brief's snapshot, results, ads, posts and the voice and context rows). Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The Storage stand-in (`/storage/v1`, bucket lead-files): signs an upload address for a signed-in session, takes the
   upload, serves public reads and removes files, and answers the browser's CORS checks; `/__storage` lists what it

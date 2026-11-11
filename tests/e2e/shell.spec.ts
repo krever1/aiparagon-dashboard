@@ -13,10 +13,11 @@ test('every page has its address, heading and tab title; a page not moved yet li
   for (const p of PAGES) {
     await page.goto('/' + p.slug)
     await expect(page).toHaveTitle(p.title + ' · AI Paragon')
-    if (p.slug === 'today') {
-      // Today is headed by a greeting and the date, as in the current dashboard
+    if (p.slug === 'today' || p.slug === 'engine-3') {
+      // Today and the Pipeline Overview are headed by a greeting and the date, as in the current dashboard
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^Good (morning|afternoon|evening), QA\.$/)
-      await expect(page.getByTestId('today-date')).toHaveText(/^Touchpoint · [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+$/)
+      if (p.slug === 'today') await expect(page.getByTestId('today-date')).toHaveText(/^Touchpoint · [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+$/)
+      else await expect(page.getByTestId('overview-date')).toHaveText(/^Pipeline · Overview · [A-Z][a-z]+day \d{1,2} [A-Z][a-z]+$/)
       continue
     }
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADINGS[p.slug] ?? p.title)
