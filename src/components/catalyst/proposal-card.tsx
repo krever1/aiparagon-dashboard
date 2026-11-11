@@ -107,6 +107,13 @@ export function ProposalCard({ lead, data, asks }: { lead: LeadView; data: Propo
   const run = data.run
   const params = useSearchParams()
   const [open, setOpenState] = useState(params.get('read') === 'proposal')
+  // a link that asks for it when the page is kept alive (Next.js) opens it too
+  const readParam = params.get('read')
+  const [seenRead, setSeenRead] = useState(readParam)
+  if (readParam !== seenRead) {
+    setSeenRead(readParam)
+    if (readParam === 'proposal') setOpenState(true)
+  }
   const [ask, setAsk] = useState(false)
   // the document stays open across a reload while the address says so (Deliverables' Open lands here too)
   const setOpen = (on: boolean) => {

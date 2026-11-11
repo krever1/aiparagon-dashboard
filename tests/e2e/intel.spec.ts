@@ -393,6 +393,24 @@ test('Run now: the names are checked first, a pasted list, then the run starts a
   await expect(d2.getByRole('alert')).toContainText('The Intel Tracker workflow is not switched on yet.')
 })
 
+test('a link back into the Intel Tracker shows what it asks for; a bare one keeps the page as it was', async ({ page }) => {
+  await signIn(page, '/intel-tracker')
+  await tabs(page).nth(1).click()
+  await expect(page).toHaveURL('/intel-tracker?tab=replies')
+  // the page stays alive (Next.js keeps the last pages); the briefs page's link asks for the Following tab
+  const nav = page.getByRole('navigation', { name: 'Main' })
+  await nav.getByRole('link', { name: 'Market Intelligence Briefs' }).click()
+  await page.getByTestId('brief-meta').getByRole('button', { name: 'Change' }).click()
+  await page.getByRole('dialog', { name: 'What industry is this run for?' }).getByRole('link', { name: /Following/ }).click()
+  await expect(page).toHaveURL('/intel-tracker?tab=follow')
+  await expect(tabs(page).nth(4)).toHaveAttribute('aria-selected', 'true')
+  // the sidebar's bare link brings it back as it was
+  await nav.getByRole('link', { name: 'Market Intelligence Briefs' }).click()
+  await nav.getByRole('link', { name: 'Intel Tracker' }).click()
+  await expect(page).toHaveURL('/intel-tracker?tab=follow')
+  await expect(tabs(page).nth(4)).toHaveAttribute('aria-selected', 'true')
+})
+
 test('a phone: nothing runs off the side', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await signIn(page, '/intel-tracker')

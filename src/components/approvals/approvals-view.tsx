@@ -49,9 +49,16 @@ export function ApprovalsView({ data }: { data: ApprovalsData }) {
   const [sel, setSel] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [replyKey, setReplyKey] = useState<string | null>(null)
-  // Today's Next up opens a reply here (?review=reply:<id>), once
+  // Today's Next up opens a reply here (?review=reply:<id>), once; a link that asks again opens it again (Next.js keeps
+  // this page alive between visits, so its state outlives the first one)
   const [reviewed, setReviewed] = useState(false)
-  const askedReview = reviewed ? null : sp.get('review')
+  const reviewParam = sp.get('review')
+  const [seenReview, setSeenReview] = useState(reviewParam)
+  if (reviewParam !== seenReview) {
+    setSeenReview(reviewParam)
+    if (reviewParam) setReviewed(false)
+  }
+  const askedReview = reviewed ? null : reviewParam
   const [whyFor, setWhyFor] = useState<Item | null>(null)
 
   // the selection only keeps rows that are still here and can be approved

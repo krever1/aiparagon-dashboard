@@ -98,6 +98,20 @@ export function IntelView({ data }: { data: IntelData }) {
   const [why, setWhy] = useState<ReplyView | null>(null)
   const [runOpen, setRunOpen] = useState(false)
 
+  // Next.js keeps the last pages alive (React Activity), so a link back here brings this page back as it was. An
+  // address that asks for something else (a tab, a theme, a five thing) wins; a bare one keeps the page as it was.
+  const sp = params.toString()
+  const [seenSp, setSeenSp] = useState(sp)
+  if (sp !== seenSp) {
+    setSeenSp(sp)
+    if (sp && '/intel-tracker?' + sp !== addressOf(data.run, data.latest, tab, f)) {
+      setTab(tabOf(params.get('tab')))
+      setFilters(filtersFrom(params))
+      setPost(null)
+      setFive(null)
+    }
+  }
+
   // the tab and the filters live in the address, without a new history entry
   useEffect(() => {
     const want = addressOf(data.run, data.latest, tab, f)

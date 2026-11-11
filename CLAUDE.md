@@ -48,9 +48,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   `pipeline/briefs-overview`, on top of 1a, PR #13). With 1b, part 1 is done. Part 2 comes as two PRs too: 2a the Ad
   Strategist (Nov 11, branch `pipeline/ads`, on top of 1b), 2b Runs & uploads, the upload, build-a-brief and ad copy
   windows, Read this ad and the brief editor (next). See Pipeline below.
-- Next: Pipeline 2b, then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover. Before 2b, a small PR so a
-  link into a page that was open a moment ago shows what the link asks for (see Gotchas: React Activity); the Ad
-  Strategist already does.
+- Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
+  a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
+  testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
+- Next: Pipeline 2b, then parts 3 to 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -716,11 +717,16 @@ signed-in teammate's token, as the current dashboard's do.
   a table that scrolls sideways (`min-w-[640px]`) widens every card in it, and the page scrolls sideways on a phone.
   Grids that hold such things get `grid-cols-[minmax(0,1fr)]` (the briefs page's, Today's lists).
 - Next.js 16 with Cache Components keeps the last three pages alive (React Activity, hidden with `display: none`): a
-  link back to one of them shows it with the state it had, and only its address changes. A view that sets itself up
-  from the address must adopt an address that asks for something else, or a link to a tab lands on the old one (the
-  Ad Strategist compares the address with what its state would write, during render; `bfcacheId` keys reset on every
-  link instead). Tests that query by test id can match a hidden page's copy: use `getByRole` or `.filter({ visible:
-  true })`.
+  link back to one of them shows it with the state it had, and only its address changes. A view that copies the
+  address into state must adopt an address that asks for something else, or a link to a tab lands on the old one. The
+  Ad Strategist and the Intel Tracker compare the address with what their state would write, during render (a bare
+  address keeps the page as it was, as the old dashboard kept tabs for the session); Approvals' `?review=`, the
+  proposal card's `?read=proposal` and New run's `?run=new` open again when the address newly asks (New run reads it
+  through `useSearchParams` in a Suspense of its own: the header is drawn before the address is known, and a static
+  page is not drawn again on a link). Views that read the address on every render (the Catalyst pages, Calls, Tasks,
+  Approvals' tab) or get it from the server (the briefs) need nothing. `bfcacheId` keys would reset on every link
+  instead. Tests that query by test id can match a hidden page's copy: use `getByRole` or `.filter({ visible: true
+  })`.
 - The clock (`useNow`) is to the minute, so something exactly two days old can read "yesterday" for up to a minute:
   test rows that a "days ago" line reads are dated a little past the whole day (`RUN1_AT` in `ads-fixtures.ts`).
 - A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls

@@ -152,6 +152,33 @@ test('quick starts, the five products, the newest runs and sign-ups', async ({ p
   await expect(page).toHaveURL(/\/lead-pipeline$/)
 })
 
+test('Next.js keeps a page alive between visits: a link that asks again opens again', async ({ page }) => {
+  await signIn(page, '/today')
+  const nav = page.getByRole('navigation', { name: 'Main' })
+  // a reply from Next up, twice
+  for (let i = 0; i < 2; i++) {
+    await card(page, 'needs-you').getByRole('list', { name: 'Next up' }).getByRole('link').nth(2).click()
+    const dlg = page.getByRole('dialog', { name: 'Reply to Northwind Advisors' })
+    await expect(dlg, 'visit ' + (i + 1)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dlg).toHaveCount(0)
+    await nav.getByRole('link', { name: 'Today' }).click()
+    await expect(page).toHaveURL('/today')
+  }
+  // New run from Quick start, twice
+  for (let i = 0; i < 2; i++) {
+    await card(page, 'quick-start').getByRole('link', { name: /Run Catalyst for a lead/ }).click()
+    const form = page.getByRole('dialog', { name: 'New Catalyst run' })
+    await expect(form, 'visit ' + (i + 1)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(form).toHaveCount(0)
+    await expect(page).toHaveURL('/lead-pipeline')
+    // the sidebar shows Catalyst's pages here: back to Today with the browser
+    await page.goBack()
+    await expect(page).toHaveURL('/today')
+  }
+})
+
 test('nothing yet: every card says so', async ({ page }) => {
   await stubSeed({ agent_outputs: [], creative_briefs: [], engagement_drafts: [], e1_leads: [], landing_pages: [], runs: [], lp_signups: [] })
   await signIn(page, '/today')
