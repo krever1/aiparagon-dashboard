@@ -150,7 +150,7 @@ function QuickStart({ controls }: { controls?: React.ReactNode }) {
   // a page that has moved here opens with its form (here), the others in the current dashboard
   const q: { icon: typeof Rocket; label: string; sub: string; slug: string; here?: string }[] = [
     { icon: Rocket, label: 'Make an ad campaign', sub: 'Marketing Generation', slug: 'marketing-generation' },
-    { icon: Repeat, label: 'Turn content into a post', sub: 'Content Transformation', slug: 'content-transformation' },
+    { icon: Repeat, label: 'Turn content into a post', sub: 'Content Transformation', slug: 'content-transformation', here: '/content-transformation?src=upload' },
     { icon: FlaskConical, label: 'Log a result', sub: 'Ad Testing', slug: 'ad-testing', here: '/ad-testing?tab=results&log=1' },
   ]
   return (
@@ -390,9 +390,9 @@ function DraftCard({ data, tz, controls }: { data: OverviewData; tz: string | un
           title="No drafts yet"
           text="Turn an article, a podcast or a new idea into a post in your voice."
           action={
-            <Out slug="content-transformation" className={btnSm + ' mt-2'}>
+            <Link href="/content-transformation?src=upload" className={btnSm + ' mt-2'}>
               Start one
-            </Out>
+            </Link>
           }
         />
       </Card>

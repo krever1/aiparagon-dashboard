@@ -141,7 +141,7 @@ test('developments, themes and topic watch, the content handoff, the posts behin
 
   const hand = page.getByTestId('sec-hand')
   await expect(hand.getByRole('link')).toHaveText(['Write a post', 'Write a newsletter', 'Start from your own material'])
-  await expect(hand.getByRole('link', { name: 'Start from your own material' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(hand.getByRole('link', { name: 'Start from your own material' })).toHaveAttribute('href', '/content-transformation?src=upload')
 
   // the posts behind the brief, in the brief's order, then by engagement
   const ev = page.getByTestId('brief-evidence')

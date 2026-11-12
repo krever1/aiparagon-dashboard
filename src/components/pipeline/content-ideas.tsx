@@ -2,21 +2,20 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, BookOpen, ChevronDown, Lightbulb, PenLine, Plus, Radar, Repeat, Trash2, Upload } from 'lucide-react'
+import { BookOpen, ChevronDown, Lightbulb, PenLine, Plus, Radar, Repeat, Trash2, Upload } from 'lucide-react'
 import { addIdea, deleteIdea } from '@/app/(app)/content-transformation/actions'
 import { ErrorNotice } from '@/components/catalyst/bits'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { labelCase, openNotes, shelfOf } from '@/lib/pipeline/content'
 import type { ContentData } from '@/lib/pipeline/content-load'
+import { ideaThesis, newDraftHref } from '@/lib/pipeline/content-new'
 import { Empty, Tag, btn, ghost, inputCls, primary } from './bits'
 import { PieceEditor, type PieceOpen } from './content-dialogs'
-import { OUT_TIP, legacy } from './content-view'
 
 // The Ideas tab (nwCtIdeasHtml as v110 left it): the newest organic brief's five things to draft from, the team's own
 // ideas (idea_notes: add, delete), and what the team has given the engine (the library's pieces, which open in the piece
-// editor, and the material of earlier requests). Draft this, Use and Add a piece start a draft on New draft, which is
-// still in the current dashboard.
+// editor, and the material of earlier requests). Draft this, Use and Add a piece start a draft on New draft, filled in.
 
 export function IdeasTab({ data, tz }: { data: ContentData; tz: string | undefined }) {
   return (
@@ -28,14 +27,20 @@ export function IdeasTab({ data, tz }: { data: ContentData; tz: string | undefin
   )
 }
 
-/** Draft this, Use and Add a piece: New draft, in the current dashboard. */
-function DraftOut({ label = 'Draft this', icon = <PenLine size={14} aria-hidden="true" />, cls = primary }: { label?: string; icon?: React.ReactNode; cls?: string }) {
+/** Draft this, Use and Add a piece (nwCtApply): the New draft tab, filled in from the address it asks for. */
+function Start({ href, label = 'Draft this', icon = <PenLine size={14} aria-hidden="true" />, cls = primary }: { href: string; label?: string; icon?: React.ReactNode; cls?: string }) {
   return (
-    <a href={legacy('content-transformation')} title={OUT_TIP} className={cls}>
+    <button
+      type="button"
+      className={cls}
+      onClick={() => {
+        window.history.replaceState(null, '', href)
+        window.scrollTo({ top: 0 })
+      }}
+    >
       {icon}
       {label}
-      <ArrowUpRight size={13} aria-hidden="true" />
-    </a>
+    </button>
   )
 }
 
@@ -63,7 +68,7 @@ function BriefIdeas({ data, tz }: { data: ContentData; tz: string | undefined })
                 <p className="text-[15px] font-semibold leading-snug text-ink">{it.text}</p>
                 {it.why ? <p className="text-[13.5px] text-ink-2">{it.why}</p> : null}
                 <div className="mt-auto pt-2">
-                  <DraftOut />
+                  <Start href={newDraftHref({ src: 'idea', idea: ideaThesis(it) })} />
                 </div>
               </article>
             ))}
@@ -190,7 +195,7 @@ function YourIdeas({ data, tz }: { data: ContentData; tz: string | undefined }) 
                 <button type="button" className={ghost} aria-label="Delete this idea" disabled={busy === n.id} onClick={() => void del(n.id)}>
                   <Trash2 size={15} aria-hidden="true" />
                 </button>
-                <DraftOut />
+                <Start href={newDraftHref({ note: n.id })} />
               </div>
             </li>
           ))}
@@ -219,7 +224,7 @@ function Pieces({ data, tz }: { data: ContentData; tz: string | undefined }) {
             {P.length ? 'What you have given the engine so far. Use one to start a new draft.' : 'None on file yet. Add articles, webinars or transcripts to repurpose later.'}
           </p>
         </div>
-        <DraftOut label="Add a piece" icon={<Upload size={14} aria-hidden="true" />} cls={btn} />
+        <Start href={newDraftHref({ src: 'upload' })} label="Add a piece" icon={<Upload size={14} aria-hidden="true" />} cls={btn} />
       </div>
       {data.errors.pieces ? <ErrorNotice>Could not load the library: {data.errors.pieces}</ErrorNotice> : null}
       {P.length ? (
@@ -246,7 +251,7 @@ function Pieces({ data, tz }: { data: ContentData; tz: string | undefined }) {
                       Edit
                     </button>
                   ) : null}
-                  <DraftOut label="Use" icon={<Repeat size={14} aria-hidden="true" />} cls={btn} />
+                  <Start href={newDraftHref({ use: (x.k === 'piece' ? 'piece:' : 'req:') + x.id })} label="Use" icon={<Repeat size={14} aria-hidden="true" />} cls={btn} />
                 </div>
               </li>
             )

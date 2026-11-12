@@ -2,14 +2,16 @@
 
 import { refresh } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
-import { callN8n } from '@/lib/n8n'
+import { N8nError, callN8n } from '@/lib/n8n'
 import { CHECKS, type PieceForm, askProblem, askText, draftOf, kindOf, noteTags, pieceRow } from '@/lib/pipeline/content'
+import { loadForm } from '@/lib/pipeline/content-load'
+import { TEXT_MAX, buildRequest, dbErr, formFrom, usesNote } from '@/lib/pipeline/content-new'
 import { createClient } from '@/lib/supabase/server'
 
-// Content Transformation's actions, as the signed-in teammate (apCfRetry, apCfMarkReady, v126Save, apCpSave,
-// apCpArchive, nwIdeaSave and nwIdeaDel in the current dashboard): a request started again, a draft marked ready or
-// sent back with what should change, a draft kept in the library and a library piece changed or archived, and an idea
-// added or deleted.
+// Content Transformation's actions, as the signed-in teammate (nwCtSend, apCfRetry, apCfMarkReady, v126Save, apCpSave,
+// apCpArchive, nwIdeaSave and nwIdeaDel in the current dashboard): a new draft asked for, a request started again, a
+// draft marked ready or sent back with what should change, a draft kept in the library and a library piece changed or
+// archived, and an idea added or deleted.
 
 const SIGNED_OUT = 'You are signed out. Sign in again.'
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -30,6 +32,128 @@ async function readDraft(supabase: Awaited<ReturnType<typeof createClient>>, id:
   return data ? draftOf(data as Record<string, unknown>) : null
 }
 
+/** Ask Content from Source to write a request; what stopped it, when it did not start. */
+async function kick(id: string, by: string): Promise<string | null> {
+  try {
+    await callN8n('e3-content-run', { request_id: id, requested_by: by }, { what: 'Content from Source', workflow: 'Engine 3 · Content from Source', timeoutMs: 30_000 })
+    return null
+  } catch (e) {
+    return msgOf(e)
+  }
+}
+
+export type Sent = { ok: true; id: string; title: string; started: boolean; error?: string } | { ok: false; error: string }
+
+/**
+ * Generate (nwCtSend with its wrappers): the request is built from the form and what the team has on file, read fresh
+ * (the personas, offers, templates, voice, the briefs' layout and what was asked to change on earlier drafts), saved
+ * for the team, then Content from Source is asked to write it. A saved template counts a use; a team idea drafted from
+ * Ideas is marked written up when the idea that goes out still has its words. A workflow that does not start leaves
+ * the request queued and says why.
+ */
+export async function sendRequest(input: unknown): Promise<Sent> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const f = formFrom(input)
+  const supabase = await createClient()
+  const now = Date.now()
+  const fd = await loadForm(supabase, now, { send: true }).catch((e: unknown) => ({ error: msgOf(e) }) as const)
+  if (!('personas' in fd)) return { ok: false, error: 'Could not read what the draft uses: ' + fd.error }
+  if (fd.error) return { ok: false, error: 'Could not read what the draft uses: ' + fd.error }
+  const b = buildRequest(f, { email: user.email, personas: fd.personas, offers: fd.offers, templates: fd.templates, voice: fd.voice, leaveOut: fd.leaveOut, asks: fd.asks, now })
+  if (!b.ok) return b
+  const ins = await supabase.from('content_requests').insert(b.row).select('id,title').maybeSingle()
+  if (ins.error) return { ok: false, error: 'Could not save the request: ' + dbErr(ins.error) }
+  if (!ins.data) return { ok: false, error: 'Could not save the request: Supabase did not return the saved request' }
+  const id = str(ins.data.id)
+  const title = str(ins.data.title) || b.title || 'Your draft'
+  // a saved template counts a use each time a request goes out with it (v97TplCount)
+  const tpl = b.templateId ? fd.templates.find((t) => t.id === b.templateId) : undefined
+  if (tpl) await supabase.from('doc_templates').update({ uses: tpl.uses + 1 }).eq('id', tpl.id)
+  // the team's idea drafted from Ideas is written up (status used, with the request it went into)
+  if (f.note && f.src === 'idea') {
+    const n = await supabase.from('idea_notes').select('id,note,status').eq('id', f.note).maybeSingle()
+    if (n.data && str(n.data.status) === 'open' && usesNote(f.thesis, str(n.data.note))) {
+      await supabase.from('idea_notes').update({ status: 'used', used_in: id, updated_at: new Date().toISOString() }).eq('id', f.note)
+    }
+  }
+  const why = await kick(id, user.email)
+  refresh()
+  return why ? { ok: true, id, title, started: false, error: why } : { ok: true, id, title, started: true }
+}
+
+/** The link reader's own words for what it cannot read (V101_LINK_MSG), pointing at the Upload tab. */
+const LINK_MSG: Readonly<Record<string, string>> = {
+  youtube_blocked:
+    'YouTube does not let automated readers pull a video’s captions. If you have the video file, add it on the Upload tab and it gets transcribed. Its captions file (.srt) or a pasted transcript work too.',
+  podcast_app: 'Podcast apps do not share the episode or its transcript. If you have the episode file, add it on the Upload tab and it gets transcribed, or paste the transcript.',
+  media_file: 'That link is an audio or video file. Download it, then add it on the Upload tab and it gets transcribed.',
+}
+export type LinkRead =
+  | { ok: true; text: string; title: string; url: string; host: string; kind: string; words: number; cut: boolean }
+  | { ok: false; error: string; title?: string }
+
+/**
+ * Read link (v101LinkRead): Engine 3 · Read a Link reads an article or a YouTube video's captions and answers with the
+ * text, its title and where it came from; what it cannot read is said in the dashboard's words.
+ */
+export async function readLink(url: string): Promise<LinkRead> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'Sign in again to read links.' }
+  const u = str(url).trim().slice(0, 2000)
+  if (!u) return { ok: false, error: 'Paste a link first.' }
+  let j: Record<string, unknown>
+  try {
+    j = await callN8n<Record<string, unknown>>('e3-read-link', { url: u }, { what: 'link reader', workflow: 'Engine 3 · Read a Link', timeoutMs: 120_000 })
+  } catch (e) {
+    const code = e instanceof N8nError ? e.code : ''
+    if (code === 'off') return { ok: false, error: 'Reading links is switched off in n8n. Turn on “Engine 3 · Read a Link” and try again.' }
+    if (code === 'unauthorized') return { ok: false, error: 'Sign in with an AI Paragon account to read links here.' }
+    if (code === 'timeout') return { ok: false, error: 'The link reader took too long to answer. Try again in a minute.' }
+    if (code === 'unreadable') return { ok: false, error: 'The link reader sent back something unreadable. Try again.' }
+    if (code === 'status') return { ok: false, error: 'The link reader answered with an error (' + (/\((\d{3})\)/.exec(msgOf(e))?.[1] ?? '500') + '). Try again in a minute.' }
+    return { ok: false, error: 'Could not reach n8n. Check your connection and try again.' }
+  }
+  if (j.ok !== true) {
+    const code = str(j.code)
+    return { ok: false, error: LINK_MSG[code] || str(j.message) || 'Could not read that link. Paste the text instead.', ...(str(j.title) ? { title: str(j.title) } : {}) }
+  }
+  const text = str(j.text).trim().slice(0, TEXT_MAX)
+  if (!text) return { ok: false, error: 'Could not read that link. Paste the text instead.' }
+  return {
+    ok: true,
+    text,
+    title: str(j.title).trim(),
+    url: str(j.url) || u,
+    host: str(j.host),
+    kind: str(j.kind),
+    words: Number(j.words) || text.split(/\s+/).length,
+    cut: j.cut === true,
+  }
+}
+
+/** Use on a piece or an earlier request's material (nwCtUsePiece): its text, title, kind of material and link. */
+export async function materialFor(use: string): Promise<{ ok: true; text: string; title: string; type: string; url: string } | { ok: false; error: string }> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const NONE = 'There is no text stored for this one. Add it again as a file or paste it.'
+  const m = /^(piece|req):(.+)$/i.exec(str(use))
+  if (!m || !UUID.test(m[2])) return { ok: false, error: NONE }
+  const supabase = await createClient()
+  let got: { title: string; type: string; url: string; text: string } | null = null
+  if (m[1].toLowerCase() === 'piece') {
+    const r = await supabase.from('content_pieces').select('id,title,body').eq('id', m[2]).maybeSingle()
+    if (r.error) return { ok: false, error: 'Could not read it: ' + r.error.message }
+    got = r.data ? { title: str(r.data.title), type: 'other', url: '', text: str(r.data.body) } : null
+  } else {
+    const r = await supabase.from('content_requests').select('id,title,source_type,source_url,source_text').eq('id', m[2]).maybeSingle()
+    if (r.error) return { ok: false, error: 'Could not read it: ' + r.error.message }
+    got = r.data ? { title: str(r.data.title), type: str(r.data.source_type) || 'article', url: str(r.data.source_url), text: str(r.data.source_text) } : null
+  }
+  if (!got || got.text.trim().length < 40) return { ok: false, error: NONE }
+  return { ok: true, text: got.text.slice(0, TEXT_MAX), title: got.title.replace(/^Sample · /, ''), type: got.type, url: got.url }
+}
+
 /**
  * Try again on a request that did not finish or was not picked up (apCfRetry): back in the queue, then Content from
  * Source is asked to write it. A workflow that does not start leaves the request queued and says why.
@@ -48,18 +172,9 @@ export async function retryRequest(id: string): Promise<{ ok: true; started: boo
   }
   const up = await supabase.from('content_requests').update({ status: 'queued', error: null, updated_at: new Date().toISOString() }).eq('id', id)
   if (up.error) return { ok: false, error: 'Could not start it again: ' + up.error.message }
-  try {
-    await callN8n(
-      'e3-content-run',
-      { request_id: id, requested_by: user.email },
-      { what: 'Content from Source', workflow: 'Engine 3 · Content from Source', timeoutMs: 30_000 },
-    )
-  } catch (e) {
-    refresh()
-    return { ok: true, started: false, error: msgOf(e) }
-  }
+  const why = await kick(id, user.email)
   refresh()
-  return { ok: true, started: true }
+  return why ? { ok: true, started: false, error: why } : { ok: true, started: true }
 }
 
 /** Mark ready (apCfMarkReady): the sign-off, with the four checks; once per draft. Nothing is published. */

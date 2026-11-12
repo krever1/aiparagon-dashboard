@@ -12,6 +12,7 @@ import {
   type Go, type MemKind, type Outcome, type Read, type Rec, type Ref, type RunState, INFO_INS, PRIORITY, SLOW_TEXT, type Run, chips, clipWord, dayShort, evidenceOf, formatName, gapsOf,
   hasMore, makeIn, memId, parts, readLine, refGo, refLabel, runState, sharpenOf, startedAgo,
 } from '@/lib/pipeline/strategy'
+import { readHref } from '@/lib/pipeline/content-new'
 import { Empty, Tag, btn, inputCls, primary } from './bits'
 import { OUT_TIP, legacy } from './briefs-parts'
 
@@ -168,10 +169,17 @@ function RecItem({ r, i, refs, onResults }: { r: Rec; i: number; refs: Record<st
           </details>
         ) : null}
       </div>
-      <a href={legacy(where)} className={btn} title={'Opens ' + PAGE_NAME[where] + ' in the current dashboard'}>
-        Create
-        <ArrowRight size={14} aria-hidden="true" />
-      </a>
+      {where === 'content-transformation' ? (
+        <Link href={readHref(r)} className={btn} data-testid="create">
+          Create
+          <ArrowRight size={14} aria-hidden="true" />
+        </Link>
+      ) : (
+        <a href={legacy(where)} className={btn} title={'Opens ' + PAGE_NAME[where] + ' in the current dashboard'} data-testid="create">
+          Create
+          <ArrowRight size={14} aria-hidden="true" />
+        </a>
+      )}
     </li>
   )
 }

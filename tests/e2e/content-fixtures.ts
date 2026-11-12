@@ -163,3 +163,36 @@ export function contentRows() {
     ],
   }
 }
+
+// What the New draft form reads besides: two personas (the default first) and an archived one, two offers (the default
+// at $497), approved and pending proof, the voice, the team's templates (one for posts, one switched off, one for
+// anything else), and the briefs' layout with two organic sections switched off. All made up.
+export const FM = { founder: u('f1'), manager: u('f2'), archived: u('f3'), audit: u('f5'), checklist: u('f6'), story: u('f8'), off: u('f9'), page: u('fa') }
+export function formRows() {
+  return {
+    client_personas: [
+      { id: FM.founder, name: 'Ops-minded founder', role: 'Founder', firm: 'Small advisory firm', size: '5 to 20', pain: 'Onboarding eats a week of every new client.', is_default: true, archived: false, created_at: ago(30 * D) },
+      { id: FM.manager, name: 'Practice manager', role: 'Practice manager', firm: 'Mid-size firm', size: '', pain: '', is_default: false, archived: false, created_at: ago(20 * D) },
+      { id: FM.archived, name: 'Old persona', role: '', firm: '', size: '', pain: '', is_default: false, archived: true, created_at: ago(40 * D) },
+    ],
+    offers: [
+      { id: FM.checklist, name: 'Intake checklist', price: 0, price_label: null, timeline: null, action: 'download', whats_included: 'The checklist we hand every new client.', is_default: false, archived: false, created_at: ago(5 * D) },
+      { id: FM.audit, name: 'Onboarding audit', price: 497, price_label: '$497', timeline: '2 weeks', action: 'call', whats_included: 'A review of your intake and a one-page plan.', is_default: true, archived: false, created_at: ago(10 * D) },
+    ],
+    client_proof: [
+      { id: 'pf-1', name: 'Five days saved on onboarding', claim: 'Clients start five days sooner.', status: 'approved', source: 'Our client records, Q3', expires_on: null, archived: false, created_at: ago(9 * D) },
+      { id: 'pf-2', name: 'A claim still in review', claim: 'Twice the replies.', status: 'pending', source: '', expires_on: null, archived: false, created_at: ago(8 * D) },
+    ],
+    brand_voice: [{ id: 'bv-1', created_at: ago(4 * D), tone: ['plain', 'direct'] }],
+    doc_templates: [
+      {
+        id: FM.story, name: 'Client story', format: 'thought_leadership', description: 'A client story in three beats.', active: true, uses: 2, created_at: ago(12 * D),
+        sections: [{ title: 'Where they started', guidance: 'The week they lost.' }, { title: 'What changed', guidance: 'The intake we ran.' }, { title: 'Where they are now', guidance: 'Only approved numbers.' }],
+        rules: 'Name the client only with their permission.', example_text: '',
+      },
+      { id: FM.off, name: 'An old shape', format: 'thought_leadership', description: '', active: false, uses: 0, created_at: ago(30 * D), sections: [], rules: '', example_text: '' },
+      { id: FM.page, name: 'One-pager', format: 'other', description: 'A one-page summary.', active: true, uses: 0, created_at: ago(6 * D), sections: [{ title: 'The problem', guidance: '' }, { title: 'The fix', guidance: '' }], rules: '', example_text: '' },
+    ],
+    ai_settings: [{ key: 'brief_structure', value: { org: { off: ['short', 'dev', 'hand'] } } }],
+  }
+}

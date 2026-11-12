@@ -54,13 +54,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   result and the sync line (Nov 12, branch `pipeline/ad-testing`, on top of 3a, PR #19), 3c Ad Testing's Strategy read
   (New read, Remember) and Import a CSV (Nov 12, branch `pipeline/strategy-read`, on top of 3b). With 3c, part 3 is
   done. Part 4 starts with 4a, Content Transformation's Drafts and Ideas (Nov 12, branch `pipeline/content-drafts`, on
-  top of 3c); New draft follows (4b the form and its run, 4c reading files, links and recordings, 4d the briefs'
-  findings and the plan). See Pipeline below.
+  top of 3c, PR #21); New draft follows: 4b the form and its run, with Paste, Read link and New idea (Nov 12, branch
+  `pipeline/content-new`, on top of 4a), 4c files, recordings and Fathom calls (and Fill it in for me), 4d the briefs'
+  findings and the plan. See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Content Transformation's New draft (Pipeline 4b to 4d), then part 5 (Marketing Generation), then Atlas,
-  Canvas, Settings. Then the cutover.
+- Next: Content Transformation's files, recordings and Fathom calls (Pipeline 4c) and the briefs' findings and the plan
+  (4d), then part 5 (Marketing Generation), then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -91,7 +92,9 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Ad Testing: Results, Leaderboard, Log a result, the Meta and LinkedIn sync line | here (Pipeline part 3b, not released) |
 | Pipeline | Ad Testing: the Strategy read (New read, Remember) and Import a CSV | here (Pipeline part 3c, not released) |
 | Pipeline | Content Transformation: Drafts (the review, Mark ready, What should change?, the library) and Ideas | here (Pipeline part 4a, not released) |
-| Pipeline | Content Transformation's New draft, Marketing Generation | current dashboard |
+| Pipeline | Content Transformation's New draft: the kinds, Paste, Read link, New idea, the details, the side, Generate | here (Pipeline part 4b, not released) |
+| Pipeline | Content Transformation's New draft: Upload, Fathom call, Fill it in for me, the briefs' findings, the plan | current dashboard |
+| Pipeline | Marketing Generation | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -370,8 +373,9 @@ signed-in teammate's token, as the current dashboard's do.
     a chip per kind (to that tab of Approvals), Next up (the first three; a reply opens in its window on Approvals,
     the rest where Approvals sends them), Start reviewing. Nothing waiting: You are all caught up, Open Approvals.
   - Quick start: Run Catalyst for a lead (`/lead-pipeline?run=new`, which opens New run once; `NewRunButton` reads
-    the address after hydrating) and Make an ad campaign, Turn content into a post, Put a landing page live, which
-    open their pages in the current dashboard (the old page opened the form itself).
+    the address after hydrating), Make an ad campaign (Marketing Generation, in the current dashboard), Turn content
+    into a post (New draft here on its Upload tab, `/content-transformation?src=upload`, since 4b) and Put a landing
+    page live (the picker on Landing pages).
   - Your workspace: the five products with their pages and a line each: things waiting (with this browser's skips),
     leads and how many wait on a next stage (the leads Approvals lists, `waitsOnNext`), Canvas's and Atlas's fixed
     lines, briefs to review (all undecided, skipped or not, as before) and live landing pages.
@@ -476,8 +480,8 @@ signed-in teammate's token, as the current dashboard's do.
   - The hello line ("Pipeline · Overview · <day>", the greeting, what needs you and when the Intel Tracker last ran),
     Take the tour (Today's) and Customize.
   - The cards, in this order until someone moves them: Needs you and Recent runs (Today's, now shared in
-    `src/components/today/cards.tsx`); Quick start (Make an ad campaign, Turn content into a post, Log a result, in the
-    current dashboard); Agents · open any section (six tiles, each with its number, a line, when it last ran and a dot:
+    `src/components/today/cards.tsx`); Quick start (Make an ad campaign in the current dashboard, Turn content into a
+    post on New draft here, Log a result on Ad Testing here); Agents · open any section (six tiles, each with its number, a line, when it last ran and a dot:
     bad when the last run failed, warn when the tracker or the Ad Strategist last ran over 9 days ago or something
     waits; How it fits together opens six steps); This week's lead (the newest organic brief's five notes, from its
     snapshot, else its TL;DR; Write a post, Open the brief); Latest campaign (the newest book a call or low-ticket
@@ -795,7 +799,9 @@ signed-in teammate's token, as the current dashboard's do.
   - The read on screen (the newest, or one picked from Earlier reads, kept by its id): its day, then Daily read or who
     asked; the headline, what was asked and the review flags; Why, Fits your offer and Gaps (the vision fit's gaps, else
     what is missing); Make next, each with its priority and kind, Why (the reason, the angle and its sources) and
-    Create, which opens Marketing Generation (a campaign or an ad) or Content Transformation in the current dashboard;
+    Create, which opens Marketing Generation (a campaign or an ad) in the current dashboard, or New draft here filled in
+    from the read (since 4b, `readHref`: the kind, then from the material the title and the angle as the takeaway, or
+    an idea of the title and the angle, and the line "Filled in from the strategy read…");
     and More from this read (Double down and Change or stop, each line with Remember; the content mix; what is missing
     when the gaps were given). The read's [CODE]s are chips naming what it read (Organic brief, Ad brief, Campaign
     6 Nov, Draft, Library, Idea, Ad result, Post result; the whole name on hover); a code the read does not name is
@@ -840,9 +846,8 @@ signed-in teammate's token, as the current dashboard's do.
   only hid the buttons); the Overview's Log a result opens Results here with the form. In 3c: the daily read says Daily
   read (the old page said "asked by Daily read": v113 changed a function the page no longer drew); a read started is
   kept for the team, one runs at a time for the team, and a read that failed or is taking longer says so to every
-  teammate (the old page kept a read started in one tab); Create opens Marketing Generation or Content Transformation's
-  New draft without filling it in, and a campaign opens its page, not the item (those are still in the current
-  dashboard); the import never matches or changes a synced result (the old one could, and the
+  teammate (the old page kept a read started in one tab); Create opens Marketing Generation without filling it in, and
+  a campaign opens its page, not the item (those are still in the current dashboard; New draft is filled in since 4b); the import never matches or changes a synced result (the old one could, and the
   next sync then counted that ad twice), so a row for such an ad comes in as a new result; the import's preview gives
   the day of a matched result for a results file too; a stage written with a curly apostrophe ("Won’t buy") is a lead,
   not a client won; the newest read's day in the header has the year when it is not this one.
@@ -859,7 +864,7 @@ signed-in teammate's token, as the current dashboard's do.
   - The head: Writing N drafts (requests running for under 12 minutes) or Ready, and N drafts to review (not marked
     ready); the three caps; New draft. The tabs: New draft at a bare address, Drafts (`?tab=drafts`, with
     `?draft=<id>`), Ideas (`?tab=ideas`); the old words library, requests, voice and how are carried over.
-  - New draft is a card that links to the current dashboard until 4b moves the form here.
+  - New draft: see New draft below (4b).
   - Drafts: the requests still being written or that did not finish (8 at most: Queued, Reading, Writing, Not picked up
     after 4 minutes, Did not finish with the request's error), with Try again (`retryRequest`: back to queued, then
     Engine 3 · Content from Source's `e3-content-run` with request_id and requested_by; a workflow that does not start
@@ -880,7 +885,7 @@ signed-in teammate's token, as the current dashboard's do.
   - Ideas: the newest organic brief's five things (its snapshot, else its TL;DR), the team's open ideas with Add an idea
     (`addIdea`) and delete (asks first, `deleteIdea`), and what the team has given the engine (the library's pieces,
     which open in the piece editor, and earlier requests' material, once by title, six then all). Draft this, Use and
-    Add a piece open New draft in the current dashboard until 4b.
+    Add a piece open New draft here, filled in (since 4b).
 - Changed on purpose on Content Transformation (reported to Kser): New draft, Draft this, Use and Add a piece open the
   current dashboard (the form moves here in 4b); a newer format (a report, a deck) is named as such in the list, the
   review and the download (the old list called a report a Newsletter); a draft made from a report, a presentation, a
@@ -894,6 +899,57 @@ signed-in teammate's token, as the current dashboard's do.
   the briefs goes to Marketing Generation (the old Approvals sent both to Content Transformation, where a draft made
   from the briefs is not listed); Write a post on the Intel Tracker and the Overview opens Marketing Generation, as the
   current dashboard does (the earlier ports sent it to Content Transformation).
+- New draft (part 4b, `src/lib/pipeline/content-new.ts` pure rules, `loadForm` in `content-load.ts`,
+  `src/components/pipeline/content-new.tsx` and `content-new-preview.tsx`, `sendRequest`, `readLink` and `materialFor` in
+  `src/app/(app)/content-transformation/actions.ts`; nwCtFormHtml, nwCtSide and nwCtSend as v105, v111, v113 and v126
+  left them):
+  - What it reads besides the page's own (`loadForm`, never v104SyncDerived, which rewrote house rules as it read): the
+    personas (oldest first) and offers (newest first) not archived, the proof, the newest voice, the team's templates
+    (doc_templates, active), the briefs' layout (ai_settings brief_structure), the changes asked on drafts in the last
+    120 days with each draft's kind, and the briefs a draft can lead with (the 10 newest organic, the 12 newest ads
+    briefs) with the decisions on them, and the five things of the organic one it leads with.
+  - 1 What are you making?: the tiles in five groups (14 kinds; `KINDS`, `GROUPS`) and the categories (`CATS`: they set
+    the kind of post for LinkedIn post and Newsletter, the ad type for Paid ad; Email has none). 2 Your material: the
+    tabs Upload and Fathom call (still in the current dashboard: a card with a link there and Paste the text instead),
+    Paste (Source text with its word count, Read link, Try it with a sample article) and New idea; What is this
+    material?; the line for a file's or a call's text. 3 Details: Who is it for? (the persona chips, Anyone who follows
+    us, + New persona in the company profile), the kind's questions and Topics (`QS`), Core takeaway or Proof or
+    example, Must use (chips; the first three approved proof items and the default offer suggested), Anything else?,
+    More options (Voice and its hint, Structure: the usual shape, the simple shapes, Your templates; What are we
+    offering?; What should they do?; Source title). The steps number themselves; 4d puts the briefs' findings second.
+  - The side: You’ll get, It will use (the brief it leads with: the newest approved, else the newest, Approve while it
+    waits, Open once decided, its age past 21 days; the material; the voice; what was asked on earlier drafts), Generate
+    (300 characters of material or 60 of an idea), the line under it, See everything it will use (`previewOf`, from the
+    same pieces as the request), and the draft on its way (Writing, Draft ready with Review it, did not finish with Try
+    again).
+  - Generate (`sendRequest`): the form is checked on the server (`formFrom`), what it uses is read fresh, and
+    `buildRequest` writes the content_requests row as the current dashboard's wrappers wrote it (the setup in their
+    order: type, persona, offer, call to action, angle, source, must use, feedback, questions, notes, format label,
+    category; the template: the kind's shape or the one picked, its rules, who it is for, the offer, what it must use,
+    the answers and notes in the description, what the briefs' layout leaves out first). A saved template counts a use;
+    a team idea drafted from Ideas is marked used (with the request) when the idea that goes out still has its opening
+    words; then Engine 3 · Content from Source is asked (`e3-content-run`). After a send the material, the idea, what it
+    must use, the notes and the typed answers go; the kind, the choices and More options stay.
+  - Read link (`readLink`): Engine 3 · Read a Link (`e3-read-link`), with the current dashboard's messages.
+  - Filled in from the address, once, then the address goes back to bare (`prefillOf`, `newDraftHref`): `kind`, `src`,
+    `idea`, `note` (a team idea), `use` (`piece:<id>` or `req:<id>`, read by `materialFor`), `title`, `take`, and
+    `from=read` (the strategy read's line). Ideas' buttons write it with replaceState; Today, the Overview, the briefs
+    page's Start from your own material and the strategy read's Create link to it.
+  - The form stays mounted (hidden) on Drafts and Ideas, so what was typed is kept while another tab is looked at.
+- Changed on purpose on New draft (reported to Kser): Upload and Fathom call say they are still in the current
+  dashboard (4c moves them) and offer Paste instead; Fill it in for me is not here yet (4c); a carousel or video ad keeps
+  the team's answers and notes after its own shape (the old page put the shape over them, so they were lost); after a
+  send the typed answers (topics, who gets it, the event's date) empty with the notes; a team idea is marked written up
+  only when the idea that goes out still has its words (the old page marked it on the next idea sent, whatever it
+  said); pasted text is kept to 120,000 characters, as text from a file or a call always was; a brief undone or edited
+  reads Needs review with Approve (the old row said Changes asked), as Approvals counts it; Paid ad's What should they
+  do? no longer follows the kind picked before it; a template for anything else can be picked under Something else
+  (it could never be picked); See everything it will use is built from the request (the old one ignored the answers,
+  notes, must use and feedback, and showed the organic brief and the last kind of post for a paid ad); Read link's
+  messages say "add it on the Upload tab" (the old ones said "drop it above"); the toast after a workflow that did not
+  start says Try again from Drafts (the old one named Your requests); Today's and the Overview's Turn content into a
+  post, the briefs page's Start from your own material, Ideas' Draft this, Use and Add a piece, and the strategy read's
+  Create open New draft here.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -962,7 +1018,12 @@ signed-in teammate's token, as the current dashboard's do.
   that failed, one queued and not picked up, one made from the briefs, a newsletter from a new idea, a deck from a report
   and an ad; their drafts, the newest kept as text; one marked ready and two changes asked; a piece kept from the ad
   draft, one of the team's own and one archived; two open ideas and a used one; the newest organic brief and its
-  snapshot; every id a uuid). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  snapshot; every id a uuid); `content-new-logic.spec.ts` (without a browser) and `content-new.spec.ts` New draft, on
+  the same rows and `formRows()` (two personas and an archived one, two offers with the default at $497, approved and
+  pending proof, the voice, three templates (one for posts, one switched off, one for anything else) and the briefs'
+  layout with two organic parts switched off). A test that opens an address filling the form in signs in first, then
+  goes there (`openWith`): the form puts the address back to bare at once, so `signIn` cannot wait for it. Helpers in
+  `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
   `winner_creatives` itself (the briefs suite does), and keeps each ad link once (`ad_records.ad_library_url`, 23505,
   as the project's unique index does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and answers the
@@ -979,7 +1040,9 @@ signed-in teammate's token, as the current dashboard's do.
   under it.
 - The data stand-in gives new content_pieces, idea_notes and content_requests rows a uuid, as the project does (the
   Content Transformation actions check ids are uuids), with their column defaults, and keeps content_requests' checks
-  (format, start_mode, status). The n8n stand-in answers Engine 3 · Content from Source (`e3-content-run`) as queued.
+  (format, start_mode, status). The n8n stand-in answers Engine 3 · Content from Source (`e3-content-run`) as queued,
+  and Engine 3 · Read a Link (`e3-read-link`) with a made-up article for any link but a YouTube one, which it turns
+  away as the workflow does (youtube_blocked).
 - The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
   session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
   takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
@@ -1000,6 +1063,9 @@ signed-in teammate's token, as the current dashboard's do.
   mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
+- Content Transformation's New draft stays mounted (hidden) while Drafts or Ideas is open, and it has a tablist of its
+  own (Your material): tests find the page's tabs inside `getByRole('tablist', { name: 'Content Transformation' })`,
+  and a container's `toContainText` reads the hidden form's text too.
 - Content Transformation and Marketing Generation share content_requests and the content drafts: a draft made from the
   briefs (source_type brief, on the draft or its request) is Marketing Generation's. Anything that lists drafts or links
   to one picks by origin (`draftOrigin` in `src/lib/pipeline/content.ts`, `approvalItems` in Approvals).

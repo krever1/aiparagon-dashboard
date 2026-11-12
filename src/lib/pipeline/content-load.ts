@@ -2,8 +2,11 @@ import 'server-only'
 import type { SnapItem } from '@/lib/touchpoint/approvals'
 import { createClient } from '@/lib/supabase/server'
 import {
-  type Draft, type Note, type Piece, type Req, type Review, briefIdeas, draftOf, draftOrigin, noteOf, pieceOf, reqOf, reviewOf,
+  type Draft, type Note, type Piece, type Req, type Review, briefIdeas, draftOf, draftOrigin, kindOf, noteOf, pieceOf, reqOf, reviewOf,
 } from './content'
+import {
+  type Ask, type BriefPick, type Offer, type Persona, type ProofItem, type Tpl, type Voice, ASK_DAYS, leaveOutOf, offerOf, personaOf, pickBrief, proofOf, tplOf,
+} from './content-new'
 
 // The Content Transformation page's data, read as the signed-in teammate on every visit (apCfLoad, e9IdeasLoad,
 // nwPiecesLoad and apCpLoad in the current dashboard): the 60 newest requests and drafts (the page lists those made from
@@ -29,11 +32,134 @@ export type ContentData = {
   /** when each brief a draft was packaged with was written, by its run */
   briefDays: { org: Record<string, string>; ads: Record<string, string> }
   errors: { drafts: string | null; ideas: string | null; pieces: string | null; brief: string | null }
+  /** what the New draft form reads */
+  form: FormData
   now: number
+}
+
+/**
+ * What the New draft form reads (v104Load, apVoiceLoad, apTplLoad and apCfLoad's briefs in the current dashboard; never
+ * v104SyncDerived, which rewrote house rules as it read): the personas, offers and proof, the newest voice, the team's
+ * templates, the parts of the organic brief the team's layout leaves out, what was asked to change on drafts in the last
+ * 120 days (with each draft's kind), and the briefs a draft can lead with and the decisions on them. A send reads the
+ * same, less the proof and the briefs.
+ */
+export type FormData = {
+  personas: Persona[]
+  offers: Offer[]
+  proof: ProofItem[]
+  voice: Voice | null
+  templates: Tpl[]
+  leaveOut: string[]
+  asks: Ask[]
+  org: BriefPick
+  ads: BriefPick
+  /** the five things of the organic brief a draft leads with */
+  orgItems: SnapItem[]
+  error: string | null
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+type Supa = Awaited<ReturnType<typeof createClient>>
+
+export async function loadForm(supabase: Supa, now: number, opts: { send?: boolean } = {}): Promise<FormData> {
+  const send = !!opts.send
+  const none = Promise.resolve({ data: [] as Row[], error: null })
+  const since = new Date(now - ASK_DAYS * 864e5).toISOString()
+  const [pe, of, pr, vo, tp, st, ak, ib, cb] = await Promise.all([
+    supabase.from('client_personas').select('id,name,role,firm,size,pain,is_default,archived').order('created_at', { ascending: true }).limit(100),
+    supabase.from('offers').select('id,name,price,price_label,timeline,action,whats_included,is_default,archived').order('created_at', { ascending: false }).limit(100),
+    send ? none : supabase.from('client_proof').select('name,status,source,expires_on,archived').order('created_at', { ascending: true }).limit(200),
+    supabase.from('brand_voice').select('created_at,tone').order('created_at', { ascending: false }).limit(1),
+    supabase.from('doc_templates').select('id,name,format,description,sections,rules,example_text,active,uses').order('created_at', { ascending: true }).limit(200),
+    supabase.from('ai_settings').select('key,value').eq('key', 'brief_structure'),
+    supabase
+      .from('agent_feedback')
+      .select('target_id,feedback,created_at')
+      .eq('target_type', 'draft_review')
+      .eq('action', 'changes')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(300),
+    send ? none : supabase.from('agent_outputs').select('run_id,created_at').eq('agent', 'intel_tracker').eq('output_type', 'intel_brief').order('created_at', { ascending: false }).limit(10),
+    send ? none : supabase.from('creative_briefs').select('run_id,created_at').order('created_at', { ascending: false }).limit(12),
+  ])
+  // one row per run, newest first
+  const perRun = (r: { data: unknown }) => {
+    const seen = new Set<string>()
+    return rowsOf(r).filter((x) => {
+      const k = str(x.run_id)
+      if (!k || seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+  }
+  const orgRows = perRun(ib)
+  const adRows = perRun(cb)
+  const runs = [...orgRows, ...adRows].map((r) => str(r.run_id))
+  const targets = [...new Set(rowsOf(ak).map((r) => str(r.target_id)))].filter((x) => UUID.test(x))
+  const [dk, dec] = await Promise.all([
+    targets.length ? supabase.from('agent_outputs').select('id,data').in('id', targets).limit(300) : none,
+    runs.length
+      ? supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'brief_approval').in('target_id', runs).order('created_at', { ascending: false }).limit(300)
+      : none,
+  ])
+  // each draft's kind, as the asks on it are sorted (its own kind first)
+  const kinds: Record<string, string> = {}
+  for (const r of rowsOf(dk)) kinds[str(r.id)] = kindOf(draftOf(r))
+  const decided: Record<string, string> = {}
+  for (const r of rowsOf(dec)) if (!(str(r.target_id) in decided)) decided[str(r.target_id)] = str(r.action)
+  const brief = (rows: Row[]) => pickBrief(rows.map((r) => ({ runId: str(r.run_id), createdAt: str(r.created_at), decision: decided[str(r.run_id)] ?? '' })))
+  const org = brief(orgRows)
+  const ads = brief(adRows)
+
+  // the five things of the organic brief a draft leads with, from its snapshot, else its TL;DR
+  let orgItems: SnapItem[] = []
+  if (!send && org.use) {
+    const [md, sn] = await Promise.all([
+      supabase.from('agent_outputs').select('content_md').eq('agent', 'intel_tracker').eq('output_type', 'intel_brief').eq('run_id', org.use.runId).order('created_at', { ascending: false }).limit(1),
+      supabase.from('agent_outputs').select('snapshot').eq('run_id', org.use.runId).not('snapshot', 'is', null).order('created_at', { ascending: false }).limit(5),
+    ])
+    const snap = rowsOf(sn).map((r) => r.snapshot)
+    orgItems = briefIdeas(str(rowsOf(md)[0]?.content_md), snap.find((s) => briefIdeas('', s).length) ?? null)
+  }
+  const live = (r: Row) => r.archived !== true && r.archived !== 'true'
+  const v = rowsOf(vo)[0]
+  const msg = (...es: ({ message: string } | null)[]) => es.filter(Boolean).map((e) => e!.message)[0] ?? null
+  return {
+    personas: rowsOf(pe).filter(live).map(personaOf),
+    offers: rowsOf(of).filter(live).map(offerOf),
+    proof: rowsOf(pr).filter(live).map(proofOf),
+    voice: v ? { createdAt: str(v.created_at), tone: Array.isArray(v.tone) ? (v.tone as unknown[]).map(str).filter(Boolean) : [] } : null,
+    templates: rowsOf(tp)
+      .filter((r) => r.active !== false && r.active !== 'false')
+      .map(tplOf),
+    leaveOut: leaveOutOf(rowsOf(st)[0]?.value),
+    asks: rowsOf(ak)
+      .map((r) => ({ feedback: str(r.feedback), createdAt: str(r.created_at), kind: kinds[str(r.target_id)] ?? '' }))
+      .filter((a) => a.feedback.trim()),
+    org,
+    ads,
+    orgItems,
+    error: msg(pe.error, of.error, tp.error, vo.error, ak.error, st.error, dec.error),
+  }
 }
 
 export async function loadContent(now = Date.now()): Promise<ContentData> {
   const supabase = await createClient()
+  const formP = loadForm(supabase, now).catch((e: unknown): FormData => ({
+    personas: [],
+    offers: [],
+    proof: [],
+    voice: null,
+    templates: [],
+    leaveOut: [],
+    asks: [],
+    org: { use: null, newest: null },
+    ads: { use: null, newest: null },
+    orgItems: [],
+    error: e instanceof Error ? e.message : String(e),
+  }))
   const [rq, df, pc, nt, ib] = await Promise.all([
     supabase
       .from('content_requests')
@@ -103,6 +229,7 @@ export async function loadContent(now = Date.now()): Promise<ContentData> {
     notes: rowsOf(nt).map(noteOf),
     brief: i0 ? { runId: str(i0.run_id), createdAt: str(i0.created_at), items } : null,
     briefDays: { org: days(ob), ads: days(ab) },
+    form: await formP,
     errors: {
       drafts: msg(df.error, rq.error, rv.error),
       ideas: msg(nt.error),

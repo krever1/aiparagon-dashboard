@@ -147,7 +147,7 @@ function QuickStart() {
   const q: { icon: typeof Users; label: string; sub: string; href: string; outside?: boolean }[] = [
     { icon: Users, label: 'Run Catalyst for a lead', sub: 'Catalyst · Lead pipeline', href: '/lead-pipeline?run=new' },
     { icon: Rocket, label: 'Make an ad campaign', sub: 'Pipeline · Marketing Generation', href: out('marketing-generation'), outside: true },
-    { icon: Repeat, label: 'Turn content into a post', sub: 'Pipeline · Content Transformation', href: out('content-transformation'), outside: true },
+    { icon: Repeat, label: 'Turn content into a post', sub: 'Pipeline · Content Transformation', href: '/content-transformation?src=upload' },
     { icon: LayoutTemplate, label: 'Put a landing page live', sub: 'Pipeline · Landing pages', href: '/landing-pages?new=1' },
   ]
   return (

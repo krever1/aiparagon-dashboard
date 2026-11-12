@@ -114,7 +114,8 @@ test('quick starts, the five products, the newest runs and sign-ups', async ({ p
   ])
   await expect(quick.first()).toHaveAttribute('href', '/lead-pipeline?run=new')
   await expect(quick.nth(1)).toHaveAttribute('href', LEGACY + '/marketing-generation')
-  await expect(quick.nth(2)).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(quick.nth(2)).toHaveAttribute('href', '/content-transformation?src=upload')
+  await expect(quick.nth(2)).not.toHaveAttribute('title', OUT)
   await expect(quick.nth(3)).toHaveAttribute('href', '/landing-pages?new=1')
   await expect(quick.nth(3)).not.toHaveAttribute('title', OUT)
 

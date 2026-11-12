@@ -22,6 +22,13 @@ import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
 import { fixtures, docs as docFixtures, fathomCalls, fathomOlderCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
 
+/** The text Engine 3 · Read a Link answers with (made up). */
+const READ_TEXT =
+  'Most new tools do not fail on the first day. They fail in week three, when the launch buzz fades and the tool meets the real work.\n\n' +
+  'In the first two weeks someone watches every output and fixes the odd case by hand. Then the launch team goes back to its day job, ' +
+  'nobody owns the workflow, and people quietly route around the tool.\n\n' +
+  'The teams that get past week three name an owner, write down what happens when the tool is unsure, and pick the number that says it works.'
+
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
 const PASSWORD = 'correct horse battery'
@@ -340,6 +347,14 @@ http
         if (name === 'e3-ad-industries') return send(res, 200, { ok: true, industries: {} })
         // Engine 3 · Content from Source answers at once (Respond Started) and writes the draft later
         if (name === 'e3-content-run') return send(res, 200, { ok: true, queued: true })
+        // Engine 3 · Read a Link: a page's text, and YouTube turned away as it is (a test gives other answers with stubHook)
+        if (name === 'e3-read-link') {
+          const u = String(body.url || '').trim()
+          if (/youtu\.?be/.test(u)) return send(res, 200, { ok: false, code: 'youtube_blocked', message: 'YouTube did not share the captions.', title: 'A video' })
+          const url = /^https?:\/\//.test(u) ? u : 'https://' + u
+          const text = READ_TEXT
+          return send(res, 200, { ok: true, kind: 'article', url, host: url.replace(/^https?:\/\//, '').split('/')[0], title: 'The week-three slump', text, words: text.split(/\s+/).length, cut: false })
+        }
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })
         }

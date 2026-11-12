@@ -41,8 +41,11 @@ test('the newest read: what it says, its sources as chips, where each opens, and
   await expect(recs).toHaveCount(2)
   await expect(recs.nth(0)).toContainText('Post the audit checklistNowThought leadership')
   await expect(recs.nth(1)).toContainText('Run a second audit adNextPaid ad')
-  await expect(recs.nth(0).getByRole('link', { name: 'Create' })).toHaveAttribute('href', LEGACY + '/content-transformation')
-  await expect(recs.nth(0).getByRole('link', { name: 'Create' })).toHaveAttribute('title', 'Opens Content Transformation in the current dashboard')
+  // from your material: New draft here, filled in from the read (v98Make)
+  await expect(recs.nth(0).getByRole('link', { name: 'Create' })).toHaveAttribute(
+    'href',
+    '/content-transformation?kind=thought_leadership&src=upload&title=Post+the+audit+checklist&take=Show+the+three+steps.&from=read',
+  )
   await expect(recs.nth(1).getByRole('link', { name: 'Create' })).toHaveAttribute('href', LEGACY + '/marketing-generation')
   await recs.nth(0).getByText('Why', { exact: true }).click()
   await expect(recs.nth(0)).toContainText('It got the most saves Post result.')

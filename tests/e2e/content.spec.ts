@@ -383,8 +383,8 @@ test('ideas: the brief’s five things, your ideas added and deleted, and the li
   await expect(cards).toHaveCount(3)
   await expect(cards.nth(0)).toContainText('PricingFee talk is upAdvisors post about fees more than last month')
   await expect(cards.nth(1)).toContainText('Social proof')
-  await expect(cards.nth(0).getByRole('link', { name: 'Draft this' })).toHaveAttribute('href', LEGACY + '/content-transformation')
-  await expect(cards.nth(0).getByRole('link', { name: 'Draft this' })).toHaveAttribute('title', 'Opens in the current dashboard')
+  // Draft this starts a draft on New draft, here (content-new.spec.ts follows it through)
+  await expect(cards.nth(0).getByRole('button', { name: 'Draft this' })).toBeVisible()
 
   // your ideas: the open ones, newest first; a used one is not shown
   const yours = page.getByTestId('ideas-yours')
@@ -426,7 +426,7 @@ test('ideas: the brief’s five things, your ideas added and deleted, and the li
   // the library: newest first, once by title, six then all
   const pieces = page.getByTestId('ideas-pieces')
   await expect(pieces).toContainText('What you have given the engine so far. Use one to start a new draft.')
-  await expect(pieces.getByRole('link', { name: 'Add a piece' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(pieces.getByRole('button', { name: 'Add a piece' })).toBeVisible()
   const rows = pieces.getByTestId('piece-row')
   await expect(rows).toHaveCount(6)
   await pieces.getByRole('button', { name: 'Show all 7' }).click()
@@ -444,7 +444,7 @@ test('ideas: the brief’s five things, your ideas added and deleted, and the li
   await expect(rows.nth(5)).toContainText('Paid ad · Ready · updated')
   await expect(rows.nth(5)).toContainText('#onboarding')
   await expect(rows.nth(0).getByRole('button', { name: 'Edit' })).toHaveCount(0)
-  await expect(rows.nth(0).getByRole('link', { name: 'Use' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(rows.nth(0).getByRole('button', { name: 'Use' })).toBeVisible()
   await rows.nth(6).getByRole('button', { name: 'Edit' }).click()
   const ed = page.getByRole('dialog', { name: 'Edit saved piece' })
   await expect(ed).toContainText('Saved pieces live in Content Transformation, under Ideas.')
@@ -456,14 +456,15 @@ test('ideas: the brief’s five things, your ideas added and deleted, and the li
   await expect(rows.filter({ hasText: 'The three-step intake, v2' })).toHaveCount(1)
 })
 
-test('nothing yet: no drafts, no brief, no ideas; New draft is still in the current dashboard', async ({ page }) => {
+test('nothing yet: no drafts, no brief, no ideas; New draft leans on the material and the voice only', async ({ page }) => {
   await stubSeed({ content_requests: [], agent_outputs: [], idea_notes: [], content_pieces: [], agent_feedback: [], creative_briefs: [] })
   await signIn(page, '/content-transformation')
   // a bare address is New draft, and the head's New draft button is not needed there
-  await expect(page.getByRole('tab')).toHaveText(['New draft', 'Drafts 0', 'Ideas 0'])
+  await expect(page.getByRole('tablist', { name: 'Content Transformation' }).getByRole('tab')).toHaveText(['New draft', 'Drafts 0', 'Ideas 0'])
   await expect(page.getByRole('tab', { name: 'New draft' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByTestId('content-new')).toContainText('New draft is still in the current dashboard')
-  await expect(page.getByTestId('content-new').getByRole('link', { name: 'Start a new draft' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  const uses = page.getByTestId('new-side').getByTestId('use-row')
+  await expect(uses).toHaveCount(3)
+  await expect(uses.nth(0)).toContainText('No organic brief yetIt uses your material and voice only')
   await expect(page.getByTestId('content-status')).toContainText('Ready')
   await expect(page.getByTestId('content-status')).toContainText('No drafts waiting')
   await expect(page.getByTestId('content-page').getByRole('button', { name: 'New draft' })).toHaveCount(0)

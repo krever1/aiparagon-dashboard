@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowUpRight, Inbox, PenLine, Plus, Upload } from 'lucide-react'
+import { Inbox, PenLine, Plus, Upload } from 'lucide-react'
 import { Tabs } from '@/components/catalyst/bits'
 import { useNow } from '@/components/ui/clock'
 import { useHydrated } from '@/components/ui/local-date'
@@ -14,12 +14,14 @@ import type { ContentData } from '@/lib/pipeline/content-load'
 import { primary } from './bits'
 import { DraftsTab } from './content-drafts'
 import { IdeasTab } from './content-ideas'
+import { NewDraft } from './content-new'
 
 // The Content Transformation page (NW_PAGES['e3.create'] as v110 to v127 left it): the head says what is being
-// written and what waits for a review, then three tabs. New draft is still in the current dashboard (it moves next);
-// Drafts lists the drafts made from the team's own material, each opening its review under the list; Ideas holds the
-// newest organic brief's five things, the team's own ideas and the library. The tab is the address's (?tab=drafts,
-// ?tab=ideas; New draft at a bare address) and so is the draft on screen (?draft=<id>).
+// written and what waits for a review, then three tabs. New draft is the form that asks Content from Source for a
+// draft (it stays as it was while another tab is looked at); Drafts lists the drafts made from the team's own material,
+// each opening its review under the list; Ideas holds the newest organic brief's five things, the team's own ideas and
+// the library. The tab is the address's (?tab=drafts, ?tab=ideas; New draft at a bare address) and so is the draft on
+// screen (?draft=<id>).
 
 export const OUT_TIP = 'Opens in the current dashboard'
 export const legacy = (slug: string) => legacyUrl(LEGACY_DASHBOARD_URL, pageBySlug(slug))
@@ -100,32 +102,16 @@ export function ContentView({ data }: { data: ContentData }) {
       />
 
       <div role="tabpanel">
-        {tab === 'new' ? (
-          <NewDraftCard />
-        ) : tab === 'drafts' ? (
+        <div hidden={tab !== 'new'}>
+          <NewDraft data={data} now={now} tz={tz} kicks={kicks} setKicks={setKicks} onReview={(id) => window.history.replaceState(null, '', tabUrl('drafts', id))} />
+        </div>
+        {tab === 'drafts' ? (
           <DraftsTab data={data} asked={asked} now={now} tz={tz} kicks={kicks} setKicks={setKicks} checks={checks} setChecks={setChecks} onNew={() => pick('new')} />
-        ) : (
+        ) : tab === 'ideas' ? (
           <IdeasTab data={data} tz={tz} />
-        )}
+        ) : null}
       </div>
     </div>
-  )
-}
-
-/** New draft, until it moves here: the form works as before in the current dashboard, on the same data. */
-function NewDraftCard() {
-  return (
-    <section className="max-w-[680px] rounded-lg border border-line bg-panel p-6 shadow-card" data-testid="content-new">
-      <h2 className="font-display text-[22px] font-semibold text-ink">New draft is still in the current dashboard</h2>
-      <p className="mt-2 text-[15px] leading-relaxed text-ink-2">
-        Starting a draft from a file, a link, pasted text, a Fathom call or a new idea works there as before, on the same data. The drafts it writes
-        show up here under Drafts, where they are checked and marked ready.
-      </p>
-      <a href={legacy('content-transformation')} title={OUT_TIP} className={primary + ' mt-4 px-3.5 py-2 text-[14px]'}>
-        Start a new draft
-        <ArrowUpRight size={15} aria-hidden="true" />
-      </a>
-    </section>
   )
 }
 

@@ -498,10 +498,10 @@ function Handoff() {
         <a href={legacy('marketing-generation')} title={OUT_TIP} className={btn}>
           Write a newsletter
         </a>
-        <a href={legacy('content-transformation')} title={OUT_TIP} className={btn}>
+        <Link href="/content-transformation?src=upload" className={btn}>
           <Repeat size={15} aria-hidden="true" />
           Start from your own material
-        </a>
+        </Link>
       </div>
     </Sec>
   )
