@@ -57,13 +57,13 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   top of 3c, PR #21); New draft follows: 4b the form and its run, with Paste, Read link and New idea (Nov 12, branch
   `pipeline/content-new`, on top of 4a, PR #22), 4c a file read in the browser, Fathom calls (with Calls' Use as
   content source) and Fill it in for me (Nov 12, branch `pipeline/content-files`, on top of 4b, PR #23), 4d the plan
-  (Nov 12, branch `pipeline/content-plan`, on top of 4c), 4e the briefs' findings, 4f video and audio (transcription
-  and clips). See Pipeline below.
+  (Nov 12, branch `pipeline/content-plan`, on top of 4c, PR #24), 4e the briefs' findings (Nov 12, branch
+  `pipeline/briefs-found`, on top of 4d), 4f video and audio (transcription and clips). See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Content Transformation's briefs' findings (Pipeline 4e), and video and audio (4f), then part 5 (Marketing
-  Generation), then Atlas, Canvas, Settings. Then the cutover.
+- Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
+  Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -97,7 +97,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Content Transformation's New draft: the kinds, Paste, Read link, New idea, the details, the side, Generate | here (Pipeline part 4b, not released) |
 | Pipeline | Content Transformation's New draft: Upload (a file read here), Fathom call, Calls' Use as content source, Fill it in for me | here (Pipeline part 4c, not released) |
 | Pipeline | Content Transformation's New draft: the plan (the parts, the team's default) | here (Pipeline part 4d, not released) |
-| Pipeline | Content Transformation's New draft: video and audio, the briefs' findings | current dashboard |
+| Pipeline | Content Transformation's New draft: What the briefs found (step 2) | here (Pipeline part 4e, not released) |
+| Pipeline | Content Transformation's New draft: video and audio | current dashboard |
 | Pipeline | Marketing Generation | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
@@ -964,7 +965,7 @@ signed-in teammate's token, as the current dashboard's do.
     pdf.js (`pdfjs-dist` 6, its legacy build, loaded when the first PDF comes), up to its 120th page, a page's runs of
     text joined by spaces, the pages by a blank line; a Word file with mammoth's browser build. Under 40 characters, a
     type it does not read (.doc, pictures), a damaged file or a locked PDF says why. Video and audio say they are still
-    transcribed in the current dashboard, with a link (4e). The text is cut to 120,000 characters, What is this
+    transcribed in the current dashboard, with a link (4f). The text is cut to 120,000 characters, What is this
     material? is guessed from the file (video and captions a video, audio a podcast, PDF and Word a document, else an
     article) unless it was picked by hand (`typeSet`), and the file names the material (`fileTitle`). The zone then
     shows the file and its words; the line under it says Loaded <name> (the first 120,000 characters when cut), with
@@ -1014,12 +1015,48 @@ signed-in teammate's token, as the current dashboard's do.
   steps. The request's `template.sections` are the plan's parts (twelve, the untitled left out), when the plan sent is
   for the kind and structure on the form (`plan` in the form, checked by `planFrom`); See everything it will use shows
   them.
+- What the briefs found (part 4e, `src/lib/pipeline/briefs-found.ts` pure rules, `loadFound` in `content-load.ts`,
+  `src/components/pipeline/briefs-found.tsx`, `keepFinding` in the content actions; v111OrgPool, v111AdPool,
+  v111InsAll, v111InsBody, v111InSave, v111WriteFrom and v111Dress, with v113's Topics link): New draft's step 2, so the
+  material is step 3.
+  - What it reads (the server builds the pools; the page only picks from them): the six newest organic briefs (their
+    markdown, data and snapshot) give the five things (weight 3), what changed (2), the notable developments (1) and
+    what works in each post (0, an off-topic one left out), each with the category of the closest post's format
+    (`catOfFormat`, V99_CAT_OF and v111Cat); the three newest ads briefs give the five things (3), hook patterns (2),
+    offers (2), pains and objections (1) and the angle (2); and the ads the Ad Strategist read, 16 of each ad type by
+    score then days running (a catalog ad of template words left out). What a brief's review hid or the team's layout
+    switched off is skipped, and a post the review removed. Texts tidied, a near copy of the same kind (60% of its
+    words) kept once, ids by djb2 as the old page's, so a drop or a kept finding follows from one app to the other.
+  - Which show (`findingsFor`): a paid ad, the eight best ads of its type then the brief's findings by weight and day;
+    otherwise the category's (Email, which has none: the findings, not the posts), findings first in brief order, posts
+    by engagement. The category chips count them (not a paid ad's).
+  - The step: "for <category>" (or "across every category"), the lead line, a note when a brief behind them is not
+    approved (or a paid ad type with no ads), six cards then Show all; each with its tag, where it is from, See the post
+    or See the ad (the ad on the Ad Strategist, in a new tab), Use / Using, Not this (kept in this browser,
+    localStorage `ap.v111.drop` as before, with Undo, and "N dropped · bring them back") and Save for later (an open
+    idea: the finding, why, "From the organic brief of <day>.", tags From the briefs, the category and
+    insight:<id>; a kept one says Saved for later); "N picks in use" and Write it from these. Nothing for the category:
+    "Nothing for <category> in the briefs yet" (no organic brief: "No briefs yet").
+  - Only the picks of the kind and category on screen count (v111Picks), and they stay after a send. The side lists them
+    ("From the briefs · N picks", ✕ stops using them, the title goes to the step), and Topics' "Use what the briefs
+    found for the topics" fills Topics from them, else the first three findings.
+  - The request (`buildRequest`, the picks checked on the server by `picksFrom`): `setup.insights` ({text, why, from,
+    brief, url, ad_id}); a piece made from material gets the rule "Build it on these findings the team picked from the
+    market briefs …" first in the template's rules; an idea gets "What the team picked from the briefs to build on:"
+    and the numbered picks after it. Write it from these generates when the material is ready; without it, the picks
+    become the idea ("The point I want to make, from what the market briefs found:" and a line per pick), on New idea.
+- Changed on purpose in 4e (reported to Kser): an idea written from the picks is named after the first pick (the old
+  page named it after the lead line, so every such draft was called "The point I want to make, from what the market
+  briefs found:"); the best ads of a type are picked from every ad read (the old page looked among the 1,000 newest),
+  and a catalog ad made only of template words is left out (the old page showed "{{product.name}}"); See the ad opens
+  the ad on the Ad Strategist in a new tab, so the form stays as it was; an ads brief with no snapshot reads hooks kept
+  as objects by their words.
 - Changed on purpose in 4d (reported to Kser): a carousel or a video ad's plan starts from its own shape and sends
   it (the old pane showed "Follow the ads brief", then the old page sent the ad type's shape over the plan, so edits
   never reached the writer), and has a key of its own (`piece:ad_carousel`, `piece:ad_video`) so an image ad's plan is
   not a carousel's; See everything it will use lists the plan's parts.
 - Changed on purpose in 4c (reported to Kser): video and audio are still transcribed in the current dashboard (a
-  dropped one says so, with a link; 4e moves them); a second file, call or link names the material after itself unless
+  dropped one says so, with a link; 4f moves them); a second file, call or link names the material after itself unless
   a title was typed (the old page kept the first file's title, and a call's title replaced even a typed one); a file or
   a call clears the link a read link left (the old page sent that link with the new material); a web page keeps a line
   per block, and a PDF's page loses its runs of spaces; a locked PDF and a damaged PDF or Word file say so in plain words
@@ -1104,7 +1141,10 @@ signed-in teammate's token, as the current dashboard's do.
   layout with two organic parts switched off); `content-material-logic.spec.ts` (without a browser) and
   `content-material.spec.ts` Upload, the Fathom call tab, Calls' Use as content source and Fill it in for me, on the
   same rows, the made-up files in `tests/fixtures` (a two-page PDF and a Word file; the others are made in the tests)
-  and the Fathom stand-in's calls; `content-plan-logic.spec.ts` (without a browser) and `content-plan.spec.ts` the plan.
+  and the Fathom stand-in's calls; `content-plan-logic.spec.ts` (without a browser) and `content-plan.spec.ts` the plan;
+  `briefs-found-logic.spec.ts` (without a browser) and `content-found.spec.ts` What the briefs found, on the same rows
+  and `foundRows()` (a newer organic brief, approved, with an opinion post, a case study and an off-topic post behind
+  it; a newer ads brief, approved; four ads: two image ads, a video ad and a catalog ad of template words).
   A test that opens an address filling the form in signs in first, then
   goes there (`openWith`): the form puts the address back to bare at once, so `signIn` cannot wait for it. Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.

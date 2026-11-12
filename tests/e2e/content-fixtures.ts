@@ -196,3 +196,56 @@ export function formRows() {
     ai_settings: [{ key: 'brief_structure', value: { org: { off: ['short', 'dev', 'hand'] } } }],
   }
 }
+
+// What the briefs found (step 2): a newer organic brief, approved, with three posts behind it (an opinion post, a case
+// study and an off-topic one), a shift in its markdown and its snapshot; a newer ads brief, approved, with hooks, an
+// offer, a pain, an objection and an angle; and four ads the Ad Strategist read (two image ads, a video ad and a catalog
+// ad made only of template words, which is left out). Seeded on top of contentRows() and formRows(). All made up.
+export const FOUND_ORG = 'intel_run_f'
+export const FOUND_ADS = 'agent2_run_f'
+export const AD = { best: u('b1'), next: u('b2'), video: u('b3'), catalog: u('b4') }
+export function foundRows(base: Record<string, Record<string, unknown>[]>) {
+  const P = (n: number) => 'https://example.com/p/' + n
+  const items = [
+    { url: P(1), competitor: 'Dana Reyes', headline: 'A founder on fee talk', summary: 'Names the fee in the first line.', working: 'Name the fee in the first line', format: 'Opinion post', engagement_total: 120 },
+    { url: P(2), competitor: 'Lee Park', headline: 'A firm shows its client numbers', summary: 'One client number, up front.', working: 'Lead with one client number', format: 'Case study', engagement_total: 300 },
+    { url: P(3), competitor: 'Sam Ortiz', headline: 'We are hiring', summary: 'A job post.', working: 'Off-topic: a hiring post', format: 'Job post', engagement_total: 900 },
+  ]
+  const md =
+    '# Organic brief\n\n## TL;DR\n- **Fee talk is up:** Advisors post about fees.\n\n## 3. What changed\n' +
+    '**Shift:** Fees move to the first line\n- **Evidence:** [Dana Reyes](' + P(1) + '): named the fee up front\n- **For our content:** Say the price early\n'
+  return {
+    agent_outputs: [
+      ...base.agent_outputs,
+      { id: 'ib-f', agent: 'intel_tracker', output_type: 'intel_brief', run_id: FOUND_ORG, title: 'Organic brief', created_at: ago(1 * D), content_md: md, data: { items } },
+      {
+        id: 'ib-f-snap', agent: 'intel_tracker', output_type: 'snapshot', run_id: FOUND_ORG, title: 'Snapshot', created_at: ago(1 * D),
+        snapshot: {
+          items: [
+            { text: 'Fee talk is up', why: 'Advisors talk about the fee more than last month', tag: 'pricing' },
+            { text: 'Client numbers win replies', why: 'A post with one client number gets twice the replies', tag: 'proof' },
+          ],
+        },
+      },
+    ],
+    creative_briefs: [
+      ...base.creative_briefs,
+      {
+        id: 'cb-f', run_id: FOUND_ADS, created_at: ago(1 * D), winning_hooks: ['Your week back', 'Stop losing Mondays'],
+        winning_offers: [{ type: 'Onboarding audit', price_point: 497, notes: 'Booked from the ad' }], core_pain_points: ['Slow onboarding'],
+        objection_themes: ['Too busy to switch'], differentiation_angle: 'One owner for every step of the intake',
+      },
+    ],
+    agent_feedback: [
+      ...base.agent_feedback,
+      { id: 'fb-org-f', agent: 'intel_tracker', target_type: 'brief_approval', target_id: FOUND_ORG, action: 'approved', feedback: '', author: 'pat@aiparagonconsulting.com', created_at: ago(20 * H) },
+      { id: 'fb-ads-f', agent: 'ad_strategist', target_type: 'brief_approval', target_id: FOUND_ADS, action: 'approved', feedback: '', author: 'pat@aiparagonconsulting.com', created_at: ago(20 * H) },
+    ],
+    ad_records: [
+      { id: AD.best, run_id: FOUND_ADS, advertiser_name: 'Northwind Advisory', hook: 'Get your Mondays back', body: 'One intake.', cta: 'Book a call', format: 'static_image', performance_score: 0.82, days_running: 40, created_at: ago(2 * D) },
+      { id: AD.next, run_id: FOUND_ADS, advertiser_name: 'Harbor Partners', hook: 'Onboarding in a day', body: 'Fast.', cta: 'Learn more', format: 'image', performance_score: 0.5, days_running: 12, created_at: ago(2 * D) },
+      { id: AD.video, run_id: FOUND_ADS, advertiser_name: 'Harbor Partners', hook: 'Watch a real intake', body: '', cta: '', format: 'video', performance_score: 0.7, days_running: 1, created_at: ago(2 * D) },
+      { id: AD.catalog, run_id: FOUND_ADS, advertiser_name: 'Shopfront', hook: '{{product.name}}', body: '{{product.brand}}', cta: 'Shop now', format: 'static_image', performance_score: 0.99, days_running: 90, created_at: ago(2 * D) },
+    ],
+  }
+}

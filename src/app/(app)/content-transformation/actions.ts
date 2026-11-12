@@ -332,6 +332,26 @@ export async function addIdea(input: { note: string; tags: string }): Promise<Do
   return { ok: true }
 }
 
+/**
+ * A finding from the briefs kept for later (v111InSave): an open idea with where it came from, tagged From the briefs,
+ * its category (or what kind of finding it is) and insight:<its id>, so the form shows it as kept.
+ */
+export async function keepFinding(input: { note: string; label: string; id: string }): Promise<Done> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const note = str(input?.note).trim().slice(0, 1500)
+  const id = str(input?.id)
+  if (!note || !/^i[0-9a-z]{1,12}$/.test(id)) return { ok: false, error: 'That finding could not be read.' }
+  const label = str(input?.label).replace(/\s+/g, ' ').trim().slice(0, 60)
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('idea_notes')
+    .insert({ note, tags: ['From the briefs', label, 'insight:' + id].filter(Boolean), status: 'open', created_by: user.email })
+  if (error) return { ok: false, error: error.message }
+  refresh()
+  return { ok: true }
+}
+
 /** Delete an idea (nwIdeaDel). */
 export async function deleteIdea(id: string): Promise<Done> {
   const user = await getCurrentUser()
