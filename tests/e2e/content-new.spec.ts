@@ -62,7 +62,11 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await expect(cats.first()).toHaveAttribute('aria-checked', 'true')
 
   // the side: what comes back, what it will use, and Generate waiting for the material
-  await expect(side(page).getByRole('list', { name: 'You’ll get' }).getByRole('listitem')).toHaveText(['1 post', '3 opening lines to pick from'])
+  // the plan at the top of the side: what comes back, in the kind of post's parts (content-plan.spec.ts has the rest)
+  const plan = side(page).getByTestId('plan')
+  await expect(plan).toContainText('1 post, in these parts:')
+  await expect(plan.getByTestId('plan-step').locator('b')).toHaveText(['The common belief', 'What we see', 'Why it matters'])
+  await expect(plan).toContainText('Also: 3 opening lines to pick from')
   await expect(uses(page)).toHaveCount(4)
   await expect(uses(page).nth(0)).toContainText('Organic brief · ' + day(ib().created_at) + 'Needs review')
   await expect(uses(page).nth(0).getByRole('link', { name: 'Organic brief · ' + day(ib().created_at) })).toHaveAttribute('href', '/briefs?run=' + INTEL_RUN)
@@ -93,7 +97,8 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await expect(form(page).getByRole('checkbox', { name: 'A short summary at the top' })).toBeChecked()
   await expect(form(page).getByRole('radiogroup', { name: 'What should readers do?' })).toBeVisible()
   await cats.filter({ hasText: 'Stand-alone article' }).click()
-  await expect(side(page).getByRole('list', { name: 'You’ll get' }).getByRole('listitem')).toHaveText(['1 article with short sections', '3 title options'])
+  await expect(plan).toContainText('1 article with short sections, in these parts:')
+  await expect(plan).toContainText('Also: 3 title options')
   // email has no categories; a paid ad has its ad types, and leads with the ads brief
   await tile(page, 'Email').click()
   await expect(form(page).getByRole('radiogroup', { name: 'Category' })).toHaveCount(0)
@@ -105,7 +110,10 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await expect(form(page).getByTestId('categories')).toContainText('A 30 to 45 second video ad: hook, problem, proof, ask.')
   const cb = contentRows().creative_briefs[0]
   await expect(uses(page).nth(0)).toContainText('Ads brief · ' + day(cb.created_at) + 'Needs review')
-  await expect(side(page).getByRole('list', { name: 'You’ll get' }).getByRole('listitem')).toHaveText(['1 ad body', '3 hooks to test', 'A call to action and a headline'])
+  // a video ad's plan is its own shape, the parts that are sent
+  await expect(plan).toContainText('1 ad body, in these parts:')
+  await expect(plan.getByTestId('plan-step').locator('b')).toHaveText(['The first three seconds', 'The problem', 'The proof', 'The ask'])
+  await expect(plan).toContainText('Also: 3 hooks to test, A call to action and a headline')
   // a report's questions, with their defaults
   await tile(page, 'Report').click()
   await expect(form(page).getByRole('radiogroup', { name: 'Length' }).getByRole('radio', { name: 'Medium (5 to 8 pages)' })).toHaveAttribute('aria-checked', 'true')

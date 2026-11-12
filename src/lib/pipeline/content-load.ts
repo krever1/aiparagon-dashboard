@@ -17,6 +17,18 @@ import {
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 type Row = Record<string, unknown>
 const rowsOf = (r: { data: unknown }): Row[] => (Array.isArray(r.data) ? (r.data as Row[]) : [])
+/** A setting's value as an object: kept as jsonb, or as JSON text. */
+function jsonOf(v: unknown): Record<string, unknown> {
+  let o = v
+  if (typeof o === 'string') {
+    try {
+      o = JSON.parse(o)
+    } catch {
+      o = null
+    }
+  }
+  return o && typeof o === 'object' && !Array.isArray(o) ? (o as Record<string, unknown>) : {}
+}
 
 export type ContentData = {
   /** the 60 newest requests, newest first */
@@ -56,6 +68,8 @@ export type FormData = {
   ads: BriefPick
   /** the five things of the organic brief a draft leads with */
   orgItems: SnapItem[]
+  /** the team's default plans, by plan key (ai_settings build_plans) */
+  plans: Record<string, unknown>
   error: string | null
 }
 
@@ -72,7 +86,7 @@ export async function loadForm(supabase: Supa, now: number, opts: { send?: boole
     send ? none : supabase.from('client_proof').select('name,status,source,expires_on,archived').order('created_at', { ascending: true }).limit(200),
     supabase.from('brand_voice').select('created_at,tone').order('created_at', { ascending: false }).limit(1),
     supabase.from('doc_templates').select('id,name,format,description,sections,rules,example_text,active,uses').order('created_at', { ascending: true }).limit(200),
-    supabase.from('ai_settings').select('key,value').eq('key', 'brief_structure'),
+    supabase.from('ai_settings').select('key,value').in('key', ['brief_structure', 'build_plans']),
     supabase
       .from('agent_feedback')
       .select('target_id,feedback,created_at')
@@ -134,7 +148,8 @@ export async function loadForm(supabase: Supa, now: number, opts: { send?: boole
     templates: rowsOf(tp)
       .filter((r) => r.active !== false && r.active !== 'false')
       .map(tplOf),
-    leaveOut: leaveOutOf(rowsOf(st)[0]?.value),
+    leaveOut: leaveOutOf(rowsOf(st).find((r) => r.key === 'brief_structure')?.value),
+    plans: jsonOf(rowsOf(st).find((r) => r.key === 'build_plans')?.value),
     asks: rowsOf(ak)
       .map((r) => ({ feedback: str(r.feedback), createdAt: str(r.created_at), kind: kinds[str(r.target_id)] ?? '' }))
       .filter((a) => a.feedback.trim()),
@@ -158,6 +173,7 @@ export async function loadContent(now = Date.now()): Promise<ContentData> {
     org: { use: null, newest: null },
     ads: { use: null, newest: null },
     orgItems: [],
+    plans: {},
     error: e instanceof Error ? e.message : String(e),
   }))
   const [rq, df, pc, nt, ib] = await Promise.all([

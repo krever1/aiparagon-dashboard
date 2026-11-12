@@ -6,6 +6,7 @@
 import { type SnapItem, clip, tidy } from '@/lib/touchpoint/approvals'
 import { SEC_TEXT, layoutOf } from './briefs'
 import { plural } from './content'
+import { type Step, planFrom, planKey, planSections } from './content-plan'
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 type Row = Record<string, unknown>
@@ -888,6 +889,8 @@ export type Form = {
   struct: string
   /** a team idea drafted from Ideas (its id): marked used when an idea request goes out with its words */
   note: string | null
+  /** the plan the side shows (its key and parts), sent with the request; null leaves the template's own parts */
+  plan: { key: string; steps: Step[] } | null
 }
 export const blankForm = (): Form => ({
   kind: 'thought_leadership',
@@ -912,6 +915,7 @@ export const blankForm = (): Form => ({
   voice: '',
   struct: '',
   note: null,
+  plan: null,
 })
 
 /** A form sent from the browser, checked: known kinds, tabs and choices only, every text cut to what the request keeps. */
@@ -946,6 +950,7 @@ export function formFrom(input: unknown): Form {
   f.voice = str(o.voice).slice(0, 60)
   f.struct = str(o.struct).slice(0, 60)
   f.note = UUID.test(str(o.note)) ? str(o.note) : null
+  f.plan = planFrom(o.plan)
   return f
 }
 
@@ -1011,6 +1016,36 @@ function templateOf(f: Form, c: Ctx, t: string, base: Base, p: Persona | null, o
       example_text: '',
     },
   }
+}
+
+/**
+ * The template before the plan: the structure picked or the kind's usual shape, with who it is for, the offer and what
+ * it must use; a carousel or a video ad takes its own shape (its parts are what the plan starts from, so the plan the
+ * side shows is the one sent; v111Dress put the shape over the plan, the answers and the notes, so they were lost).
+ */
+function baseTemplate(f: Form, c: Ctx, must: string[]): { id: string | null; template: Template } {
+  const k = f.kind
+  const ad = k === 'adcopy'
+  const cat = catOf(k, f.cat[k])
+  const t = typeOf(k, cat)
+  const base: Base = ad ? 'ad' : (CT[t]?.base ?? KINDS[k].base)
+  const tp = templateOf(f, c, t, base, pickPersona(f.per, c.personas), pickOffer(f.off, c.offers), must)
+  const A = ad ? AD_TYPES[cat] : undefined
+  if (!A) return tp
+  const T = tp.template
+  return { id: tp.id, template: { ...T, name: A.name, description: A.d, sections: A.sections.map(([title, guidance]) => ({ title, guidance })), rules: join([A.rules, T.rules]) } }
+}
+/** The plan's key for the form as it is: the kind of post, a paid ad's shape, and the structure picked. */
+export function planKeyOf(f: Pick<Form, 'kind' | 'cat' | 'struct'>, c: Pick<Ctx, 'templates'>): string {
+  const k = f.kind
+  const cat = catOf(k, f.cat[k])
+  const t = typeOf(k, cat)
+  return planKey(k, t, cat, structOf(f.struct, k, t, c.templates))
+}
+/** The parts the plan starts from (v121Builtin): the template's sections, and the saved template's name when one is picked. */
+export function baseParts(f: Form, c: Ctx): { sections: { title: string; guidance: string }[]; template: string | null } {
+  const tp = baseTemplate(f, c, mustOf(f.must))
+  return { sections: tp.template.sections, template: tp.id ? tp.template.name || 'saved' : null }
 }
 
 export type Built = { ok: true; row: Row; templateId: string | null; title: string } | { ok: false; error: string }
@@ -1084,11 +1119,10 @@ export function buildRequest(f: Form, c: Ctx): Built {
       title: th.split(/[.\n]/)[0].slice(0, 90),
     })
   }
-  const tp = templateOf(f, c, t, base, p, o, must)
-  let T: Template = { ...tp.template }
-  // a carousel or a video ad has a shape of its own; the answers and notes still ride after it (v111Dress put them first, so they were lost)
-  const A = ad ? AD_TYPES[cat] : undefined
-  if (A) T = { ...T, name: A.name, description: A.d, sections: A.sections.map(([title, guidance]) => ({ title, guidance })), rules: join([A.rules, T.rules]) }
+  const tp = baseTemplate(f, c, must)
+  const T: Template = { ...tp.template }
+  // the plan the side shows is what is sent: its parts are the template's sections (v121), for the kind and structure it was made for
+  if (f.plan && f.plan.key === planKeyOf(f, c)) T.sections = planSections(f.plan.steps)
   const ans = answersLine(k, f.answers[k])
   const extra = join([ans ? 'The team answered: ' + ans + '.' : '', notes ? 'Notes from the team: ' + notes : ''])
   if (extra) T.description = join([T.description, extra])
@@ -1227,9 +1261,12 @@ export function previewOf(f: Form, c: PreviewCtx, short: (iso: string) => string
         : vs + '.'
   const tp = pickedTemplate(structOf(f.struct, k, t, c.templates), base, c.templates)
   const def = ad ? undefined : CT[t]
-  const secs = A ? A.sections.map(([title, guidance]) => ({ title, guidance })) : tp ? tp.template.sections : def ? def.sections.map(([title, guidance]) => ({ title, guidance })) : []
+  const planned = f.plan && f.plan.key === planKeyOf(f, c) ? planSections(f.plan.steps) : null
+  const secs = planned ?? (A ? A.sections.map(([title, guidance]) => ({ title, guidance })) : tp ? tp.template.sections : def ? def.sections.map(([title, guidance]) => ({ title, guidance })) : [])
   const own = join([A?.rules, tp?.template.rules, def?.rules])
-  const structure = secs.length
+  const structure = planned && !planned.length
+    ? { none: 'No set parts. The writer picks a shape from your answers.' }
+    : secs.length
     ? { name: A?.name ?? tp?.template.name ?? def?.name ?? 'Paid ad', sections: secs, rules: own }
     : ad && !tp
       ? { name: 'Paid ad', sections: [{ title: 'Follow the ads brief', guidance: 'Order the body the way the copy formula in the ads brief does, with each hook as the opening.' }], rules: own }

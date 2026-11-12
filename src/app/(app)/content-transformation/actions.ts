@@ -9,6 +9,7 @@ import { N8nError, callN8n } from '@/lib/n8n'
 import { CHECKS, type PieceForm, askProblem, askText, draftOf, kindOf, noteTags, pieceRow } from '@/lib/pipeline/content'
 import { FILL_MSG, type FillAnswer, fillAnswerOf, fillRequest, ownMaterial } from '@/lib/pipeline/content-fill'
 import { loadForm } from '@/lib/pipeline/content-load'
+import { isTplKey, planFrom, savedPlan } from '@/lib/pipeline/content-plan'
 import { CALL_ID, type Material, TEXT_MAX, TEXT_MIN, buildRequest, dbErr, formFrom, usesNote } from '@/lib/pipeline/content-new'
 import { createClient } from '@/lib/supabase/server'
 
@@ -447,4 +448,34 @@ export async function fillItIn(input: unknown): Promise<Filled> {
     material = { ...material, text: material.text.slice(0, TEXT_MAX) }
   }
   return { ok: true, answer: a, material }
+}
+
+// ---------- the plan (v121SaveDef) ----------
+
+/**
+ * Save as our default: the plan for this kind of piece becomes the team's (ai_settings build_plans, read fresh and
+ * merged, so another kind's default stays), with who saved it and when. A plan for a structure picked is not saved.
+ */
+export async function savePlanDefault(input: unknown): Promise<Done> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const plan = planFrom(input)
+  if (!plan || isTplKey(plan.key)) return { ok: false, error: 'This plan cannot be saved as the team’s default.' }
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('ai_settings').select('value').eq('key', 'build_plans').maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  let cur: unknown = data?.value
+  if (typeof cur === 'string') {
+    try {
+      cur = JSON.parse(cur)
+    } catch {
+      cur = {}
+    }
+  }
+  const at = new Date().toISOString()
+  const value = { ...(cur && typeof cur === 'object' && !Array.isArray(cur) ? (cur as Record<string, unknown>) : {}), [plan.key]: savedPlan(plan.steps, user.email, at) }
+  const up = await supabase.from('ai_settings').upsert({ key: 'build_plans', value, updated_by: user.email, updated_at: at }, { onConflict: 'key' })
+  if (up.error) return { ok: false, error: up.error.message }
+  refresh()
+  return { ok: true }
 }

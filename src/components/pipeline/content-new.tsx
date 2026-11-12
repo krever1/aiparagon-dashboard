@@ -19,16 +19,18 @@ import type { Note } from '@/lib/pipeline/content'
 import { type FillAnswer, FILL_MSG, type NoteKey, applyFill, fillFrom, fillIntro, fillKey } from '@/lib/pipeline/content-fill'
 import { FILE_MSG, fileTitle, guessType } from '@/lib/pipeline/content-files'
 import type { ContentData } from '@/lib/pipeline/content-load'
+import { type Step, builtinSteps, samePlan, teamSteps } from '@/lib/pipeline/content-plan'
 import {
   type Answer, type Form, type Prefill, type Q, type Src, CATS, GROUPS, KINDS, MAX, SAMPLE, SRCS, SRC_TYPES, TEXT_MAX, type Use, adTypeLine, afterSend,
-  answersOf, blankForm, briefUse, catOf, ctaList, ctaOf, feedbackUse, getsOf, hintOf, materialLine, materialUse, mustOf, mustSuggest, num, offerChoices, offerSum,
-  personaSum, pickOffer, pickPersona, prefillOf, questionsOf, readyOf, structChoices, structOf, typeOf, voiceOf, voiceOpts, voiceUse, withMaterial, wordCount,
+  answersOf, baseParts, blankForm, briefUse, catOf, ctaList, ctaOf, feedbackUse, getsOf, hintOf, materialLine, materialUse, mustOf, mustSuggest, num, offerChoices, offerSum,
+  personaSum, pickOffer, pickPersona, planKeyOf, prefillOf, questionsOf, readyOf, structChoices, structOf, typeOf, voiceOf, voiceOpts, voiceUse, withMaterial, wordCount,
 } from '@/lib/pipeline/content-new'
 import { briefHref } from '@/lib/touchpoint/approvals'
 import { btn, inputCls, linkCls, primary, selectCls } from './bits'
 import { type CallList, FathomPanel, type Msg, UploadPanel, Why } from './content-material'
 import { OUT_TIP, legacy } from './content-view'
 import { PlanPreview } from './content-new-preview'
+import { type PlanView, PlanPane } from './content-plan'
 import { ReadError, readFileText } from './content-read'
 
 // New draft (nwCtFormHtml and nwCtSide as v105, v111, v113 and v126 left them): what is being made and its category,
@@ -126,6 +128,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
   const [notes, setNotes] = useState<Partial<Record<NoteKey, string>>>({})
   const [moreOpen, setMoreOpen] = useState(false)
   const [info, setInfo] = useState(false)
+  const [planEdits, setPlanEdits] = useState<Record<string, Step[]>>({})
   const fRef = useRef(f)
   useEffect(() => {
     fRef.current = f
@@ -200,6 +203,20 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
   const idea = f.src === 'idea'
   const day = (iso: string) => dayText(iso, tz)
   const ctx = { email: '', personas: D.personas, offers: D.offers, templates: D.templates, voice: D.voice, leaveOut: D.leaveOut, asks: D.asks, now }
+  // the plan (v121): the edits kept for this kind and structure, else the team's default, else the template's own parts
+  const parts = baseParts(f, ctx)
+  const builtin = builtinSteps(parts.sections)
+  const pkey = planKeyOf(f, D)
+  const team = teamSteps(D.plans, pkey)
+  const dflt = team ? team.steps : builtin
+  const edited = planEdits[pkey]
+  const plan: PlanView = {
+    key: pkey,
+    steps: edited ?? dflt,
+    changed: !!edited && !samePlan(edited, dflt),
+    team: !!team && !edited,
+    template: parts.template,
+  }
   const setAnswer = (id: string, v: Answer) => setF((x) => ({ ...x, answers: { ...x.answers, [x.kind]: { ...answersOf(x.kind, x.answers[x.kind]), [id]: v } } }))
 
   const pickSrc = (s: Src) => {
@@ -344,7 +361,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     if (busy || !ready) return
     setBusy(true)
     setErr('')
-    const form = { ...f, must: mustOf(f.must, mustTyped) }
+    const form = { ...f, must: mustOf(f.must, mustTyped), plan: { key: plan.key, steps: plan.steps } }
     const r = await sendRequest(form).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.' }))
     setBusy(false)
     if (!r.ok) return setErr(r.error)
@@ -785,16 +802,20 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
         ))}
       </div>
 
-      <aside aria-label="What you will get" className="self-start rounded-lg border border-line bg-panel p-5 shadow-card lg:sticky lg:top-20" data-testid="new-side">
-        <h3 className="text-[15px] font-semibold text-ink">You’ll get</h3>
-        <ul className="mt-2 grid gap-1.5 text-[14px] text-ink-2" aria-label="You’ll get">
-          {getsOf(k, t).map((g) => (
-            <li key={g} className="flex gap-2">
-              <Check size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-good" />
-              {g}
-            </li>
-          ))}
-        </ul>
+      <aside aria-label="The plan" className="self-start rounded-lg border border-line bg-panel p-5 shadow-card lg:sticky lg:top-20" data-testid="new-side">
+        <PlanPane
+          plan={plan}
+          gets={getsOf(k, t)}
+          onSteps={(steps) => setPlanEdits((m) => ({ ...m, [plan.key]: steps }))}
+          onReset={() =>
+            setPlanEdits((m) => {
+              const n = { ...m }
+              delete n[plan.key]
+              return n
+            })
+          }
+          onUsual={() => setPlanEdits((m) => ({ ...m, [plan.key]: builtin }))}
+        />
         <hr className="my-4 border-line" />
         <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">It will use</p>
         <ul className="mt-2 grid gap-3" aria-label="It will use" data-testid="uses">
@@ -865,7 +886,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
       ) : null}
       {preview ? (
         <PlanPreview
-          f={{ ...f, must: mustOf(f.must, mustTyped) }}
+          f={{ ...f, must: mustOf(f.must, mustTyped), plan: { key: plan.key, steps: plan.steps } }}
           ctx={{ ...ctx, org: D.org, ads: D.ads, orgItems: D.orgItems }}
           tz={tz}
           ready={ready && !busy}

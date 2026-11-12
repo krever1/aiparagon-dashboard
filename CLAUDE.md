@@ -56,13 +56,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   done. Part 4 starts with 4a, Content Transformation's Drafts and Ideas (Nov 12, branch `pipeline/content-drafts`, on
   top of 3c, PR #21); New draft follows: 4b the form and its run, with Paste, Read link and New idea (Nov 12, branch
   `pipeline/content-new`, on top of 4a, PR #22), 4c a file read in the browser, Fathom calls (with Calls' Use as
-  content source) and Fill it in for me (Nov 12, branch `pipeline/content-files`, on top of 4b), 4d the briefs'
-  findings and the plan, 4e video and audio (transcription and clips). See Pipeline below.
+  content source) and Fill it in for me (Nov 12, branch `pipeline/content-files`, on top of 4b, PR #23), 4d the plan
+  (Nov 12, branch `pipeline/content-plan`, on top of 4c), 4e the briefs' findings, 4f video and audio (transcription
+  and clips). See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Content Transformation's briefs' findings and the plan (Pipeline 4d), and video and audio (4e), then part 5
-  (Marketing Generation), then Atlas, Canvas, Settings. Then the cutover.
+- Next: Content Transformation's briefs' findings (Pipeline 4e), and video and audio (4f), then part 5 (Marketing
+  Generation), then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -95,7 +96,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Content Transformation: Drafts (the review, Mark ready, What should change?, the library) and Ideas | here (Pipeline part 4a, not released) |
 | Pipeline | Content Transformation's New draft: the kinds, Paste, Read link, New idea, the details, the side, Generate | here (Pipeline part 4b, not released) |
 | Pipeline | Content Transformation's New draft: Upload (a file read here), Fathom call, Calls' Use as content source, Fill it in for me | here (Pipeline part 4c, not released) |
-| Pipeline | Content Transformation's New draft: video and audio, the briefs' findings, the plan | current dashboard |
+| Pipeline | Content Transformation's New draft: the plan (the parts, the team's default) | here (Pipeline part 4d, not released) |
+| Pipeline | Content Transformation's New draft: video and audio, the briefs' findings | current dashboard |
 | Pipeline | Marketing Generation | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
@@ -996,6 +998,26 @@ signed-in teammate's token, as the current dashboard's do.
     organic brief of <day> with what it was built on, Kept what you typed, the figures it flags, Undo (each field it
     changed back) and Fill it in again. Another kind, category, or an idea in place of material ends the fill, as a
     send does; an answer for what is no longer on the form is not put in.
+- The plan (part 4d, `src/lib/pipeline/content-plan.ts` pure rules, `baseParts` and `planKeyOf` in `content-new.ts`,
+  `src/components/pipeline/content-plan.tsx`, `savePlanDefault`; v121's plan pane for pieces): at the top of the side,
+  in place of You’ll get. What comes back ("1 post, in these parts:"), the parts in order (each with what goes in it,
+  else "Nothing set for this part yet"), "Also:" the rest of what comes back. The parts start as the template's
+  sections (`baseParts`: the structure picked, a saved template (named: "From the <name> template."), else the kind of
+  post's usual shape; a carousel or a video ad its own shape), unless the team saved a default for that kind
+  (ai_settings `build_plans`, keyed `piece:<kind of post>`, the keys Marketing Generation's posts share; a structure
+  picked has a `:tpl:<structure>` key of its own, never the team's). A part opens to rename it (80), say what goes in
+  it (600), move it up or down or remove it; Add a part (twelve at most) opens a new part with its name picked. The
+  edits stay with that kind and structure while the page is open (a send keeps them, as before), "Changed" says they
+  differ from the default, Reset drops them, Save as our default writes the plan for the team (read fresh and merged,
+  so another kind's default stays; each part with key, kind part, name, does, note, q and added, who and when, the
+  current dashboard's shape) and goes back to it; the team's default says "Your team’s default" with Use the usual
+  steps. The request's `template.sections` are the plan's parts (twelve, the untitled left out), when the plan sent is
+  for the kind and structure on the form (`plan` in the form, checked by `planFrom`); See everything it will use shows
+  them.
+- Changed on purpose in 4d (reported to Kser): a carousel or a video ad's plan starts from its own shape and sends
+  it (the old pane showed "Follow the ads brief", then the old page sent the ad type's shape over the plan, so edits
+  never reached the writer), and has a key of its own (`piece:ad_carousel`, `piece:ad_video`) so an image ad's plan is
+  not a carousel's; See everything it will use lists the plan's parts.
 - Changed on purpose in 4c (reported to Kser): video and audio are still transcribed in the current dashboard (a
   dropped one says so, with a link; 4e moves them); a second file, call or link names the material after itself unless
   a title was typed (the old page kept the first file's title, and a call's title replaced even a typed one); a file or
@@ -1082,7 +1104,8 @@ signed-in teammate's token, as the current dashboard's do.
   layout with two organic parts switched off); `content-material-logic.spec.ts` (without a browser) and
   `content-material.spec.ts` Upload, the Fathom call tab, Calls' Use as content source and Fill it in for me, on the
   same rows, the made-up files in `tests/fixtures` (a two-page PDF and a Word file; the others are made in the tests)
-  and the Fathom stand-in's calls. A test that opens an address filling the form in signs in first, then
+  and the Fathom stand-in's calls; `content-plan-logic.spec.ts` (without a browser) and `content-plan.spec.ts` the plan.
+  A test that opens an address filling the form in signs in first, then
   goes there (`openWith`): the form puts the address back to bare at once, so `signIn` cannot wait for it. Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
