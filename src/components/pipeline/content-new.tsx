@@ -898,7 +898,7 @@ function FillStrip({ fill, day, onRetry, onUndo }: { fill: FillState; day: (iso:
     return (
       <div role="alert" className="flex flex-wrap items-start gap-2.5 rounded-md border border-bad/30 bg-bad-soft px-3 py-2.5" data-testid="fill-strip">
         <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-bad" />
-        <div className="min-w-0 flex-1 text-[13.5px]">
+        <div className="min-w-[200px] flex-1 text-[13.5px]">
           <b className="block text-ink">Could not fill it in</b>
           <span className="text-ink-2">{fill.msg}</span>
         </div>
@@ -911,7 +911,7 @@ function FillStrip({ fill, day, onRetry, onUndo }: { fill: FillState; day: (iso:
   return (
     <div role="status" className="flex flex-wrap items-start gap-2.5 rounded-md border border-good/30 bg-good-soft px-3 py-2.5" data-testid="fill-strip">
       <CheckCircle2 size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-good" />
-      <div className="min-w-0 flex-1 text-[13.5px]">
+      <div className="min-w-[200px] flex-1 text-[13.5px]">
         <b className="block text-ink">Filled in from {fillFrom(a.used, day)}</b>
         <span className="text-ink-2">
           {a.basedOn ? 'Built on “' + a.basedOn + '”. ' : ''}
