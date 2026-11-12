@@ -4,6 +4,8 @@
 // DELETE. Like the real project's row rules for this app, it answers only a signed-in user (the caller's own token),
 // never the public key alone, so a test fails if the app ever reads or writes without the person's session.
 
+import { randomUUID } from 'node:crypto'
+
 const RESERVED = new Set(['select', 'order', 'limit', 'offset', 'on_conflict', 'columns'])
 
 /** Primary keys, for upserts (the app's tables; anything else falls back to `id`). */
@@ -17,6 +19,45 @@ const KEYS = {
   lead_files: 'id',
   catalyst_sources: 'id',
 }
+
+/** Other unique columns, as in the project (an ad's link is kept once: ad_records_url_unique; a page's slug once). */
+const UNIQUE = { ad_records: ['ad_library_url'], landing_pages: ['slug'] }
+
+/** Check constraints the app must respect, as in the project (23514 when a row breaks one). */
+const CHECKS = {
+  landing_pages: (r) =>
+    (r.slug === undefined || (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(String(r.slug)) && String(r.slug).length >= 3 && String(r.slug).length <= 60)) &&
+    (r.status === undefined || ['draft', 'live', 'paused'].includes(r.status)) &&
+    (r.kind === undefined || ['book_call', 'webinar', 'download', 'newsletter_signup', 'landing'].includes(r.kind)),
+  content_requests: (r) =>
+    (r.format === undefined || ['ad', 'thought_leadership', 'newsletter', 'email'].includes(r.format)) &&
+    (r.start_mode === undefined || ['source', 'idea'].includes(r.start_mode)) &&
+    (r.status === undefined || ['queued', 'extracting', 'drafting', 'done', 'error'].includes(r.status)),
+  content_results: (r) =>
+    (r.kind === undefined || ['post', 'ad'].includes(r.kind)) &&
+    (r.title === undefined || String(r.title ?? '').trim().length > 0) &&
+    ['impressions', 'reactions', 'comments', 'shares', 'clicks', 'spend', 'leads', 'bookings'].every((k) => r[k] === undefined || r[k] === null || Number(r[k]) >= 0),
+}
+
+/** Column defaults a new row gets, as in the project (beyond the id and created_at every table gets here). */
+const DEFAULTS = {
+  landing_pages: () => ({ title: '', status: 'draft', kind: 'landing', content: {}, ads: [], add_to_pipeline: true, updated_at: new Date().toISOString(), published_at: null }),
+  content_pieces: () => ({ status: 'draft', tags: [], updated_at: new Date().toISOString() }),
+  idea_notes: () => ({ status: 'open', tags: [], updated_at: new Date().toISOString() }),
+  content_requests: () => ({ status: 'queued', updated_at: new Date().toISOString() }),
+}
+
+/** Tables whose new rows get a uuid, as the project makes them (the app checks those ids are uuids). */
+const UUID_IDS = new Set(['content_pieces', 'idea_notes', 'content_requests'])
+
+/** Row rules for deletes, as in the project: a landing page can be deleted only while a draft that never went live. */
+const DELETABLE = { landing_pages: (r) => r.status === 'draft' && !r.published_at }
+
+/**
+ * Views, as in the project: winner_creatives is every ad_records row, so a write to ad_records shows in it. A test that
+ * seeds winner_creatives itself reads its own rows there instead.
+ */
+const VIEWS = { winner_creatives: 'ad_records' }
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
@@ -172,7 +213,8 @@ export function createRest(initial, claimsOf) {
   }
 
   function handle(req, res, url, rawBody) {
-    const name = decodeURIComponent(url.pathname.replace(/^\/rest\/v1\//, '').split('/')[0])
+    const asked = decodeURIComponent(url.pathname.replace(/^\/rest\/v1\//, '').split('/')[0])
+    const name = VIEWS[asked] && !(asked in tables) ? VIEWS[asked] : asked
     const claims = claimsOf(req)
     if (!claims || claims.role !== 'authenticated') {
       return send(res, 401, { code: 'PGRST301', message: 'stub: this app reads and writes as the signed-in person only' })
@@ -212,6 +254,9 @@ export function createRest(initial, claimsOf) {
 
     if (req.method === 'PATCH') {
       const hit = rows.filter((r) => matches(r, params))
+      if (CHECKS[name] && hit.some((r) => !CHECKS[name]({ ...r, ...body }))) return send(res, 400, { code: '23514', message: `new row for relation "${name}" violates a check constraint` })
+      const clashP = (UNIQUE[name] || []).find((c) => body && body[c] !== undefined && body[c] !== null && rows.some((r) => !hit.includes(r) && r[c] === body[c]))
+      if (clashP) return send(res, 409, { code: '23505', message: `duplicate key value violates unique constraint (${name}.${clashP})` })
       for (const r of hit) Object.assign(r, body)
       const out = project(clone(hit), url.searchParams.get('select'))
       if (!representation) return send(res, 204)
@@ -226,17 +271,21 @@ export function createRest(initial, claimsOf) {
       const written = []
       for (const item of list) {
         const row = { ...item }
-        if (key === 'id' && row.id === undefined) row.id = `stub-${name}-${seq++}`
+        if (CHECKS[name] && !CHECKS[name](row)) return send(res, 400, { code: '23514', message: `new row for relation "${name}" violates a check constraint` })
+        if (key === 'id' && row.id === undefined) row.id = UUID_IDS.has(name) ? randomUUID() : `stub-${name}-${seq++}`
         if (row.created_at === undefined && name !== 'ai_settings') row.created_at = new Date().toISOString()
         const existing = row[key] !== undefined ? rows.find((r) => r[key] === row[key]) : undefined
+        const clash = (UNIQUE[name] || []).find((c) => row[c] !== undefined && row[c] !== null && rows.some((r) => r !== existing && r[c] === row[c]))
+        if (clash) return send(res, 409, { code: '23505', message: `duplicate key value violates unique constraint (${name}.${clash})` })
         if (existing) {
           if (ignore) continue
           if (!merge) return send(res, 409, { code: '23505', message: `duplicate key value violates unique constraint (${name}.${key})` })
           Object.assign(existing, row)
           written.push(existing)
         } else {
-          rows.push(row)
-          written.push(row)
+          const fresh = DEFAULTS[name] ? { ...DEFAULTS[name](), ...row } : row
+          rows.push(fresh)
+          written.push(fresh)
         }
       }
       const out = project(clone(written), url.searchParams.get('select'))
@@ -247,7 +296,7 @@ export function createRest(initial, claimsOf) {
     if (req.method === 'DELETE') {
       const keep = []
       const gone = []
-      for (const r of rows) (matches(r, params) ? gone : keep).push(r)
+      for (const r of rows) (matches(r, params) && (!DELETABLE[name] || DELETABLE[name](r)) ? gone : keep).push(r)
       tables[name] = keep
       if (!representation) return send(res, 204)
       return send(res, 200, project(clone(gone), url.searchParams.get('select')))

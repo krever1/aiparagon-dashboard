@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { setAutoActions, tickTask } from '@/app/(app)/calls/actions'
 import { Dialog } from '@/components/ui/dialog'
-import { Ago } from '@/components/ui/local-date'
+import { Ago, dueText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { type CallRow, type Task, deliverableOf, guestsOf, tasksText, typeLabel } from '@/lib/catalyst/calls'
 import { SlackShare, TypeOptions } from './call-dialogs'
@@ -26,13 +26,6 @@ async function copy(text: string) {
   } catch {
     toast('Copy blocked by the browser', 'warn')
   }
-}
-
-/** "Nov 12, 2026" from a due date ("2026-11-12"), without moving it a day in another time zone. */
-function dueText(v: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
-  if (!m) return v
-  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 const slugOf = (t: string) =>

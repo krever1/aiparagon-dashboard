@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Mic, Sparkles } from 'lucide-react'
 import { type CallPick, callText, newRun, recentCalls } from '@/app/(app)/lead-pipeline/actions'
 import { Dialog } from '@/components/ui/dialog'
@@ -36,9 +37,41 @@ const EMPTY: Form = { firstName: '', lastName: '', title: '', company: '', link:
 
 const input = 'h-10 w-full rounded-sm border border-line bg-panel px-3 text-[14.5px] text-ink focus:border-accent focus:outline-none'
 
-/** The header's New run: a lead that is not on the board yet, started at the stage the client is at. */
+/**
+ * The header's New run: a lead that is not on the board yet, started at the stage the client is at. The address can
+ * ask for the form (Today's Quick start links to /lead-pipeline?run=new); the header is drawn before the address is
+ * known, so the address is read inside its own Suspense, and the button alone shows meanwhile.
+ */
 export function NewRunButton() {
-  const [open, setOpen] = useState(false)
+  return (
+    <Suspense fallback={<NewRun asked={false} />}>
+      <AskedNewRun />
+    </Suspense>
+  )
+}
+
+function AskedNewRun() {
+  return <NewRun asked={useSearchParams().get('run') === 'new'} />
+}
+
+function NewRun({ asked }: { asked: boolean }) {
+  const [state, setState] = useState<'asked' | 'open' | 'closed'>('asked')
+  // Next.js keeps this page alive between visits: a link that asks again opens the form again
+  const [seenAsked, setSeenAsked] = useState(asked)
+  if (asked !== seenAsked) {
+    setSeenAsked(asked)
+    if (asked) setState('asked')
+  }
+  const open = state === 'open' || (state === 'asked' && asked)
+  const close = () => {
+    setState('closed')
+    const u = new URL(window.location.href)
+    if (u.searchParams.get('run') === 'new') {
+      u.searchParams.delete('run')
+      window.history.replaceState(null, '', u.pathname + u.search)
+    }
+  }
+  const setOpen = (on: boolean) => (on ? setState('open') : close())
   return (
     <>
       <button

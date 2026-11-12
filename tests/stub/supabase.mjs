@@ -4,22 +4,31 @@
 // n8n (/webhook/*): the dashboard's webhooks, each checking the caller's token in the body's `auth` as the real ones do.
 // doc-reader, fathom-proxy (status, list a page at a time, transcript, access, connect, disconnect), catalyst-emails,
 // call-actions, slack-proxy and call-to-crm answer from fixtures.mjs or as the workflows would; the three stage runs (the
-// full run, the custom run, Meeting Prep) answer started; any webhook can be given a canned answer.
+// full run, the custom run, Meeting Prep) answer started; the Intel Tracker's custom run (intel-run) answers with its
+// run id and the names it tracks; any webhook can be given a canned answer.
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
 // GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
-// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, ...} (the
-// team's Fathom key as the Fathom proxy keeps it), GET /__storage (the files kept), POST /__storage {deny} (Storage
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, items?,
+// transcripts?, ...} (the team's Fathom key as the Fathom proxy keeps it, and the first page of calls it lists and their
+// transcripts when a test gives them), GET /__storage (the files kept), POST /__storage {deny} (Storage
 // turns signed-in teammates away, as before its rules for them were added).
 // Storage (/storage/v1): an upload address signed for a signed-in session, the upload to it, public reads and removal,
 // for the lead-files bucket; it answers the browser's CORS checks. catalyst-proposal answers started;
 // file-ingest reads a stored file and saves its text on the row as Lead File Text Ingest does (a file named "scan..."
-// has none); hubspot-file-sync answers synced.
+// has none); hubspot-file-sync answers synced. e3-autofill fills New draft from what it is sent (Engine 3 · Auto-fill).
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
 import { fixtures, docs as docFixtures, fathomCalls, fathomOlderCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
+
+/** The text Engine 3 · Read a Link answers with (made up). */
+const READ_TEXT =
+  'Most new tools do not fail on the first day. They fail in week three, when the launch buzz fades and the tool meets the real work.\n\n' +
+  'In the first two weeks someone watches every output and fixes the odd case by hand. Then the launch team goes back to its day job, ' +
+  'nobody owns the workflow, and people quietly route around the tool.\n\n' +
+  'The teams that get past week three name an owner, write down what happens when the tool is unsure, and pick the number that says it works.'
 
 const PORT = Number(process.env.STUB_PORT || 54399)
 const SECRET = 'stub-only-secret'
@@ -37,9 +46,12 @@ let hooks = {}
 const FATHOM = () => ({ connected: true, hint: 'ab12', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z' })
 let fathom = FATHOM()
 const refresh = new Map() // refresh token -> email
-// Storage: path -> {type, body (Buffer)}; signed upload tokens -> path
+// Storage: path -> {type, body (Buffer)}, lead-files in `store`, the ads' pictures (creatives) in `creatives`; signed
+// upload tokens -> bucket and path
 let store = new Map()
+let creatives = new Map()
 let signed = new Map()
+const bucketOf = (b) => (b === 'creatives' ? creatives : store)
 let denyStorage = false
 const CORS = {
   'access-control-allow-origin': '*',
@@ -103,22 +115,25 @@ function storage(req, res, url, buf, body) {
     return res.end()
   }
   let m
-  if (req.method === 'POST' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+  if (req.method === 'POST' && (m = p.match(/^object\/upload\/sign\/(lead-files|creatives)\/(.+)$/))) {
     if (!claimsOf(req)) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'Invalid Compact JWS' }, CORS)
-    if (denyStorage) return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, CORS)
+    // the creatives bucket takes the team's uploads under uploads/ only, as the project's rule does
+    if (denyStorage || (m[1] === 'creatives' && !m[2].startsWith('uploads/'))) {
+      return send(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, CORS)
+    }
     const token = crypto.randomBytes(10).toString('hex')
-    signed.set(token, m[1])
-    return send(res, 200, { url: '/object/upload/sign/lead-files/' + m[1] + '?token=' + token }, CORS)
+    signed.set(token, m[1] + '/' + m[2])
+    return send(res, 200, { url: '/object/upload/sign/' + m[1] + '/' + m[2] + '?token=' + token }, CORS)
   }
-  if (req.method === 'PUT' && (m = p.match(/^object\/upload\/sign\/lead-files\/(.+)$/))) {
+  if (req.method === 'PUT' && (m = p.match(/^object\/upload\/sign\/(lead-files|creatives)\/(.+)$/))) {
     const token = url.searchParams.get('token')
-    if (!token || signed.get(token) !== m[1]) return send(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'The signature does not match' }, CORS)
+    if (!token || signed.get(token) !== m[1] + '/' + m[2]) return send(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'The signature does not match' }, CORS)
     signed.delete(token)
-    store.set(m[1], { type: String(req.headers['content-type'] || 'application/octet-stream'), body: buf })
-    return send(res, 200, { Key: 'lead-files/' + m[1] }, CORS)
+    bucketOf(m[1]).set(m[2], { type: String(req.headers['content-type'] || 'application/octet-stream'), body: buf })
+    return send(res, 200, { Key: m[1] + '/' + m[2] }, CORS)
   }
-  if (req.method === 'GET' && (m = p.match(/^object\/public\/lead-files\/(.+)$/))) {
-    const f = store.get(m[1])
+  if (req.method === 'GET' && (m = p.match(/^object\/public\/(lead-files|creatives)\/(.+)$/))) {
+    const f = bucketOf(m[1]).get(m[2])
     if (!f) return send(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' }, CORS)
     res.writeHead(200, { 'content-type': f.type, ...CORS })
     return res.end(f.body)
@@ -165,6 +180,7 @@ http
         fathom = FATHOM()
         store = new Map()
         signed = new Map()
+        creatives = new Map()
         denyStorage = false
         return send(res, 200, { ok: true })
       }
@@ -173,7 +189,8 @@ http
           denyStorage = !!body.deny
           return send(res, 200, { ok: true })
         }
-        return send(res, 200, Object.fromEntries([...store].map(([k, v]) => [k, { type: v.type, size: v.body.length }])))
+        const kept = url.searchParams.get('bucket') === 'creatives' ? creatives : store
+        return send(res, 200, Object.fromEntries([...kept].map(([k, v]) => [k, { type: v.type, size: v.body.length }])))
       }
       if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
@@ -237,9 +254,14 @@ http
           if (!fathom.connected) return send(res, 200, off)
           if (body.action === 'list') {
             if (body.cursor === 'page2') return send(res, 200, { ok: true, items: fathomOlderCalls(), next_cursor: null })
-            return send(res, 200, { ok: true, items: fathomCalls(), next_cursor: 'page2' })
+            // a test can give its own first page ({connected: true, items}), dated from now
+            return send(res, 200, { ok: true, items: fathom.items ?? fathomCalls(), next_cursor: 'page2' })
           }
-          if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
+          if (body.action === 'transcript') {
+            // a test can give transcripts of its own ({connected: true, transcripts: {id: lines}})
+            const own = fathom.transcripts && fathom.transcripts[body.id]
+            return send(res, 200, { ok: true, transcript: own || fathomTranscripts()[body.id] || [] })
+          }
           if (body.action === 'access') {
             const access = Object.fromEntries((body.tokens || []).map((t) => [t, /TeamOnly/.test(t) ? 'team' : 'anyone']))
             return send(res, 200, { ok: true, access })
@@ -270,6 +292,117 @@ http
           const all = hubspotEmails()
           const items = (body.emails || []).flatMap((e) => all[String(e).toLowerCase()] || []).slice(0, body.limit || 8)
           return send(res, 200, { ok: true, items, total: items.length })
+        }
+        // Engine 3 · Intel Tracker: a custom run starts and says which names it tracks
+        if (name === 'intel-run') {
+          const names = (body.competitors || []).map((c) => c.name).filter(Boolean)
+          return send(res, 200, { ok: true, run_id: 'agent1_custom_stub', tracking: names })
+        }
+        // Engine 3 · Ad Strategist: a run starts; Engine 3 · Advertiser Industries: names an industry for the advertisers
+        // whose ads say what they sell (a test gives its own answer with /__hook)
+        if (name === 'ad-strategist-run') return send(res, 200, { ok: true, run_id: 'agent2_stub' })
+        // Engine 3 · Strategy Insights: a read started as insights_stub; the test writes the read (or the error row) n8n
+        // would save under it, or gives another answer with stubHook
+        if (name === 'e3-strategy-insights') return send(res, 200, { ok: true, started: true, run_id: 'insights_stub', counts: {} })
+        // Engine 3 · Ad Results Sync: nothing connected yet (a test gives connected platforms, and the rows a sync updated, with stubHook)
+        if (name === 'e3-ad-results') {
+          return send(res, 200, body.action === 'sync' ? { ok: true, rows: 0 } : { ok: true, meta: { connected: false }, linkedin: { connected: false } })
+        }
+        // Engine 3 · Ad Upload Analyzer: reads an ad (an advertiser named "Unreadable…" cannot be read), or writes copy
+        if (name === 'ad-upload' && body.mode === 'copy') {
+          const n = Number(body.count) || 3
+          const variants = Array.from({ length: n }, (_, i) => ({
+            angle: ['Time back', 'Proof', 'Simple start', 'Risk', 'Speed'][i % 5],
+            hook: 'Stub hook ' + (i + 1) + ' for ' + (body.offer?.name || 'the offer'),
+            primary_text: 'Stub primary text ' + (i + 1) + '.',
+            headline: 'Stub headline ' + (i + 1),
+            cta: 'Book a call',
+            image_direction: 'A clear desk',
+            pattern_borrowed: 'Proof first',
+          }))
+          return send(res, 200, { ok: true, variants, takeaways: ['Lead with the result'], guideline_notes: ['Kept to plain words', 'No promises of results'] })
+        }
+        if (name === 'ad-upload') {
+          if (/^unreadable/i.test(String(body.advertiser || ''))) return send(res, 200, { ok: false, error: 'The analyzer could not read this ad.' })
+          const imgs = Array.isArray(body.images) ? body.images : []
+          return send(res, 200, {
+            ok: true,
+            analysis: {
+              hook: body.copy ? String(body.copy).split('\n')[0] : 'Hook read from the screenshot',
+              body: body.copy || 'Body read from the screenshot.',
+              cta: 'Learn more',
+              copy_formula: 'Problem -> Proof -> Offer',
+              offer_inferred: 'Free audit',
+              price_point_inferred: 0,
+              funnel_stage: 'mof',
+              format: imgs.length > 1 ? 'carousel' : imgs.length ? 'static_image' : 'text',
+              extracted_patterns: ['Proof first: a client result'],
+              visual: { visual_hook: 'A checklist on a desk', text_on_image: 'Free audit' },
+              takeaways: ['Opens with a result', 'Names the offer'],
+              confidence: 0.8,
+            },
+          })
+        }
+        // Engine 3 · Custom Ad Strategy: answers with the brief it would save (a test writes the rows it would save)
+        if (name === 'ad-brief') {
+          return send(res, 200, { ok: true, run_id: 'agent2_custom_stub', brief: { differentiation_angle: 'Proof you can check in a week.', winning_hooks: ['Your week back', 'Proof first'] } })
+        }
+        // Low-Ticket Ads Content Agent: answers that it started
+        if (name === 'e3-low-ticket-run') return send(res, 200, { ok: true, started: true })
+        if (name === 'e3-ad-industries') return send(res, 200, { ok: true, industries: {} })
+        // Engine 3 · Content from Source answers at once (Respond Started) and writes the draft later
+        if (name === 'e3-content-run') return send(res, 200, { ok: true, queued: true })
+        // Engine 3 · Read a Link: a page's text, and YouTube turned away as it is (a test gives other answers with stubHook)
+        if (name === 'e3-read-link') {
+          const u = String(body.url || '').trim()
+          if (/youtu\.?be/.test(u)) return send(res, 200, { ok: false, code: 'youtube_blocked', message: 'YouTube did not share the captions.', title: 'A video' })
+          const url = /^https?:\/\//.test(u) ? u : 'https://' + u
+          const text = READ_TEXT
+          return send(res, 200, { ok: true, kind: 'article', url, host: url.replace(/^https?:\/\//, '').split('/')[0], title: 'The week-three slump', text, words: text.split(/\s+/).length, cut: false })
+        }
+        // Engine 3 · Auto-fill: fills the form from what it is sent, as the workflow answers: the first voice, the second call to
+        // action and the first simple shape; an idea (or the team's own idea kept), else a library piece of 300 characters or more
+        // when the form has no material (a test gives other answers with stubHook)
+        if (name === 'e3-autofill') {
+          const ty = body.typed || {}
+          const O = body.options || {}
+          const pick = (k, i) => (Array.isArray(O[k]) && O[k].length ? O[k][Math.min(i, O[k].length - 1)].value : undefined)
+          const at = (table, run) => (rest.dump(table).find((r) => r.run_id === run) || {}).created_at || null
+          const used = {
+            ad_brief: body.brief_run ? { run_id: body.brief_run, created_at: at('creative_briefs', body.brief_run) } : null,
+            organic_brief: body.organic_run ? { run_id: body.organic_run, created_at: at('agent_outputs', body.organic_run) } : null,
+            lead: body.format === 'ad' ? 'ad' : 'organic',
+          }
+          const filled = { voice: pick('voice', 0), cta: pick('cta', 1), structure: pick('structure', 1) }
+          const why = {
+            voice: 'Your saved voice keeps it sounding like you.',
+            cta: 'The brief says buyers want a small first step.',
+            structure: 'The brief found that problem-first posts land.',
+          }
+          if (body.start === 'idea') {
+            filled.thesis =
+              ty.thesis ||
+              'We think most firms start with the tool. They should start with one meeting type, because the brief shows buyers asking where to begin before they ask what to buy.'
+            filled.audience = 'Founders of small advisory firms'
+            filled.pain = 'Too many tools and no clear first step'
+            if (!ty.thesis) why.thesis = 'The brief’s top finding: buyers ask where to begin.'
+          } else {
+            if (!ty.text) {
+              const piece = rest.dump('content_pieces').find((p) => p.status !== 'archived' && String(p.body || '').length >= 300)
+              if (!piece) {
+                return send(res, 200, {
+                  ok: false,
+                  code: 'no_material',
+                  message: 'There is nothing of yours to repurpose yet. Add a source on this page or a file in Files, or switch to Describe a new idea.',
+                })
+              }
+              filled.source = { kind: 'piece', id: piece.id, title: piece.title }
+              why.pick = 'It answers the question the brief says buyers ask most.'
+            }
+            filled.takeaway = ty.take || 'Start with one meeting type, not the tool.'
+            if (!ty.take) why.takeaway = 'The brief says buyers want a first step they can take this week.'
+          }
+          return send(res, 200, { ok: true, page: 'ct', format: body.format, start: body.start, filled, why, based_on: 'Buyers ask where to begin before what to buy', used, flags: [], model: 'stub' })
         }
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })

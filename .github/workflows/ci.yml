@@ -19,6 +19,11 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npx playwright install --with-deps chromium
+      # Chromium comes from Playwright's own download. Its system packages come from Ubuntu's mirror, which the runner
+      # could not reach for hours on Nov 11; the runner image already has what Chromium needs, so that step may fail.
+      - run: npx playwright install chromium
+      - run: npx playwright install-deps chromium
+        continue-on-error: true
+        timeout-minutes: 5
       # builds the app against the Supabase Auth stand-in, then runs the browser tests
       - run: npm run test:e2e

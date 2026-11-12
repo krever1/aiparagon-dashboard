@@ -21,6 +21,7 @@ export const SEGS: Seg[] = ['summary', 'post', 'transcript', 'actions', 'people'
 export type Transcript = { lines: FtLine[] } | { error: string } | null
 
 const ghost = 'inline-flex items-center gap-1.5 rounded-sm border border-line px-3 py-1.5 text-[13.5px] font-semibold text-ink hover:border-line-2 disabled:opacity-60'
+const primaryCls = 'inline-flex items-center gap-1.5 rounded-sm bg-action px-3 py-1.5 text-[13.5px] font-semibold text-action-ink hover:bg-action-hover'
 const chip = 'inline-flex items-center rounded-full border border-line px-2 py-0.5 text-[12.5px] text-ink-2'
 
 function Mark({ text, q }: { text: string; q: string }) {
@@ -364,6 +365,9 @@ export function CallDetail({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
+        <Link href={'/content-transformation?' + new URLSearchParams({ call: c.id, title: row.title, ...(link ? { link } : {}) })} className={primaryCls} title="Pulls this call’s transcript into New draft on Content Transformation as the source">
+          ✎ Use as content source
+        </Link>
         {link ? (
           <a href={link} target="_blank" rel="noopener noreferrer" className={ghost}>
             Open in Fathom ↗

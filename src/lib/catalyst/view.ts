@@ -52,6 +52,20 @@ export function hasDoc(l: Pick<LeadView, 'docs'>, s: StageKey): boolean {
   return l.docs[s] !== undefined
 }
 
+/** The next document a lead needs (apNextStage, by the six stages): its own stage's when that is not written yet, else
+ * the first later stage's without one; null once every stage from its own on has its document. */
+export function nextDocOf(l: Pick<LeadView, 'stored' | 'derived' | 'run' | 'docs'>): StageKey | null {
+  const keys = STAGES.map((s) => s.key)
+  for (const k of keys.slice(keys.indexOf(viewStage(l)))) if (!hasDoc(l, k)) return k
+  return null
+}
+
+/** A lead waiting on a person (Approvals' Leads, Today's Catalyst line): not a weak fit, its next document not written
+ * and nothing being written for it. */
+export function waitsOnNext(l: Pick<LeadView, 'fit' | 'stored' | 'derived' | 'run' | 'docs'>): boolean {
+  return fitTone(l.fit) !== 'bad' && !l.run && nextDocOf(l) !== null
+}
+
 export function countByStage(leads: LeadView[]): Record<StageKey, number> {
   const out = Object.fromEntries(STAGES.map((s) => [s.key, 0])) as Record<StageKey, number>
   for (const l of leads) out[viewStage(l)]++

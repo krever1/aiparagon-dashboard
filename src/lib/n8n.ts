@@ -53,14 +53,15 @@ export async function startN8n(path: string, body: Record<string, unknown>): Pro
 /**
  * POSTs `body` (plus `auth`) to /webhook/<path> and returns the JSON answer. `what` names the connection in errors,
  * `workflow` the n8n workflow to switch on when the webhook is not there. An answer of {code: 'unauthorized'} (the
- * proxies' way of turning a caller away) is an error, as is anything but a 2xx.
+ * proxies' way of turning a caller away) is an error, as is anything but a 2xx. `minLeftSec` renews the token first
+ * when it has less than that to live, for a run that hands it on to the workflows it starts.
  */
 export async function callN8n<T = Record<string, unknown>>(
   path: string,
   body: Record<string, unknown>,
-  { what, workflow, timeoutMs = 60_000 }: { what: string; workflow: string; timeoutMs?: number },
+  { what, workflow, timeoutMs = 60_000, minLeftSec = 0 }: { what: string; workflow: string; timeoutMs?: number; minLeftSec?: number },
 ): Promise<T> {
-  const auth = await accessToken()
+  const auth = await accessToken(minLeftSec)
   if (!auth) throw new N8nError(`Sign in again to use ${what}.`, 'unauthorized')
   let res: Response
   try {

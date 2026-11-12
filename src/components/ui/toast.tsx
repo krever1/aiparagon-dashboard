@@ -4,9 +4,11 @@ import { useSyncExternalStore } from 'react'
 import { CircleAlert, Check } from 'lucide-react'
 
 // A short message at the bottom of the screen after something is done ("Saved. The whole team sees the new names."),
-// as in the current dashboard. Messages about something wrong stay up longer.
+// as in the current dashboard. Messages about something wrong stay up longer, and one with an action (Undo) stays up
+// for 7 seconds.
 
-type Toast = { id: number; text: string; tone: 'ok' | 'warn' }
+type Action = { label: string; run: () => void }
+type Toast = { id: number; text: string; tone: 'ok' | 'warn'; action?: Action }
 
 let list: Toast[] = []
 let seq = 0
@@ -17,17 +19,16 @@ function emit() {
   for (const l of listeners) l()
 }
 
-export function toast(text: string, tone: Toast['tone'] = 'ok') {
-  const t = { id: ++seq, text, tone }
+function drop(id: number) {
+  list = list.filter((x) => x.id !== id)
+  emit()
+}
+
+export function toast(text: string, tone: Toast['tone'] = 'ok', action?: Action) {
+  const t = { id: ++seq, text, tone, action }
   list = [...list.slice(-2), t]
   emit()
-  setTimeout(
-    () => {
-      list = list.filter((x) => x.id !== t.id)
-      emit()
-    },
-    tone === 'warn' ? 7000 : 4000,
-  )
+  setTimeout(() => drop(t.id), tone === 'warn' || action ? 7000 : 4000)
 }
 
 function subscribe(l: () => void) {
@@ -57,6 +58,18 @@ export function Toaster() {
             <Check size={16} aria-hidden="true" className="shrink-0 text-[#7fd3a5]" />
           )}
           <span>{t.text}</span>
+          {t.action ? (
+            <button
+              type="button"
+              onClick={() => {
+                drop(t.id)
+                t.action!.run()
+              }}
+              className="ml-1 shrink-0 rounded-sm px-2 py-0.5 text-[13.5px] font-semibold text-art-gold underline-offset-2 hover:underline"
+            >
+              {t.action.label}
+            </button>
+          ) : null}
         </div>
       ))}
     </div>

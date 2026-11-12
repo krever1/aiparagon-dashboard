@@ -121,6 +121,20 @@ export function usDateText(iso: string | null | undefined, timeZone?: string): s
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone })
 }
 
+/** "Nov 12, 2026" from a due date ("2026-11-12"), without moving it a day in another time zone. */
+export function dueText(v: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
+  if (!m) return v
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** "Nov 4, 2026" in the viewer's own time zone (apCxDay), UTC while the server draws it. */
+export function LocalUsDate({ iso }: { iso: string | null | undefined }) {
+  const hydrated = useHydrated()
+  const text = usDateText(iso, hydrated ? undefined : 'UTC')
+  return text ? <time dateTime={iso ?? undefined}>{text}</time> : null
+}
+
 /** "3h ago" in the browser (the current dashboard's apAgo); the day while the server draws the page. */
 export function Ago({ iso }: { iso: string | null | undefined }) {
   const hydrated = useHydrated()
