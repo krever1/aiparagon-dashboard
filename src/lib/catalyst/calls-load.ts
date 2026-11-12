@@ -39,7 +39,13 @@ export type CallsData = {
 
 const errOf = (e: unknown) => ({ message: e instanceof Error ? e.message : String(e), code: e instanceof FathomError ? e.code : '' })
 
-export async function readCallRows(): Promise<{ meta: Record<string, CallMeta>; outputs: Record<string, CallOutput>; settings: Record<string, unknown> }> {
+export async function readCallRows(): Promise<{
+  meta: Record<string, CallMeta>
+  outputs: Record<string, CallOutput>
+  settings: Record<string, unknown>
+  /** the post-call actions could not be read */
+  error: string | null
+}> {
   const supabase = await createClient()
   const [m, o, s] = await Promise.all([
     supabase.from('call_meta').select('*').limit(2000),
@@ -58,7 +64,7 @@ export async function readCallRows(): Promise<{ meta: Record<string, CallMeta>; 
   }
   const settings: Record<string, unknown> = {}
   for (const r of (s.data ?? []) as { key: string; value: unknown }[]) settings[r.key] = r.value
-  return { meta, outputs, settings }
+  return { meta, outputs, settings, error: o.error ? o.error.message || 'the post-call actions could not be read' : null }
 }
 
 /** The Catalyst leads, for the lead box on a call and the folder of a call with a lead on it. */

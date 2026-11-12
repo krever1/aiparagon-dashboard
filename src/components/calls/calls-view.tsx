@@ -8,10 +8,10 @@ import { Banner, StripTile, Tabs } from '@/components/catalyst/bits'
 import { NewRunDialog, type NewRunPrefill } from '@/components/catalyst/new-run'
 import { LocalCallWhen, useHydrated } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
-import type { CallLead, CallsData } from '@/lib/catalyst/calls-load'
+import type { CallsData } from '@/lib/catalyst/calls-load'
 import {
-  type CallRow, type CallTab, type FtCall, callRow, catButtons, emptyLine, filterRows, folderChoices, ftGuests, guestsOf, hoursText, minutesOf, tagChoices,
-  typeGuessed, typeShort,
+  type CallRow, type CallTab, type FtCall, callRow, catButtons, emptyLine, filterRows, folderChoices, ftGuests, guestsOf, hoursText, leadOf, minutesOf,
+  tagChoices, typeGuessed, typeShort,
 } from '@/lib/catalyst/calls'
 import { EditDetails } from './call-dialogs'
 import { CallDetail, SEGS, type Seg, type Transcript } from './call-detail'
@@ -25,17 +25,6 @@ const POLL_MS = 60_000
 const WRITE_POLL_MS = 5_000
 const WRITE_GIVE_UP_MS = 4 * 60_000
 const select = 'h-9 max-w-full rounded-sm border border-line bg-panel px-2.5 text-[13.5px] text-ink focus:border-accent focus:outline-none'
-
-function leadOf(c: FtCall, row: { meta: CallRow['meta'] }, leads: CallLead[]): CallLead | null {
-  const emails = guestsOf(c, row.meta)
-    .map((g) => g.email.toLowerCase())
-    .filter(Boolean)
-  for (const e of emails) {
-    const l = leads.find((x) => x.emails.includes(e))
-    if (l) return l
-  }
-  return null
-}
 
 function stampText(checked: number, now: number): string {
   const t = Math.round((now - checked) / 1000)
@@ -102,7 +91,7 @@ export function CallsView({ data }: { data: CallsData }) {
     () =>
       calls.map((c) => {
         const m = data.meta[c.id] ?? null
-        const lead = leadOf(c, { meta: m }, data.leads)
+        const lead = leadOf(c, m, data.leads)
         return callRow(c, m, data.outputs[c.id] ?? null, lead?.company ?? '')
       }),
     [calls, data.meta, data.outputs, data.leads],
@@ -489,7 +478,7 @@ export function CallsView({ data }: { data: CallsData }) {
           <CallDetail
             key={selected.call.id}
             row={selected}
-            lead={leadOf(selected.call, selected, data.leads)}
+            lead={leadOf(selected.call, selected.meta, data.leads)}
             custom={data.types}
             auto={data.auto}
             access={(() => {

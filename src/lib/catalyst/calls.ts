@@ -115,6 +115,11 @@ export type CallOutput = {
   created_by: string
   created_at: string
   meeting_type: string
+  /** the call's title and start as the post-call actions saved them (Tasks, for a call Fathom did not list) */
+  call_title: string
+  call_start: string
+  /** when its tasks were sent to Asana, and the project (the current dashboard's Send to Asana) */
+  asana: { at: string; project_name: string } | null
 }
 
 function parsed(v: unknown): unknown {
@@ -188,6 +193,12 @@ export function normOutput(r: Record<string, unknown>): CallOutput {
     created_by: str(r.created_by),
     created_at: str(r.created_at),
     meeting_type: str(r.meeting_type).trim(),
+    call_title: str(r.call_title).trim(),
+    call_start: str(r.call_start),
+    asana: (() => {
+      const a = obj(r.asana)
+      return a && a.at ? { at: str(a.at), project_name: str(a.project_name) } : null
+    })(),
   }
 }
 
@@ -282,8 +293,8 @@ export function isClientCall(c: FtCall, m: CallMeta | null | undefined): boolean
   return m?.guests.length ? m.guests.some((g) => g.external) : c.external
 }
 
-/** Who recorded the call, then the guests, each once. */
-export function peopleOf(c: FtCall, m: CallMeta | null | undefined): Guest[] {
+/** Who recorded the call, then the guests, each once; a call Fathom did not list has only the people the team saved. */
+export function peopleOf(c: FtCall | null, m: CallMeta | null | undefined): Guest[] {
   const out: Guest[] = []
   const seen = new Set<string>()
   const add = (p: Guest) => {
@@ -292,8 +303,8 @@ export function peopleOf(c: FtCall, m: CallMeta | null | undefined): Guest[] {
     seen.add(k)
     out.push({ name: p.name.trim(), email: p.email.trim(), external: p.external })
   }
-  if (c.recordedBy) add({ name: c.recordedBy.name, email: c.recordedBy.email, external: false })
-  guestsOf(c, m).forEach(add)
+  if (c?.recordedBy) add({ name: c.recordedBy.name, email: c.recordedBy.email, external: false })
+  ;(c ? guestsOf(c, m) : (m?.guests ?? [])).forEach(add)
   return out
 }
 
@@ -317,19 +328,31 @@ export function companyOf(email: string): string {
 /**
  * The client folder a call is filed in: the folder set on it, else its client company, else its Catalyst lead's
  * company, else the company of the people on it; a call with only the team is AI Paragon (internal), and a client call
- * with no client on the invite is No client yet.
+ * with no client on the invite is No client yet. A call Fathom did not list (Tasks) and with no people saved is only
+ * internal when its type is: the current dashboard's v121Folder, lead's company only for a call Fathom listed.
  */
-export function folderOf(c: FtCall, m: CallMeta | null | undefined, o: CallOutput | null | undefined, leadCompany = ''): string {
+export function folderOf(c: FtCall | null, m: CallMeta | null | undefined, o: CallOutput | null | undefined, leadCompany = ''): string {
   if (m?.folder) return m.folder
   if (m?.client) return m.client
-  if (leadCompany) return leadCompany
+  if (c && leadCompany) return leadCompany
   const ext = peopleOf(c, m).filter(isOutside)
   for (const p of ext) {
     const n = companyOf(p.email)
     if (n) return n
   }
   if (ext.length) return ext[0].name || ext[0].email
-  return ['demo', 'sales', 'client'].includes(catOf(typeOf(m, o))) ? NO_CLIENT : IN_FOLDER
+  const cat = catOf(typeOf(m, o))
+  if (c || m?.guests.length) return ['demo', 'sales', 'client'].includes(cat) ? NO_CLIENT : IN_FOLDER
+  return cat === 'dev' || cat === 'internal' ? IN_FOLDER : NO_CLIENT
+}
+
+/** The Catalyst lead among a call's guests, by email (apCxLead). */
+export function leadOf<L extends { emails: string[] }>(c: FtCall, m: CallMeta | null | undefined, leads: L[]): L | null {
+  for (const e of guestsOf(c, m).map((g) => g.email.toLowerCase()).filter(Boolean)) {
+    const l = leads.find((x) => x.emails.includes(e))
+    if (l) return l
+  }
+  return null
 }
 
 /** "With Robin Sample, QA Teammate", outside people first, four at most. */
@@ -396,22 +419,31 @@ export function filterRows(rows: CallRow[], tab: CallTab, f: CallFilters): CallR
   )
 }
 
-/** The type buttons: All, then each kind of call with how many there are on the tab. */
-export function catButtons(rows: CallRow[], tab: CallTab): { key: string; label: string; n: number }[] {
-  const on = rows.filter((r) => inTab(r, tab))
-  const n = (k: string) => on.filter((r) => r.cat === k).length
-  const out = [{ key: '', label: 'All', n: on.length }]
-  for (const k of CAT_MAIN) out.push({ key: k, label: catLabel(k), n: n(k) })
-  for (const k of ['client', 'internal']) if (n(k)) out.push({ key: k, label: catLabel(k), n: n(k) })
-  const mine = [...new Set(on.map((r) => r.cat).filter((k) => k.startsWith('x:')))].sort((a, b) => a.localeCompare(b))
+export type CatButton = { key: string; label: string; n: number }
+
+/**
+ * The type buttons for a list of calls, one kind each (v121CatBtns): All, then the kinds in the order of the buttons
+ * (Client demos, Sales and Internal development always, Client work and Internal meetings once a call has them), the
+ * team's own types A to Z, Other, and No type yet, each with how many there are.
+ */
+export function catButtonsOf(cats: string[]): CatButton[] {
+  const n = (k: string) => cats.filter((c) => c === k).length
+  const out = [{ key: '', label: 'All', n: cats.length }]
+  for (const [k] of CATS) if (k !== 'other' && (n(k) || CAT_MAIN.includes(k))) out.push({ key: k, label: catLabel(k), n: n(k) })
+  const mine = [...new Set(cats.filter((k) => k.startsWith('x:')))].sort((a, b) => a.localeCompare(b))
   for (const k of mine) out.push({ key: k, label: catLabel(k), n: n(k) })
   if (n('other')) out.push({ key: 'other', label: catLabel('other'), n: n('other') })
   if (n('none')) out.push({ key: 'none', label: catLabel('none'), n: n('none') })
   return out
 }
 
+/** The type buttons on Calls: each kind of call with how many there are on the tab. */
+export function catButtons(rows: CallRow[], tab: CallTab): CatButton[] {
+  return catButtonsOf(rows.filter((r) => inTab(r, tab)).map((r) => r.cat))
+}
+
 /** The folder filter's choices: every call's folder and every folder set, A to Z, No client yet last. */
-export function folderChoices(rows: CallRow[], metas: CallMeta[]): string[] {
+export function folderChoices(rows: { folder: string }[], metas: CallMeta[]): string[] {
   const s = new Set<string>()
   rows.forEach((r) => s.add(r.folder))
   metas.forEach((m) => m.folder && s.add(m.folder))
