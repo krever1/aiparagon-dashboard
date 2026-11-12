@@ -10,13 +10,14 @@
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
 // GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
-// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, items?, ...}
-// (the team's Fathom key as the Fathom proxy keeps it, and the first page of calls it lists when a test gives one), GET /__storage (the files kept), POST /__storage {deny} (Storage
+// POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, items?,
+// transcripts?, ...} (the team's Fathom key as the Fathom proxy keeps it, and the first page of calls it lists and their
+// transcripts when a test gives them), GET /__storage (the files kept), POST /__storage {deny} (Storage
 // turns signed-in teammates away, as before its rules for them were added).
 // Storage (/storage/v1): an upload address signed for a signed-in session, the upload to it, public reads and removal,
 // for the lead-files bucket; it answers the browser's CORS checks. catalyst-proposal answers started;
 // file-ingest reads a stored file and saves its text on the row as Lead File Text Ingest does (a file named "scan..."
-// has none); hubspot-file-sync answers synced.
+// has none); hubspot-file-sync answers synced. e3-autofill fills New draft from what it is sent (Engine 3 · Auto-fill).
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
@@ -256,7 +257,11 @@ http
             // a test can give its own first page ({connected: true, items}), dated from now
             return send(res, 200, { ok: true, items: fathom.items ?? fathomCalls(), next_cursor: 'page2' })
           }
-          if (body.action === 'transcript') return send(res, 200, { ok: true, transcript: fathomTranscripts()[body.id] || [] })
+          if (body.action === 'transcript') {
+            // a test can give transcripts of its own ({connected: true, transcripts: {id: lines}})
+            const own = fathom.transcripts && fathom.transcripts[body.id]
+            return send(res, 200, { ok: true, transcript: own || fathomTranscripts()[body.id] || [] })
+          }
           if (body.action === 'access') {
             const access = Object.fromEntries((body.tokens || []).map((t) => [t, /TeamOnly/.test(t) ? 'team' : 'anyone']))
             return send(res, 200, { ok: true, access })
@@ -354,6 +359,50 @@ http
           const url = /^https?:\/\//.test(u) ? u : 'https://' + u
           const text = READ_TEXT
           return send(res, 200, { ok: true, kind: 'article', url, host: url.replace(/^https?:\/\//, '').split('/')[0], title: 'The week-three slump', text, words: text.split(/\s+/).length, cut: false })
+        }
+        // Engine 3 · Auto-fill: fills the form from what it is sent, as the workflow answers: the first voice, the second call to
+        // action and the first simple shape; an idea (or the team's own idea kept), else a library piece of 300 characters or more
+        // when the form has no material (a test gives other answers with stubHook)
+        if (name === 'e3-autofill') {
+          const ty = body.typed || {}
+          const O = body.options || {}
+          const pick = (k, i) => (Array.isArray(O[k]) && O[k].length ? O[k][Math.min(i, O[k].length - 1)].value : undefined)
+          const at = (table, run) => (rest.dump(table).find((r) => r.run_id === run) || {}).created_at || null
+          const used = {
+            ad_brief: body.brief_run ? { run_id: body.brief_run, created_at: at('creative_briefs', body.brief_run) } : null,
+            organic_brief: body.organic_run ? { run_id: body.organic_run, created_at: at('agent_outputs', body.organic_run) } : null,
+            lead: body.format === 'ad' ? 'ad' : 'organic',
+          }
+          const filled = { voice: pick('voice', 0), cta: pick('cta', 1), structure: pick('structure', 1) }
+          const why = {
+            voice: 'Your saved voice keeps it sounding like you.',
+            cta: 'The brief says buyers want a small first step.',
+            structure: 'The brief found that problem-first posts land.',
+          }
+          if (body.start === 'idea') {
+            filled.thesis =
+              ty.thesis ||
+              'We think most firms start with the tool. They should start with one meeting type, because the brief shows buyers asking where to begin before they ask what to buy.'
+            filled.audience = 'Founders of small advisory firms'
+            filled.pain = 'Too many tools and no clear first step'
+            if (!ty.thesis) why.thesis = 'The brief’s top finding: buyers ask where to begin.'
+          } else {
+            if (!ty.text) {
+              const piece = rest.dump('content_pieces').find((p) => p.status !== 'archived' && String(p.body || '').length >= 300)
+              if (!piece) {
+                return send(res, 200, {
+                  ok: false,
+                  code: 'no_material',
+                  message: 'There is nothing of yours to repurpose yet. Add a source on this page or a file in Files, or switch to Describe a new idea.',
+                })
+              }
+              filled.source = { kind: 'piece', id: piece.id, title: piece.title }
+              why.pick = 'It answers the question the brief says buyers ask most.'
+            }
+            filled.takeaway = ty.take || 'Start with one meeting type, not the tool.'
+            if (!ty.take) why.takeaway = 'The brief says buyers want a first step they can take this week.'
+          }
+          return send(res, 200, { ok: true, page: 'ct', format: body.format, start: body.start, filled, why, based_on: 'Buyers ask where to begin before what to buy', used, flags: [], model: 'stub' })
         }
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })

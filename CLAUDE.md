@@ -55,13 +55,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   (New read, Remember) and Import a CSV (Nov 12, branch `pipeline/strategy-read`, on top of 3b). With 3c, part 3 is
   done. Part 4 starts with 4a, Content Transformation's Drafts and Ideas (Nov 12, branch `pipeline/content-drafts`, on
   top of 3c, PR #21); New draft follows: 4b the form and its run, with Paste, Read link and New idea (Nov 12, branch
-  `pipeline/content-new`, on top of 4a), 4c files, recordings and Fathom calls (and Fill it in for me), 4d the briefs'
-  findings and the plan. See Pipeline below.
+  `pipeline/content-new`, on top of 4a, PR #22), 4c a file read in the browser, Fathom calls (with Calls' Use as
+  content source) and Fill it in for me (Nov 12, branch `pipeline/content-files`, on top of 4b), 4d the briefs'
+  findings and the plan, 4e video and audio (transcription and clips). See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Content Transformation's files, recordings and Fathom calls (Pipeline 4c) and the briefs' findings and the plan
-  (4d), then part 5 (Marketing Generation), then Atlas, Canvas, Settings. Then the cutover.
+- Next: Content Transformation's briefs' findings and the plan (Pipeline 4d), and video and audio (4e), then part 5
+  (Marketing Generation), then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -93,7 +94,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Ad Testing: the Strategy read (New read, Remember) and Import a CSV | here (Pipeline part 3c, not released) |
 | Pipeline | Content Transformation: Drafts (the review, Mark ready, What should change?, the library) and Ideas | here (Pipeline part 4a, not released) |
 | Pipeline | Content Transformation's New draft: the kinds, Paste, Read link, New idea, the details, the side, Generate | here (Pipeline part 4b, not released) |
-| Pipeline | Content Transformation's New draft: Upload, Fathom call, Fill it in for me, the briefs' findings, the plan | current dashboard |
+| Pipeline | Content Transformation's New draft: Upload (a file read here), Fathom call, Calls' Use as content source, Fill it in for me | here (Pipeline part 4c, not released) |
+| Pipeline | Content Transformation's New draft: video and audio, the briefs' findings, the plan | current dashboard |
 | Pipeline | Marketing Generation | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
@@ -238,8 +240,8 @@ signed-in teammate's token, as the current dashboard's do.
   client (filed as none), Just file it (under the lead's stage), Move and run it (filed, the lead moved to the next
   stage, that stage run with the call; in Client review, the review again).
 - Changed on purpose in part 3 (reported to Kser): no Integrations switcher above HubSpot contacts and Calls (the
-  sidebar has them under Catalyst); Use as content source and Send to Asana are not here yet (Content Transformation
-  and Tasks are still in the current dashboard; the team-wide Asana Proxy was never published); Refresh from Fathom and
+  sidebar has them under Catalyst); Send to Asana is not here yet (Tasks' Asana is still in the current dashboard; the
+  team-wide Asana Proxy was never published), and Use as content source came with Pipeline 4c; Refresh from Fathom and
   Key ending sit on the banner line; a HubSpot search with no match says so (the old page said no contacts were
   synced); Follow also saves the website it asks for and who added the company; the Assessment card on a discovery
   call says "Next: the Assessment" (the old one said the Growth Plan over the same button); due dates no longer show the
@@ -886,8 +888,7 @@ signed-in teammate's token, as the current dashboard's do.
     (`addIdea`) and delete (asks first, `deleteIdea`), and what the team has given the engine (the library's pieces,
     which open in the piece editor, and earlier requests' material, once by title, six then all). Draft this, Use and
     Add a piece open New draft here, filled in (since 4b).
-- Changed on purpose on Content Transformation (reported to Kser): New draft, Draft this, Use and Add a piece open the
-  current dashboard (the form moves here in 4b); a newer format (a report, a deck) is named as such in the list, the
+- Changed on purpose on Content Transformation (reported to Kser): a newer format (a report, a deck) is named as such in the list, the
   review and the download (the old list called a report a Newsletter); a draft made from a report, a presentation, a
   video or a call names it (the old page said Your source); the line under a draft's title reads the same whichever
   parts it has (the old one fell back to "Primary signal: …" when a draft had no supporting brief); "2 stories" (the old
@@ -910,8 +911,8 @@ signed-in teammate's token, as the current dashboard's do.
     briefs) with the decisions on them, and the five things of the organic one it leads with.
   - 1 What are you making?: the tiles in five groups (14 kinds; `KINDS`, `GROUPS`) and the categories (`CATS`: they set
     the kind of post for LinkedIn post and Newsletter, the ad type for Paid ad; Email has none). 2 Your material: the
-    tabs Upload and Fathom call (still in the current dashboard: a card with a link there and Paste the text instead),
-    Paste (Source text with its word count, Read link, Try it with a sample article) and New idea; What is this
+    tabs Upload and Fathom call (since 4c, below), Paste (Source text with its word count, Read link, Try it with a
+    sample article) and New idea; What is this
     material?; the line for a file's or a call's text. 3 Details: Who is it for? (the persona chips, Anyone who follows
     us, + New persona in the company profile), the kind's questions and Topics (`QS`), Core takeaway or Proof or
     example, Must use (chips; the first three approved proof items and the default offer suggested), Anything else?,
@@ -932,12 +933,12 @@ signed-in teammate's token, as the current dashboard's do.
     must use, the notes and the typed answers go; the kind, the choices and More options stay.
   - Read link (`readLink`): Engine 3 · Read a Link (`e3-read-link`), with the current dashboard's messages.
   - Filled in from the address, once, then the address goes back to bare (`prefillOf`, `newDraftHref`): `kind`, `src`,
-    `idea`, `note` (a team idea), `use` (`piece:<id>` or `req:<id>`, read by `materialFor`), `title`, `take`, and
-    `from=read` (the strategy read's line). Ideas' buttons write it with replaceState; Today, the Overview, the briefs
-    page's Start from your own material and the strategy read's Create link to it.
+    `idea`, `note` (a team idea), `use` (`piece:<id>` or `req:<id>`, read by `materialFor`), `title`, `take`, `call`
+    and `link` (a Fathom call and its share link, since 4c), and `from=read` (the strategy read's line). Ideas' buttons
+    write it with replaceState; Today, the Overview, the briefs page's Start from your own material, the strategy
+    read's Create and Calls' Use as content source link to it.
   - The form stays mounted (hidden) on Drafts and Ideas, so what was typed is kept while another tab is looked at.
-- Changed on purpose on New draft (reported to Kser): Upload and Fathom call say they are still in the current
-  dashboard (4c moves them) and offer Paste instead; Fill it in for me is not here yet (4c); a carousel or video ad keeps
+- Changed on purpose on New draft (reported to Kser): a carousel or video ad keeps
   the team's answers and notes after its own shape (the old page put the shape over them, so they were lost); after a
   send the typed answers (topics, who gets it, the event's date) empty with the notes; a team idea is marked written up
   only when the idea that goes out still has its words (the old page marked it on the next idea sent, whatever it
@@ -950,6 +951,63 @@ signed-in teammate's token, as the current dashboard's do.
   start says Try again from Drafts (the old one named Your requests); Today's and the Overview's Turn content into a
   post, the briefs page's Start from your own material, Ideas' Draft this, Use and Add a piece, and the strategy read's
   Create open New draft here.
+- New draft's material and Fill it in for me (part 4c, `src/lib/pipeline/content-files.ts` and `content-fill.ts` pure
+  rules, `withMaterial` in `content-new.ts`, `src/components/pipeline/content-read.ts` and `content-material.tsx`,
+  `contentCalls`, `contentCallText` and `fillItIn` in the content actions; apCfFile, apCfReadFile, apCfCallPick,
+  apCfUseCall, apCallToCreate and v99Fill with v105's, v110's and v113's wrappers):
+  - Upload: the drop zone and the file box (the current dashboard's list: text, captions, PDF, Word, web pages, video and
+    audio). A file is read in this browser, of any size (a Vercel request takes 4.5 MB at most), and nothing is sent
+    until the draft goes out: txt, md, markdown and csv as they are; vtt and srt without the WEBVTT line, the cue
+    numbers, timings and tags; html and htm without scripts, styles, menus and footers, a line per block; a PDF with
+    pdf.js (`pdfjs-dist` 6, its legacy build, loaded when the first PDF comes), up to its 120th page, a page's runs of
+    text joined by spaces, the pages by a blank line; a Word file with mammoth's browser build. Under 40 characters, a
+    type it does not read (.doc, pictures), a damaged file or a locked PDF says why. Video and audio say they are still
+    transcribed in the current dashboard, with a link (4e). The text is cut to 120,000 characters, What is this
+    material? is guessed from the file (video and captions a video, audio a podcast, PDF and Word a document, else an
+    article) unless it was picked by hand (`typeSet`), and the file names the material (`fileTitle`). The zone then
+    shows the file and its words; the line under it says Loaded <name> (the first 120,000 characters when cut), with
+    See the text.
+  - A material's title (`withMaterial`): a file, a call, a link, a piece or request to use, and the piece Fill it in
+    picks name the material unless a title was typed (`titleFrom` is the title the last material gave), and a file or a
+    call clears the link a link left.
+  - Fathom call: the tab reads the newest page of calls (`contentCalls`, through `loadCalls`, again after about a
+    minute), each under the title the team gave it (else Fathom's), Client when a client was on it, the day and time in
+    the viewer's zone and the minutes; the search reads what Calls' search reads (the people, the folder, the type, the
+    tags), never the Calls page's filters, 40 calls at most. A pick reads its transcript (`contentCallText`, "Speaker:
+    text" lines) and puts it in with the call's title and share link, What is this material? Call or meeting unless
+    picked by hand, says "Call transcript loaded as the source" and puts the cursor in Core takeaway; the list closes,
+    with Pick another call. Not connected: Connect Fathom (Calls, which shows the key form). No transcript: said.
+  - Calls' ✎ Use as content source (a call's actions, before Open in Fathom): opens
+    `/content-transformation?call=<id>&title=<its title>&link=<its share link>`, and New draft loads the transcript on
+    its Fathom call tab (a link that is not Fathom's is dropped).
+  - Fill it in for me (Details' heading, with an i that says how it works): Engine 3 · Auto-fill (`e3-autofill`, 100
+    seconds) gets a request built on the server from the form and what is on file, read fresh (`fillRequest`): the
+    format and kind of post, an idea or material, the briefs in use (the newest approved, else the newest; a paid ad
+    needs an advertisement brief, anything else an organic brief), what was typed (an idea and who it is for, or the
+    team's own material, its first 4,000 characters, when it has 300 or more and is not the sample), and the voices,
+    structures (a template with what it is for) and calls to action the form offers. The answer is checked
+    (`fillAnswerOf`) and goes in at once (`applyFill`): the idea, the proof (with where it came from) and the takeaway
+    only where nothing was typed; with no material of the team's own, the piece it picked (an earlier request's
+    material, a knowledge base file or a library piece, read on the server, 300 characters or more) comes in whole and
+    the old takeaway goes; the voice, the call to action and the structure when the form offers them; More options
+    opens. A reason sits under each field it filled (one line, whole on a click, gone once the field is changed by
+    hand); with no personas, who it suggests writing for is said. The strip at the top of Details: Reading the briefs
+    and your context… (what is typed meanwhile is kept), Could not fill it in with Try again, or Filled in from the
+    organic brief of <day> with what it was built on, Kept what you typed, the figures it flags, Undo (each field it
+    changed back) and Fill it in again. Another kind, category, or an idea in place of material ends the fill, as a
+    send does; an answer for what is no longer on the form is not put in.
+- Changed on purpose in 4c (reported to Kser): video and audio are still transcribed in the current dashboard (a
+  dropped one says so, with a link; 4e moves them); a second file, call or link names the material after itself unless
+  a title was typed (the old page kept the first file's title, and a call's title replaced even a typed one); a file or
+  a call clears the link a read link left (the old page sent that link with the new material); a web page keeps a line
+  per block, and a PDF's page loses its runs of spaces; a locked PDF and a damaged PDF or Word file say so in plain words
+  (the old page showed pdf.js's own message); the call search reads what Calls' search reads, without the Calls page's
+  filters, and the list shows the team's title for a call; Calls' Use as content source opens New draft and loads the
+  transcript there (the old page loaded it on Calls first); Fill it in for me's i leaves out the old "Make one from the
+  latest brief" (not on this page) and the problem it no longer fills in (the form has no box for it), and names the
+  advertisement brief for a paid ad's new idea; the reason for a piece it picked shows on every material tab (the old one
+  sat under the Paste box); a piece it picks keeps what kind of material it is (a report, a call), where the old page
+  made anything but six kinds Other.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -1021,7 +1079,10 @@ signed-in teammate's token, as the current dashboard's do.
   snapshot; every id a uuid); `content-new-logic.spec.ts` (without a browser) and `content-new.spec.ts` New draft, on
   the same rows and `formRows()` (two personas and an archived one, two offers with the default at $497, approved and
   pending proof, the voice, three templates (one for posts, one switched off, one for anything else) and the briefs'
-  layout with two organic parts switched off). A test that opens an address filling the form in signs in first, then
+  layout with two organic parts switched off); `content-material-logic.spec.ts` (without a browser) and
+  `content-material.spec.ts` Upload, the Fathom call tab, Calls' Use as content source and Fill it in for me, on the
+  same rows, the made-up files in `tests/fixtures` (a two-page PDF and a Word file; the others are made in the tests)
+  and the Fathom stand-in's calls. A test that opens an address filling the form in signs in first, then
   goes there (`openWith`): the form puts the address back to bare at once, so `signIn` cannot wait for it. Helpers in
   `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
@@ -1042,7 +1103,11 @@ signed-in teammate's token, as the current dashboard's do.
   Content Transformation actions check ids are uuids), with their column defaults, and keeps content_requests' checks
   (format, start_mode, status). The n8n stand-in answers Engine 3 · Content from Source (`e3-content-run`) as queued,
   and Engine 3 · Read a Link (`e3-read-link`) with a made-up article for any link but a YouTube one, which it turns
-  away as the workflow does (youtube_blocked).
+  away as the workflow does (youtube_blocked). It answers Engine 3 · Auto-fill (`e3-autofill`) from what it is sent:
+  the first voice, the second call to action and the first simple shape, an idea (the one typed kept) or, with no
+  material on the form, the first library piece of 300 characters or more (none: no_material), and the briefs it was
+  sent with their days; a test gives other answers with `stubHook`. The Fathom stand-in takes a test's own transcripts
+  (`stubFathom({connected: true, items, transcripts})`).
 - The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
   session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
   takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
@@ -1063,6 +1128,13 @@ signed-in teammate's token, as the current dashboard's do.
   mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
+- pdf.js runs on the page: `content-read.ts` imports `pdfjs-dist/legacy/build/pdf.worker.mjs` with the library, which
+  sets `globalThis.pdfjsWorker`, so pdf.js works without a worker of its own (no worker file to serve, no
+  `workerSrc`); `src/types/pdfjs-worker.d.ts` types the import. pdfjs-dist 6 takes no `isEvalSupported`. Its optional
+  `@napi-rs/canvas` packages in the lock file are for Node and never load in the browser. mammoth is imported in the
+  browser as is: its package's browser field swaps in its browser unzip.
+- React's lint (`react-hooks/purity`) refuses `Date.now()` in a function declared in a component's body, even one
+  only a click calls: use the page's clock (`now`, by the minute) there, or call it inside a promise's callback.
 - Content Transformation's New draft stays mounted (hidden) while Drafts or Ideas is open, and it has a tablist of its
   own (Your material): tests find the page's tabs inside `getByRole('tablist', { name: 'Content Transformation' })`,
   and a container's `toContainText` reads the hidden form's text too.

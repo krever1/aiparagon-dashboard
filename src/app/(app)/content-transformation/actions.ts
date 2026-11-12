@@ -2,16 +2,21 @@
 
 import { refresh } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
+import { callRow, fathomLink, leadOf, minutesOf } from '@/lib/catalyst/calls'
+import { loadCalls } from '@/lib/catalyst/calls-load'
+import { ftTranscript } from '@/lib/catalyst/fathom'
 import { N8nError, callN8n } from '@/lib/n8n'
 import { CHECKS, type PieceForm, askProblem, askText, draftOf, kindOf, noteTags, pieceRow } from '@/lib/pipeline/content'
+import { FILL_MSG, type FillAnswer, fillAnswerOf, fillRequest, ownMaterial } from '@/lib/pipeline/content-fill'
 import { loadForm } from '@/lib/pipeline/content-load'
-import { TEXT_MAX, buildRequest, dbErr, formFrom, usesNote } from '@/lib/pipeline/content-new'
+import { CALL_ID, type Material, TEXT_MAX, TEXT_MIN, buildRequest, dbErr, formFrom, usesNote } from '@/lib/pipeline/content-new'
 import { createClient } from '@/lib/supabase/server'
 
 // Content Transformation's actions, as the signed-in teammate (nwCtSend, apCfRetry, apCfMarkReady, v126Save, apCpSave,
 // apCpArchive, nwIdeaSave and nwIdeaDel in the current dashboard): a new draft asked for, a request started again, a
 // draft marked ready or sent back with what should change, a draft kept in the library and a library piece changed or
-// archived, and an idea added or deleted.
+// archived, and an idea added or deleted; for New draft's material, a link read, a Fathom call picked and its
+// transcript, and Fill it in for me.
 
 const SIGNED_OUT = 'You are signed out. Sign in again.'
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -340,4 +345,106 @@ export async function deleteIdea(id: string): Promise<Done> {
   }
   refresh()
   return { ok: true }
+}
+
+// ---------- a Fathom call as the material (apCfCallPick, apCfCallRows, apCfUseCall) ----------
+
+export type CallPick = { id: string; title: string; start: string; minutes: number; client: boolean; url: string; hay: string }
+export type CallsPick =
+  | { ok: true; connected: true; calls: CallPick[] }
+  | { ok: true; connected: false }
+  | { ok: false; error: string; code: string }
+
+/**
+ * The Fathom call tab's list: the newest page of recorded calls, each under the title the team gave it (else
+ * Fathom's), whether a client was on it, and what Calls' search reads (the people, the folder, the type, the tags).
+ */
+export async function contentCalls(): Promise<CallsPick> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT, code: 'unauthorized' }
+  const d = await loadCalls()
+  if (d.error) return { ok: false, error: d.error.message, code: d.error.code }
+  if (!d.connected) return { ok: true, connected: false }
+  return {
+    ok: true,
+    connected: true,
+    calls: d.calls.map((c) => {
+      const m = d.meta[c.id] ?? null
+      const r = callRow(c, m, d.outputs[c.id] ?? null, leadOf(c, m, d.leads)?.company ?? '')
+      return { id: c.id, title: r.title || 'Untitled call', start: c.start, minutes: minutesOf(c), client: r.client, url: fathomLink(c), hay: r.hay }
+    }),
+  }
+}
+
+/** A call's transcript as "Speaker: text" lines, cut to 120,000 characters; empty when Fathom has none. */
+export async function contentCallText(id: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
+  if (!CALL_ID.test(str(id))) return { ok: false, error: 'That is not a Fathom call.' }
+  try {
+    const lines = await ftTranscript(str(id))
+    const text = lines.map((l) => (l.speaker ? l.speaker + ': ' : '') + l.text).join('\n').trim()
+    return { ok: true, text: text.slice(0, TEXT_MAX) }
+  } catch (e) {
+    return { ok: false, error: msgOf(e) }
+  }
+}
+
+// ---------- Fill it in for me (v99Fill) ----------
+
+export type Filled = { ok: true; answer: FillAnswer; material: Material | null } | { ok: false; error: string }
+
+/** The team's own material Auto-fill picked (v99Material): an earlier request's, a knowledge base file, a library piece. */
+async function pickedMaterial(supabase: Awaited<ReturnType<typeof createClient>>, kind: string, id: string): Promise<Material | null> {
+  if (kind === 'request') {
+    const r = await supabase.from('content_requests').select('id,title,source_type,source_url,source_text').eq('id', id).maybeSingle()
+    return r.data
+      ? { title: str(r.data.title).replace(/^Sample · /, ''), type: str(r.data.source_type) || 'article', url: str(r.data.source_url), text: str(r.data.source_text) }
+      : null
+  }
+  if (kind === 'file') {
+    const r = await supabase.from('guide_files').select('id,file_name,file_text').eq('id', id).maybeSingle()
+    return r.data ? { title: str(r.data.file_name), type: 'other', url: '', text: str(r.data.file_text) } : null
+  }
+  if (kind === 'piece') {
+    const r = await supabase.from('content_pieces').select('id,title,body').eq('id', id).maybeSingle()
+    return r.data ? { title: str(r.data.title), type: 'other', url: '', text: str(r.data.body) } : null
+  }
+  return null
+}
+
+/**
+ * Fill it in for me: Engine 3 · Auto-fill reads the newest briefs, the company profile and the team's own material,
+ * and answers with what to put in the form and why. The request is built from the form and what is on file, read
+ * fresh; the piece of material it picks, when the form has none, is read here so the page can put it in.
+ */
+export async function fillItIn(input: unknown): Promise<Filled> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: 'Sign in again to use this.' }
+  const f = formFrom(input)
+  const supabase = await createClient()
+  const fd = await loadForm(supabase, Date.now()).catch((e: unknown) => ({ error: msgOf(e) }) as const)
+  if (!('personas' in fd)) return { ok: false, error: 'Could not read what it fills in from: ' + fd.error }
+  if (fd.error) return { ok: false, error: 'Could not read what it fills in from: ' + fd.error }
+  const req = fillRequest(f, fd)
+  if (!req.ok) return req
+  let j: unknown
+  try {
+    j = await callN8n('e3-autofill', { ...req.body, requested_by: user.email }, { what: 'Auto-fill', workflow: 'Engine 3 · Auto-fill', timeoutMs: 100_000 })
+  } catch (e) {
+    const code = e instanceof N8nError ? e.code : ''
+    if (code === 'timeout') return { ok: false, error: FILL_MSG.timeout }
+    if (code === 'off') return { ok: false, error: FILL_MSG.off }
+    if (code === 'unauthorized') return { ok: false, error: FILL_MSG.unauthorized }
+    if (code === 'unreadable') return { ok: false, error: FILL_MSG.failed }
+    if (code === 'status') return { ok: false, error: 'The agent answered with an error (' + (/\((\d{3})\)/.exec(msgOf(e))?.[1] ?? '500') + '). Try again in a minute.' }
+    return { ok: false, error: FILL_MSG.network }
+  }
+  const a = fillAnswerOf(j)
+  if (!a) return { ok: false, error: str((j as Record<string, unknown> | null)?.message) || FILL_MSG.failed }
+  let material: Material | null = null
+  if (a.filled.source && f.src !== 'idea' && !ownMaterial(f)) {
+    material = await pickedMaterial(supabase, a.filled.source.kind, a.filled.source.id).catch(() => null)
+    if (!material || material.text.trim().length < TEXT_MIN) return { ok: false, error: FILL_MSG.material }
+    material = { ...material, text: material.text.slice(0, TEXT_MAX) }
+  }
+  return { ok: true, answer: a, material }
 }

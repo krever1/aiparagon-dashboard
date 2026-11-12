@@ -4,32 +4,40 @@ import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useRef, 
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
-  AlertTriangle, ArrowUpRight, BarChart3, BookOpen, Check, CheckCircle2, ChevronDown, Clock, Copy, FileText, Layers, Lightbulb, Link2, Mail, Megaphone,
+  AlertTriangle, BarChart3, BookOpen, Check, CheckCircle2, ChevronDown, Clock, Copy, FileText, Info, Layers, Lightbulb, Link2, Loader2, Mail, Megaphone,
   MessageSquare, Newspaper, PenLine, Play, Plus, Repeat, Sparkles, Upload, Users, X,
 } from 'lucide-react'
 import { approveItems, undoItems } from '@/app/(app)/approvals/actions'
-import { materialFor, readLink, retryRequest, sendRequest } from '@/app/(app)/content-transformation/actions'
+import {
+  type CallPick, contentCallText, contentCalls, fillItIn, materialFor, readLink, retryRequest, sendRequest,
+} from '@/app/(app)/content-transformation/actions'
 import { ErrorNotice } from '@/components/catalyst/bits'
+import { Dialog } from '@/components/ui/dialog'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import type { Note } from '@/lib/pipeline/content'
+import { type FillAnswer, FILL_MSG, type NoteKey, applyFill, fillFrom, fillIntro, fillKey } from '@/lib/pipeline/content-fill'
+import { FILE_MSG, fileTitle, guessType } from '@/lib/pipeline/content-files'
 import type { ContentData } from '@/lib/pipeline/content-load'
 import {
   type Answer, type Form, type Prefill, type Q, type Src, CATS, GROUPS, KINDS, MAX, SAMPLE, SRCS, SRC_TYPES, TEXT_MAX, type Use, adTypeLine, afterSend,
   answersOf, blankForm, briefUse, catOf, ctaList, ctaOf, feedbackUse, getsOf, hintOf, materialLine, materialUse, mustOf, mustSuggest, num, offerChoices, offerSum,
-  personaSum, pickOffer, pickPersona, prefillOf, questionsOf, readyOf, structChoices, structOf, typeOf, voiceOf, voiceOpts, voiceUse, wordCount,
+  personaSum, pickOffer, pickPersona, prefillOf, questionsOf, readyOf, structChoices, structOf, typeOf, voiceOf, voiceOpts, voiceUse, withMaterial, wordCount,
 } from '@/lib/pipeline/content-new'
 import { briefHref } from '@/lib/touchpoint/approvals'
 import { btn, inputCls, linkCls, primary, selectCls } from './bits'
+import { type CallList, FathomPanel, type Msg, UploadPanel, Why } from './content-material'
 import { OUT_TIP, legacy } from './content-view'
 import { PlanPreview } from './content-new-preview'
+import { ReadError, readFileText } from './content-read'
 
 // New draft (nwCtFormHtml and nwCtSide as v105, v111, v113 and v126 left them): what is being made and its category,
-// the material (pasted, read from a link, or a new idea; a file and a Fathom call are still in the current dashboard),
-// the details (who it is for, the kind's questions, the takeaway or the proof, what it must use, notes, and More
-// options: voice, structure, the offer and the call to action), and the side: what comes back, what it will use,
-// Generate and the draft on its way. The form stays as it was while another tab is looked at. A link can fill it in
-// (an idea from Ideas, a piece to use, the strategy read's Create): the address asks once, then goes back to bare.
+// the material (a file read in this browser, pasted or read from a link, a Fathom call's transcript, or a new idea;
+// video and audio are still transcribed in the current dashboard), the details (who it is for, the kind's questions,
+// the takeaway or the proof, what it must use, notes, and More options: voice, structure, the offer and the call to
+// action), Fill it in for me (v99), and the side: what comes back, what it will use, Generate and the draft on its
+// way. The form stays as it was while another tab is looked at. A link can fill it in (an idea from Ideas, a piece to
+// use, a call from Calls, the strategy read's Create): the address asks once, then goes back to bare.
 
 const ICONS: Record<string, typeof PenLine> = {
   pen: PenLine,
@@ -61,6 +69,12 @@ const chipCls = (on: boolean, sm = false) =>
 const MATERIAL_STEP = 2
 
 export type Watch = { id: string; title: string; t0: number }
+/** Fill it in for me: not asked, reading, did not work, or done (with what to put back on Undo). */
+type FillState =
+  | { st: 'idle' }
+  | { st: 'busy'; key: string }
+  | { st: 'err'; key: string; msg: string }
+  | { st: 'done'; key: string; answer: FillAnswer; snap: Partial<Form>; kept: boolean }
 type Props = {
   data: ContentData
   now: number
@@ -81,7 +95,8 @@ function applyPre(x: Form, p: Prefill, notes: Note[]): Form {
   }
   const n = p.note ? notes.find((x) => x.id === p.note) : undefined
   if (n) Object.assign(f, { thesis: n.note, note: n.id, src: 'idea' })
-  if (p.title !== null) f.title = p.title
+  // a call's title comes with its transcript
+  if (p.title !== null && !p.call) f.title = p.title
   if (p.take !== null) f.take = p.take
   return f
 }
@@ -102,6 +117,20 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
   const [linkMsg, setLinkMsg] = useState<{ text: string; tone: 'busy' | 'err' | 'ok' } | null>(null)
   const [reading, setReading] = useState(false)
   const [sampleMsg, setSampleMsg] = useState('')
+  const [fileBusy, setFileBusy] = useState(false)
+  const [fileMsg, setFileMsg] = useState<Msg | null>(null)
+  const [calls, setCalls] = useState<CallList>({ st: 'idle' })
+  // a call asked for by the address loads by itself, so the list stays shut
+  const [callsOpen, setCallsOpen] = useState(() => !prefillOf(sp)?.call)
+  const [fill, setFill] = useState<FillState>({ st: 'idle' })
+  const [notes, setNotes] = useState<Partial<Record<NoteKey, string>>>({})
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [info, setInfo] = useState(false)
+  const fRef = useRef(f)
+  useEffect(() => {
+    fRef.current = f
+  })
+  const detailsRef = useRef<HTMLElement>(null)
   const thesisRef = useRef<HTMLTextAreaElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const takeRef = useRef<HTMLInputElement>(null)
@@ -116,6 +145,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     setApplied(pre.sig)
     setF((x) => applyPre(x, pre, data.notes))
     setAsked((a) => ({ n: a.n + 1, pre }))
+    if (pre.call) setCallsOpen(false)
   }
   if (!pre && applied) setApplied('')
   useEffect(() => {
@@ -132,7 +162,17 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
       void materialFor((p.use.kind === 'piece' ? 'piece:' : 'req:') + p.use.id).then((r) => {
         if (!live) return
         if (!r.ok) return toast(r.error, 'warn')
-        setF((x) => ({ ...x, src: 'paste', text: r.text, title: r.title, type: SRC_TYPES.some((t) => t[0] === r.type) ? r.type : x.type, url: r.url, fileName: '' }))
+        setF((x) => ({ ...withMaterial(x, { text: r.text, title: r.title, url: r.url, type: SRC_TYPES.some((t) => t[0] === r.type) ? r.type : x.type }), src: 'paste' }))
+        window.requestAnimationFrame(() => takeRef.current?.focus({ preventScroll: true }))
+      })
+    }
+    if (p.call) {
+      void contentCallText(p.call).then((r) => {
+        if (!live) return
+        if (!r.ok) return toast(r.error, 'warn')
+        if (!r.text) return toast('Fathom has no transcript for this call, so there is nothing to draft from.', 'warn')
+        setF((x) => withMaterial({ ...x, src: 'fathom' }, { text: r.text, title: p.title ?? '', url: p.link, guess: 'call' }))
+        toast('Call transcript loaded as the source')
         window.requestAnimationFrame(() => takeRef.current?.focus({ preventScroll: true }))
       })
     }
@@ -164,13 +204,17 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
 
   const pickSrc = (s: Src) => {
     up({ src: s })
+    if (s === 'fathom') {
+      setCallsOpen(true)
+      loadCalls(false)
+    }
     window.requestAnimationFrame(() => {
       if (s === 'idea') thesisRef.current?.focus({ preventScroll: true })
       if (s === 'paste' && !textRef.current?.value) textRef.current?.focus({ preventScroll: true })
     })
   }
   const sample = () => {
-    up({ type: SAMPLE.type, title: SAMPLE.title, text: SAMPLE.text, take: SAMPLE.take, fileName: '' })
+    up({ type: SAMPLE.type, title: SAMPLE.title, titleFrom: SAMPLE.title, text: SAMPLE.text, take: SAMPLE.take, url: '', fileName: '' })
     setLinkMsg(null)
     setSampleMsg('Sample loaded. Swap in your own material for a real draft.')
   }
@@ -193,13 +237,102 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
       return
     }
     const type = r.kind === 'youtube' ? (/podcast|episode|\bep\.?\s*\d/i.test(r.title) ? 'podcast' : 'transcript') : 'article'
-    setF((x) => ({ ...x, text: r.text, title: x.title.trim() ? x.title : r.title, type, url: r.url, fileName: '' }))
+    setF((x) => withMaterial(x, { text: r.text, title: r.title, type, url: r.url }))
+    setNotes((n) => ({ ...n, text: undefined }))
     setSampleMsg('')
     setLinkMsg({
       text: 'Read ' + num(r.words) + ' words from ' + (r.host || 'the page') + (r.cut ? ', the first part of a long page' : '') + '. Check the text, then generate.',
       tone: 'ok',
     })
   }
+  /** A file dropped or picked on Upload, read in this browser (apCfFile). */
+  const onFile = async (file: File) => {
+    if (fileBusy) return
+    setFileBusy(true)
+    setFileMsg({ text: 'Reading ' + file.name + '…', tone: 'busy' })
+    try {
+      const t = await readFileText(file)
+      setF((x) => withMaterial({ ...x, src: 'upload' }, { text: t, title: fileTitle(file.name), fileName: file.name, guess: guessType(file.name, file.type) }))
+      setNotes((n) => ({ ...n, text: undefined }))
+      setSampleMsg('')
+      setLinkMsg(null)
+      setFileMsg({ text: 'Loaded ' + file.name + (t.length > TEXT_MAX ? ' (first 120,000 characters)' : ''), tone: 'ok' })
+    } catch (e) {
+      const text = e instanceof ReadError ? e.message : 'Could not read that file. Paste the text instead.'
+      setFileMsg({ text, tone: 'err', out: text === FILE_MSG.media })
+    } finally {
+      setFileBusy(false)
+    }
+  }
+  /** The Fathom call tab's list: read when the tab opens, again after a minute. */
+  const loadCalls = (force: boolean) => {
+    if (calls.st === 'loading') return
+    if (!force && calls.st === 'done' && calls.res.ok && now - calls.at < 60_000) return
+    setCalls({ st: 'loading' })
+    void contentCalls()
+      .catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.', code: '' }))
+      .then((res) => setCalls({ st: 'done', at: Date.now(), res }))
+  }
+  /** A call picked: its transcript is the material (apCfUseCall). */
+  const pickCall = async (c: CallPick): Promise<boolean> => {
+    const r = await contentCallText(c.id).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.' }))
+    if (!r.ok) {
+      toast(r.error, 'warn')
+      return false
+    }
+    if (!r.text) {
+      toast('Fathom has no transcript for this call.', 'warn')
+      return false
+    }
+    setF((x) => withMaterial({ ...x, src: 'fathom' }, { text: r.text, title: c.title, url: c.url, guess: 'call' }))
+    setNotes((n) => ({ ...n, text: undefined }))
+    setSampleMsg('')
+    toast('Call transcript loaded as the source')
+    window.requestAnimationFrame(() => takeRef.current?.focus({ preventScroll: true }))
+    return true
+  }
+  /** Fill it in for me (v99Fill): the agent fills the form from the newest briefs and what the team has on file. */
+  const runFill = async () => {
+    if (fill.st === 'busy') return
+    const key = fillKey(f)
+    setFill({ st: 'busy', key })
+    setNotes({})
+    const top = detailsRef.current?.getBoundingClientRect().top
+    if (top !== undefined && top < 70) detailsRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    const r = await fillItIn(fRef.current).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.' }))
+    const now = fRef.current
+    if (!r.ok) return setFill({ st: 'err', key: fillKey(now), msg: r.error })
+    if (fillKey(now) !== key) return setFill({ st: 'err', key: fillKey(now), msg: FILL_MSG.changed })
+    const a = applyFill(now, r.answer, r.material, D)
+    setF(a.form)
+    setNotes(a.notes)
+    setFill({ st: 'done', key, answer: r.answer, snap: a.snap, kept: a.kept.length > 0 })
+    setMoreOpen(true)
+    if (a.notes.text) {
+      setFileMsg(null)
+      setSampleMsg('')
+    }
+  }
+  const undoFill = () => {
+    if (fill.st !== 'done') return
+    const snap = fill.snap
+    setF((x) => ({ ...x, ...snap }))
+    setNotes({})
+    setFill({ st: 'idle' })
+    toast('Put back what was there before.')
+  }
+  /** A field changed by hand: the reason under it goes (v99AfEdited). */
+  const edit = (p: Partial<Form>, note: NoteKey) => {
+    up(p)
+    if (notes[note]) setNotes((n) => ({ ...n, [note]: undefined }))
+  }
+  // a fill is for what is being made: another kind, category, or an idea instead of material, and it is done with
+  const fk = fillKey(f)
+  if ((fill.st === 'done' || fill.st === 'err') && fill.key !== fk) {
+    setFill({ st: 'idle' })
+    setNotes({})
+  }
+
   const addMust = (s: string) => {
     const v = s.trim()
     if (!v) return
@@ -225,6 +358,9 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     setMustTyped('')
     setLinkMsg(null)
     setSampleMsg('')
+    setFileMsg(null)
+    setFill({ st: 'idle' })
+    setNotes({})
   }
 
   const steps: { title: string; side?: ReactNode; body: ReactNode }[] = [
@@ -306,18 +442,19 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
           </div>
           <div role="tabpanel" aria-label={SRCS.find((x) => x[0] === f.src)?.[1]} className="mt-3">
             {f.src === 'upload' ? (
-              <StillThere
-                text="Reading a file is still in the current dashboard: an article, a transcript or a chapter (PDF, DOCX, TXT, VTT, SRT), or a video or audio file it transcribes. To start here, paste the text instead."
-                link="Upload in the current dashboard"
-                paste="Paste the text instead"
-                onPaste={() => pickSrc('paste')}
-              />
+              <UploadPanel f={f} busy={fileBusy} msg={fileMsg} onFile={(file) => void onFile(file)} onSee={() => pickSrc('paste')} />
             ) : f.src === 'fathom' ? (
-              <StillThere
-                text="Picking a recorded call is still in the current dashboard, where its transcript becomes your material. To start here, paste the transcript instead."
-                link="Pick a call in the current dashboard"
-                paste="Paste a transcript instead"
-                onPaste={() => pickSrc('paste')}
+              <FathomPanel
+                list={calls}
+                load={() => loadCalls(true)}
+                tz={tz}
+                open={callsOpen}
+                setOpen={(v) => {
+                  setCallsOpen(v)
+                  if (v) loadCalls(false)
+                }}
+                picked={f.text.trim() ? f.title : ''}
+                onPick={pickCall}
               />
             ) : f.src === 'paste' ? (
               <>
@@ -330,7 +467,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
                     rows={8}
                     maxLength={TEXT_MAX}
                     value={f.text}
-                    onChange={(e) => up({ text: e.target.value })}
+                    onChange={(e) => edit({ text: e.target.value }, 'text')}
                     placeholder="Paste an excerpt or transcript. The draft only uses what you provide."
                     className={inputCls + ' mt-1.5'}
                   />
@@ -377,24 +514,27 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
                 </p>
               </>
             ) : (
-              <label className="block">
-                <span className={lbl}>What point do you want to make?</span>
-                <textarea
-                  ref={thesisRef}
-                  rows={5}
-                  maxLength={MAX.thesis}
-                  value={f.thesis}
-                  onChange={(e) => up({ thesis: e.target.value })}
-                  placeholder="e.g. Most firms start with the AI tool. They should start with one meeting type."
-                  className={inputCls + ' mt-1.5'}
-                />
-              </label>
+              <div>
+                <label className="block">
+                  <span className={lbl}>What point do you want to make?</span>
+                  <textarea
+                    ref={thesisRef}
+                    rows={5}
+                    maxLength={MAX.thesis}
+                    value={f.thesis}
+                    onChange={(e) => edit({ thesis: e.target.value }, 'thesis')}
+                    placeholder="e.g. Most firms start with the AI tool. They should start with one meeting type."
+                    className={inputCls + ' mt-1.5'}
+                  />
+                </label>
+                <Why text={notes.thesis} />
+              </div>
             )}
           </div>
           {!idea ? (
             <label className="mt-3 block max-w-[360px]">
               <span className={lbl}>What is this material?</span>
-              <select value={f.type} onChange={(e) => up({ type: e.target.value })} className={selectCls + ' mt-1.5 w-full'}>
+              <select value={f.type} onChange={(e) => up({ type: e.target.value, typeSet: true })} className={selectCls + ' mt-1.5 w-full'}>
                 {SRC_TYPES.map(([v, name]) => (
                   <option key={v} value={v}>
                     {name}
@@ -404,31 +544,50 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
             </label>
           ) : null}
           <MatLine f={f} onSee={() => pickSrc('paste')} />
+          {!idea ? <Why text={notes.text} /> : null}
         </>
       ),
     },
     {
       title: 'Details',
+      side: (
+        <span className="ml-auto flex items-center gap-1">
+          <button type="button" className={linkCls} onClick={() => void runFill()} disabled={fill.st === 'busy'} title="Fill the details in from the latest brief and your voice and context" data-testid="fill-go">
+            <Sparkles size={15} aria-hidden="true" />
+            Fill it in for me
+          </button>
+          <button type="button" aria-label="How Fill it in for me works" onClick={() => setInfo(true)} className="rounded-full p-1 text-ink-3 hover:text-ink">
+            <Info size={15} aria-hidden="true" />
+          </button>
+        </span>
+      ),
       body: (
         <div className="grid gap-4">
-          <Personas f={f} per={per} up={up} personas={D.personas} />
+          <FillStrip fill={fill} day={day} onRetry={() => void runFill()} onUndo={undoFill} />
+          <div>
+            <Personas f={f} per={per} up={up} personas={D.personas} />
+            <Why text={notes.per} />
+          </div>
           {questionsOf(k).map((q) => (
             <QField key={k + ':' + q.id} q={q} v={A[q.id]} set={(v) => setAnswer(q.id, v)} />
           ))}
           {!idea ? (
-            <label className="block">
-              <span className={lbl}>
-                Core takeaway<small className={small}>optional</small>
-              </span>
-              <input
-                ref={takeRef}
-                value={f.take}
-                maxLength={MAX.take}
-                onChange={(e) => up({ take: e.target.value })}
-                placeholder="The one thing a reader should remember"
-                className={inputCls + ' mt-1.5'}
-              />
-            </label>
+            <div>
+              <label className="block">
+                <span className={lbl}>
+                  Core takeaway<small className={small}>optional</small>
+                </span>
+                <input
+                  ref={takeRef}
+                  value={f.take}
+                  maxLength={MAX.take}
+                  onChange={(e) => edit({ take: e.target.value }, 'take')}
+                  placeholder="The one thing a reader should remember"
+                  className={inputCls + ' mt-1.5'}
+                />
+              </label>
+              <Why text={notes.take} />
+            </div>
           ) : (
             <label className="block">
               <span className={lbl}>
@@ -466,94 +625,108 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
               className={inputCls + ' mt-1.5'}
             />
           </label>
-          <details className="group rounded-md border border-line bg-bg" data-testid="more-options">
+          <details
+            className="group rounded-md border border-line bg-bg"
+            data-testid="more-options"
+            open={moreOpen}
+            onToggle={(e) => setMoreOpen(e.currentTarget.open)}
+          >
             <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[14px] font-semibold text-ink">
               More options <span className="font-normal text-ink-3">voice, structure and the offer</span>
               <ChevronDown size={17} aria-hidden="true" className="ml-auto transition-transform group-open:rotate-180" />
             </summary>
             <div className="grid gap-4 border-t border-line px-4 py-4 sm:grid-cols-2">
-              <label className="block">
-                <span className={lbl}>Voice</span>
-                <select value={voice} onChange={(e) => up({ voice: e.target.value })} className={selectCls + ' mt-1.5 w-full'}>
-                  {voices.map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-                <small className="mt-1 block text-[12.5px] text-ink-3">
-                  {D.voice ? (
+              <div>
+                <label className="block">
+                  <span className={lbl}>Voice</span>
+                  <select value={voice} onChange={(e) => edit({ voice: e.target.value }, 'voice')} className={selectCls + ' mt-1.5 w-full'}>
+                    {voices.map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                  <small className="mt-1 block text-[12.5px] text-ink-3">
+                    {D.voice ? (
+                      <>
+                        Saved {day(D.voice.createdAt)}.{' '}
+                        <a href={legacy('company-profile')} title={OUT_TIP} className="font-semibold text-accent-text hover:underline">
+                          Edit your voice
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <a href={legacy('company-profile')} title={OUT_TIP} className="font-semibold text-accent-text hover:underline">
+                          Set up your voice
+                        </a>{' '}
+                        so drafts sound like you.
+                      </>
+                    )}
+                  </small>
+                </label>
+                <Why text={notes.voice} />
+              </div>
+              <div>
+                <label className="block">
+                  <span className={lbl}>Structure</span>
+                  <select value={struct} onChange={(e) => edit({ struct: e.target.value }, 'struct')} className={selectCls + ' mt-1.5 w-full'}>
+                    <option value="">{sc.first}</option>
+                    {sc.shapes.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                    {sc.templates.length ? (
+                      <optgroup label="Your templates">
+                        {sc.templates.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </label>
+                <Why text={notes.struct} />
+              </div>
+              <div>
+                  <span className={lbl}>What are we offering?</span>
+                  {D.offers.length ? (
                     <>
-                      Saved {day(D.voice.createdAt)}.{' '}
-                      <a href={legacy('company-profile')} title={OUT_TIP} className="font-semibold text-accent-text hover:underline">
-                        Edit your voice
-                      </a>
+                      <select
+                        aria-label="What are you offering?"
+                        value={off ? off.id : 'none'}
+                        onChange={(e) => up({ off: e.target.value })}
+                        className={selectCls + ' mt-1.5 w-full'}
+                      >
+                        <option value="none">Nothing to sell, just value</option>
+                        {offerChoices(D.offers).map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      {off ? <p className="mt-1 text-[12.5px] text-ink-3">{offerSum(off)}</p> : null}
                     </>
                   ) : (
-                    <>
+                    <p className="mt-1.5 text-[13.5px] text-ink-2">
+                      No offers yet.{' '}
                       <a href={legacy('company-profile')} title={OUT_TIP} className="font-semibold text-accent-text hover:underline">
-                        Set up your voice
+                        Add one
                       </a>{' '}
-                      so drafts sound like you.
-                    </>
+                      so campaigns know what they sell.
+                    </p>
                   )}
-                </small>
-              </label>
-              <label className="block">
-                <span className={lbl}>Structure</span>
-                <select value={struct} onChange={(e) => up({ struct: e.target.value })} className={selectCls + ' mt-1.5 w-full'}>
-                  <option value="">{sc.first}</option>
-                  {sc.shapes.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                  {sc.templates.length ? (
-                    <optgroup label="Your templates">
-                      {sc.templates.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null}
-                </select>
-              </label>
-              <div>
-                <span className={lbl}>What are we offering?</span>
-                {D.offers.length ? (
-                  <>
-                    <select
-                      aria-label="What are you offering?"
-                      value={off ? off.id : 'none'}
-                      onChange={(e) => up({ off: e.target.value })}
-                      className={selectCls + ' mt-1.5 w-full'}
-                    >
-                      <option value="none">Nothing to sell, just value</option>
-                      {offerChoices(D.offers).map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                    {off ? <p className="mt-1 text-[12.5px] text-ink-3">{offerSum(off)}</p> : null}
-                  </>
-                ) : (
-                  <p className="mt-1.5 text-[13.5px] text-ink-2">
-                    No offers yet.{' '}
-                    <a href={legacy('company-profile')} title={OUT_TIP} className="font-semibold text-accent-text hover:underline">
-                      Add one
-                    </a>{' '}
-                    so campaigns know what they sell.
-                  </p>
-                )}
               </div>
-              <label className="block">
-                <span className={lbl}>What should they do?</span>
-                <select aria-label="What should they do?" value={cta} onChange={(e) => up({ cta: e.target.value })} className={selectCls + ' mt-1.5 w-full'}>
-                  {ctas.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <label className="block">
+                  <span className={lbl}>What should they do?</span>
+                  <select aria-label="What should they do?" value={cta} onChange={(e) => edit({ cta: e.target.value }, 'cta')} className={selectCls + ' mt-1.5 w-full'}>
+                    {ctas.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                </label>
+                <Why text={notes.cta} />
+              </div>
               {!idea ? (
                 <label className="block sm:col-span-2">
                   <span className={lbl}>
@@ -594,8 +767,13 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
       <div className="grid min-w-0 content-start gap-4">
         {D.error ? <ErrorNotice>Could not read everything the form uses: {D.error}</ErrorNotice> : null}
         {steps.map((s, i) => (
-          <section key={s.title} className="min-w-0 rounded-lg border border-line bg-panel p-5 shadow-card" aria-label={s.title}>
-            <div className="mb-3 flex items-center gap-2.5">
+          <section
+            key={s.title}
+            ref={s.title === 'Details' ? detailsRef : undefined}
+            className="min-w-0 scroll-mt-20 rounded-lg border border-line bg-panel p-5 shadow-card"
+            aria-label={s.title}
+          >
+            <div className="mb-3 flex flex-wrap items-center gap-2.5">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-[12.5px] font-bold text-accent-text" aria-hidden="true">
                 {i + 1}
               </span>
@@ -675,6 +853,16 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
         ) : null}
       </aside>
 
+      {info ? (
+        <Dialog open onClose={() => setInfo(false)} kicker="Content Transformation" title="How Fill it in for me works" width={520}>
+          <p className="mb-2 text-[14.5px] leading-relaxed text-ink-2">
+            <b className="text-ink">Fill it in for me</b> fills the form in, so you can check it before anything is written. {fillIntro(f)}
+          </p>
+          <p className="text-[14.5px] leading-relaxed text-ink-2">
+            It never overwrites what you typed. Under each field it fills you get a one-line reason; click it to read it all. Undo puts everything back.
+          </p>
+        </Dialog>
+      ) : null}
       {preview ? (
         <PlanPreview
           f={{ ...f, must: mustOf(f.must, mustTyped) }}
@@ -693,20 +881,51 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
 }
 
 
-/** A tab whose work is still in the current dashboard: a link there, or paste the text here instead. */
-function StillThere({ text, link, paste, onPaste }: { text: string; link: string; paste: string; onPaste: () => void }) {
-  return (
-    <div className="rounded-md border border-dashed border-line bg-bg px-4 py-4" data-testid="still-there">
-      <p className="text-[14px] leading-relaxed text-ink-2">{text}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className={btn} onClick={onPaste}>
-          <Copy size={14} aria-hidden="true" />
-          {paste}
+/** Fill it in for me's line at the top of Details (v99AfHtml): reading, could not, or what it filled in from. */
+function FillStrip({ fill, day, onRetry, onUndo }: { fill: FillState; day: (iso: string) => string; onRetry: () => void; onUndo: () => void }) {
+  if (fill.st === 'idle') return null
+  if (fill.st === 'busy')
+    return (
+      <div role="status" className="flex items-start gap-2.5 rounded-md border border-line bg-bg px-3 py-2.5" data-testid="fill-strip">
+        <Loader2 size={18} aria-hidden="true" className="mt-0.5 shrink-0 animate-spin text-info" />
+        <div className="text-[13.5px]">
+          <b className="block text-ink">Reading the briefs and your context…</b>
+          <span className="text-ink-2">About 20 seconds. Anything you type is kept.</span>
+        </div>
+      </div>
+    )
+  if (fill.st === 'err')
+    return (
+      <div role="alert" className="flex flex-wrap items-start gap-2.5 rounded-md border border-bad/30 bg-bad-soft px-3 py-2.5" data-testid="fill-strip">
+        <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-bad" />
+        <div className="min-w-0 flex-1 text-[13.5px]">
+          <b className="block text-ink">Could not fill it in</b>
+          <span className="text-ink-2">{fill.msg}</span>
+        </div>
+        <button type="button" className={btn} onClick={onRetry}>
+          Try again
         </button>
-        <a href={legacy('content-transformation')} title={OUT_TIP} className={btn}>
-          {link}
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
+      </div>
+    )
+  const a = fill.answer
+  return (
+    <div role="status" className="flex flex-wrap items-start gap-2.5 rounded-md border border-good/30 bg-good-soft px-3 py-2.5" data-testid="fill-strip">
+      <CheckCircle2 size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-good" />
+      <div className="min-w-0 flex-1 text-[13.5px]">
+        <b className="block text-ink">Filled in from {fillFrom(a.used, day)}</b>
+        <span className="text-ink-2">
+          {a.basedOn ? 'Built on “' + a.basedOn + '”. ' : ''}
+          {fill.kept ? 'Kept what you typed. ' : ''}Change anything, then generate.
+        </span>
+        {a.flags.length ? <span className="mt-1 block text-warn">{a.flags.join(' ')}</span> : null}
+      </div>
+      <div className="flex gap-2">
+        <button type="button" className={btn} onClick={onUndo}>
+          Undo
+        </button>
+        <button type="button" className={btn} onClick={onRetry}>
+          Fill it in again
+        </button>
       </div>
     </div>
   )

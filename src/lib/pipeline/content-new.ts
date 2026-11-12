@@ -864,7 +864,11 @@ export type Form = {
   title: string
   /** What is this material? */
   type: string
+  /** What is this material? was picked by hand: a file or a call no longer guesses it */
+  typeSet: boolean
   fileName: string
+  /** the title the material gave (a file, a call, a link): the next material's replaces it, a typed one stays */
+  titleFrom: string
   thesis: string
   proof: string
   take: string
@@ -893,7 +897,9 @@ export const blankForm = (): Form => ({
   url: '',
   title: '',
   type: 'article',
+  typeSet: false,
   fileName: '',
+  titleFrom: '',
   thesis: '',
   proof: '',
   take: '',
@@ -1096,7 +1102,38 @@ export function buildRequest(f: Form, c: Ctx): Built {
 export function afterSend(f: Form): Form {
   const typed = Object.fromEntries(questionsOf(f.kind).filter((q) => q.kind === 'text').map((q) => [q.id, '']))
   const base = { ...f, must: [], notes: '', note: null, answers: { ...f.answers, [f.kind]: { ...answersOf(f.kind, f.answers[f.kind]), ...typed } } }
-  return f.src === 'idea' ? { ...base, thesis: '', proof: '' } : { ...base, text: '', take: '', title: '', url: '', fileName: '' }
+  return f.src === 'idea' ? { ...base, thesis: '', proof: '' } : { ...base, text: '', take: '', title: '', titleFrom: '', url: '', fileName: '' }
+}
+
+/** Material that came in whole (a file, a call, a link, a piece or a request to use, what Fill it in picked). */
+export type Material = {
+  text: string
+  title: string
+  url?: string
+  fileName?: string
+  /** what the material is, always set */
+  type?: string
+  /** what the material looks like, set unless What is this material? was picked by hand */
+  guess?: string
+}
+const isType = (t: string | undefined): t is string => !!t && SRC_TYPES.some((x) => x[0] === t)
+/**
+ * The form with this material in it: its text (cut to 120,000 characters), its link and file name, what it is, and its
+ * title, unless one was typed (the current dashboard kept the first file's title for a second file).
+ */
+export function withMaterial(f: Form, m: Material): Form {
+  const typed = !!f.title.trim() && f.title !== f.titleFrom
+  const title = typed ? f.title : str(m.title).trim().slice(0, MAX.title)
+  const type = isType(m.type) ? m.type : isType(m.guess) && !f.typeSet ? m.guess : f.type
+  return {
+    ...f,
+    text: str(m.text).slice(0, TEXT_MAX),
+    title,
+    titleFrom: typed ? f.titleFrom : title,
+    type,
+    url: str(m.url).trim().slice(0, MAX.url),
+    fileName: str(m.fileName).trim().slice(0, 200),
+  }
 }
 
 /** Why a request could not be saved, in the current dashboard's words (apCfDbErr). */
@@ -1212,16 +1249,23 @@ export type Prefill = {
   take: string | null
   note: string | null
   use: { kind: 'piece' | 'request'; id: string } | null
+  /** a Fathom call whose transcript becomes the material (Calls' Use as content source), and its share link */
+  call: string | null
+  link: string
   say: string
 }
-const PRE_KEYS = ['kind', 'src', 'idea', 'title', 'take', 'note', 'use', 'from'] as const
+const PRE_KEYS = ['kind', 'src', 'idea', 'title', 'take', 'note', 'use', 'call', 'link', 'from'] as const
+/** A Fathom call's id, as the address carries it. */
+export const CALL_ID = /^[\w-]{1,80}$/
+const FATHOM = /^https:\/\/([a-z0-9-]+\.)*fathom\.video\//i
 /** The prefill an address asks for, or null when it asks for none. */
 export function prefillOf(sp: { get(k: string): string | null }): Prefill | null {
   const v = Object.fromEntries(PRE_KEYS.map((k) => [k, sp.get(k)])) as Record<(typeof PRE_KEYS)[number], string | null>
   if (!PRE_KEYS.some((k) => v[k] !== null)) return null
   const use = /^(piece|req):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(v.use ?? '')
-  // a piece or a request's material goes on Paste once its text is in (nwCtUsePiece reads it first)
-  const src = isSrc(v.src) ? v.src : v.idea !== null || v.note !== null ? 'idea' : null
+  const call = CALL_ID.test(v.call ?? '') ? (v.call as string) : null
+  // a piece or a request's material goes on Paste once its text is in (nwCtUsePiece reads it first); a call is a call
+  const src = call ? 'fathom' : isSrc(v.src) ? v.src : v.idea !== null || v.note !== null ? 'idea' : null
   const read = v.from === 'read'
   return {
     sig: PRE_KEYS.map((k) => k + '=' + (v[k] ?? '')).join('&'),
@@ -1232,13 +1276,26 @@ export function prefillOf(sp: { get(k: string): string | null }): Prefill | null
     take: v.take !== null ? v.take.slice(0, MAX.take) : null,
     note: UUID.test(v.note ?? '') ? (v.note as string) : null,
     use: use ? { kind: use[1].toLowerCase() === 'piece' ? 'piece' : 'request', id: use[2] } : null,
+    call,
+    link: call && FATHOM.test(v.link ?? '') ? (v.link as string).slice(0, MAX.url) : '',
     say: read ? (src === 'idea' ? 'Filled in from the strategy read. Check it, then generate.' : 'Filled in from the strategy read. Add your material, then generate.') : '',
   }
 }
 /** The address that starts a draft with these filled in. */
-export function newDraftHref(o: { kind?: string; src?: Src; idea?: string; title?: string; take?: string; note?: string; use?: string; from?: 'read' }): string {
+export function newDraftHref(o: {
+  kind?: string
+  src?: Src
+  idea?: string
+  title?: string
+  take?: string
+  note?: string
+  use?: string
+  call?: string
+  link?: string
+  from?: 'read'
+}): string {
   const q = new URLSearchParams()
-  for (const k of ['kind', 'src', 'idea', 'title', 'take', 'note', 'use', 'from'] as const) {
+  for (const k of PRE_KEYS) {
     const x = o[k]
     if (x) q.set(k, x)
   }

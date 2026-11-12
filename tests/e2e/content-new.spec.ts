@@ -5,7 +5,7 @@ import { AD_RUN, FM, INTEL_RUN, NT, PC, contentRows, formRows } from './content-
 import { TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
 
 // Content Transformation's New draft (Pipeline part 4b): what is being made and its category, the material (pasted,
-// read from a link, the sample, a new idea; a file and a Fathom call still in the current dashboard), the details,
+// read from a link, the sample, a new idea; a file and a Fathom call are in content-material.spec.ts), the details,
 // More options, the side (what comes back, what it will use, Generate and the draft on its way), the plan preview, and
 // the links that fill the form in (Ideas, the quick starts, the strategy read). On the made-up rows in
 // tests/e2e/content-fixtures.ts.
@@ -74,15 +74,15 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await expect(go).toBeDisabled()
   await expect(side(page).getByTestId('generate-hint')).toHaveText('Add your material in step 2 to generate.')
 
-  // a file and a Fathom call are still in the current dashboard; pasting starts here
+  // the material starts on Upload (a file is read here, content-material.spec.ts); Paste puts the cursor in the box
   await expect(material(page).getByRole('tab')).toHaveText(['Upload', 'Paste', 'Fathom call', 'New idea'])
   await expect(material(page).getByRole('tab', { name: 'Upload' })).toHaveAttribute('aria-selected', 'true')
-  await expect(form(page).getByTestId('still-there')).toContainText('Reading a file is still in the current dashboard')
-  await form(page).getByRole('button', { name: 'Paste the text instead' }).click()
+  await expect(form(page).getByTestId('drop-zone')).toContainText('Drop a file or browse')
+  await material(page).getByRole('tab', { name: 'Paste' }).click()
   await expect(material(page).getByRole('tab', { name: 'Paste' })).toHaveAttribute('aria-selected', 'true')
   await expect(form(page).getByRole('textbox', { name: /Source text/ })).toBeFocused()
   await material(page).getByRole('tab', { name: 'Fathom call' }).click()
-  await expect(form(page).getByTestId('still-there')).toContainText('Picking a recorded call is still in the current dashboard')
+  await expect(form(page).getByTestId('fathom')).toContainText('Pick a recorded call. Its transcript becomes your material.')
   await expect(uses(page).nth(1)).toContainText('Fathom callNo call picked yet')
 
   // a newsletter: its own questions and what comes back; a stand-alone article comes back as an article
