@@ -115,8 +115,8 @@ test('quick starts, the five products, the newest runs and sign-ups', async ({ p
   await expect(quick.first()).toHaveAttribute('href', '/lead-pipeline?run=new')
   await expect(quick.nth(1)).toHaveAttribute('href', LEGACY + '/marketing-generation')
   await expect(quick.nth(2)).toHaveAttribute('href', LEGACY + '/content-transformation')
-  await expect(quick.nth(3)).toHaveAttribute('href', LEGACY + '/landing-pages')
-  await expect(quick.nth(3)).toHaveAttribute('title', OUT)
+  await expect(quick.nth(3)).toHaveAttribute('href', '/landing-pages?new=1')
+  await expect(quick.nth(3)).not.toHaveAttribute('title', OUT)
 
   await expect(lineOf(page, 'touchpoint')).toHaveText('10 things waiting for you')
   // the leads Approvals lists: not a weak fit, their next document not written
@@ -141,7 +141,8 @@ test('quick starts, the five products, the newest runs and sign-ups', async ({ p
   const signups = card(page, 'signups').getByTestId('signup')
   await expect(signups).toHaveText(['Pat Example5 minutes ago', 'casey@example.org3 hours ago', 'Jordan Sampleyesterday', 'Robin Test4 days ago'])
   await expect(signups.first()).toHaveAttribute('title', 'Onboarding audit')
-  await expect(card(page, 'signups').getByRole('link', { name: 'All sign-ups' })).toHaveAttribute('href', '/landing-pages')
+  await expect(signups.first()).toHaveAttribute('href', '/landing-pages?tab=signups')
+  await expect(card(page, 'signups').getByRole('link', { name: 'All sign-ups' })).toHaveAttribute('href', '/landing-pages?tab=signups')
 
   // the quick start opens New run on the Lead pipeline
   await quick.first().click()

@@ -33,6 +33,11 @@ const CHECKS = {
     ['impressions', 'reactions', 'comments', 'shares', 'clicks', 'spend', 'leads', 'bookings'].every((k) => r[k] === undefined || r[k] === null || Number(r[k]) >= 0),
 }
 
+/** Column defaults a new row gets, as in the project (beyond the id and created_at every table gets here). */
+const DEFAULTS = {
+  landing_pages: () => ({ title: '', status: 'draft', kind: 'landing', content: {}, ads: [], add_to_pipeline: true, updated_at: new Date().toISOString(), published_at: null }),
+}
+
 /** Row rules for deletes, as in the project: a landing page can be deleted only while a draft that never went live. */
 const DELETABLE = { landing_pages: (r) => r.status === 'draft' && !r.published_at }
 
@@ -266,8 +271,9 @@ export function createRest(initial, claimsOf) {
           Object.assign(existing, row)
           written.push(existing)
         } else {
-          rows.push(row)
-          written.push(row)
+          const fresh = DEFAULTS[name] ? { ...DEFAULTS[name](), ...row } : row
+          rows.push(fresh)
+          written.push(fresh)
         }
       }
       const out = project(clone(written), url.searchParams.get('select'))

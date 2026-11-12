@@ -1,6 +1,6 @@
 # AI Paragon internal dashboard (Next.js)
 
-Brief for Claude sessions in this repo. Last reviewed 2026-11-11.
+Brief for Claude sessions in this repo. Last reviewed 2026-11-12.
 
 ## What this is
 The AI Paragon Consulting Group team workspace: Touchpoint (home and tasks), Catalyst (clients and meetings),
@@ -12,7 +12,7 @@ until every page has moved; then aiparagon.vercel.app/dashboard forwards here.
 One repo per project (Kser, Nov 9): this repo is the internal dashboard only. The other projects (care portal, voice
 agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon until they get their own repos.
 
-## Where it stands (as of 2026-11-11)
+## Where it stands (as of 2026-11-12)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
   every current page address. A page not ported yet opens a card that links to it in the current dashboard.
 - Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
@@ -49,12 +49,12 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   Strategist (Nov 11, branch `pipeline/ads`, on top of 1b, PR #14), 2b Runs & uploads and the upload, build-a-brief and
   ad copy windows, with Read this ad and Send to Marketing Generation (Nov 11, branch `pipeline/uploads`, on top of the
   link fix, PR #16), 2c the brief editor and its Structure view (Nov 11, branch `pipeline/brief-editor`, on top of 2b).
-  With 2c, part 2 is done. See Pipeline below.
+  With 2c, part 2 is done. Part 3 comes as two PRs: 3a Landing pages, with the preview of a page that is not live
+  (Nov 12, branch `pipeline/landing-pages`, on top of 2c), 3b Ad Testing. See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Pipeline part 3 (Ad Testing, Landing pages), then parts 4 and 5, then Atlas, Canvas, Settings. Then the
-  cutover.
+- Next: Pipeline 3b (Ad Testing), then parts 4 and 5, then Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -81,7 +81,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Ad Strategist | here (Pipeline part 2a, not released) |
 | Pipeline | Runs & uploads; the upload, build-a-brief and ad copy windows; Read this ad | here (Pipeline part 2b, not released) |
 | Pipeline | The briefs' editor (Edit, Preview, Put back the agent's version) and Structure view | here (Pipeline part 2c, not released) |
-| Pipeline | Content Transformation, Marketing Generation, Landing pages, Ad Testing | current dashboard |
+| Pipeline | Landing pages, with the preview of a page that is not live | here (Pipeline part 3a, not released) |
+| Pipeline | Content Transformation, Marketing Generation, Ad Testing | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -692,6 +693,57 @@ signed-in teammate's token, as the current dashboard's do.
   (the old page stopped without a word) and, for an organic brief kept without its words, leaves the words alone; a
   save that fails says why in the editor, which stays open (the old page did too, with the error's raw text); the
   Edit and Preview buttons are a group of their own, named Editing view.
+- Landing pages (part 3a, `src/lib/pipeline/landing.ts` pure rules, `landing-load.ts`, `src/components/pipeline/landing-*.tsx`,
+  `src/app/(app)/landing-pages`, `src/app/preview/landing/[id]`; v115 as v116, v120, v121 and v123 left it):
+  - What it reads, as the teammate, fresh on every visit: the 200 most recently changed pages (`landing_pages`), the
+    1,000 newest sign-ups (`lp_signups`; never their answers, referrer or address hash) and the visits of the last 30
+    days (`lp_views`).
+  - The page: how many pages are live, Refresh and Put a page live; four numbers (live, visits and sign-ups in 30 days,
+    and the rate: sign-ups in 30 days over visits); Pages and Sign-ups, the tab in the address (`?tab=signups`). A page:
+    its address on aiparagon.vercel.app/go (a link once live), its state, kind and numbers, Ad links (a page with ads),
+    Copy link (live) and Edit.
+  - Sign-ups: when, who, the page, where they came from (the ad's code and source, else Direct), HubSpot (Added, Not
+    added with why, Waiting) and Open lead (the lead's page here) for one added to the pipeline; search (name, email,
+    company, job title, ad code, page), 200 at a time, and Export CSV of what the search shows (a cell a spreadsheet
+    would run as a formula starts with a quote mark).
+  - Put a page live (the picker; `?new=1` opens it once: Today's quick start): the 40 newest funnels and book-a-call
+    campaigns (`funnel_packages`), where each stands (approved by its status, or a book-a-call campaign whose ad images
+    are all approved; a Funnel Builder package sent back reads Sent back) and its page if it has one (Open its page).
+    Use this (`makePage`, on the server) builds the page from the campaign (`pageFrom`: its main step and the step after
+    sign-up, the link after sign-up from where Marketing Generation saved it, the form's fields, a book-a-call
+    campaign's survey questions, the ads with a code each, P and four letters then -A1, -A2…), at an address from its
+    name that no other page uses, as a draft carrying the campaign's review flags.
+  - The editor (a side panel): the name, the address (a warning once it has been live), the top of the page (When and
+    Who presents for a webinar or when filled, How often for a newsletter or when filled, Proof when there is some),
+    sections and questions people ask (an unfinished one is left out on Save, and the message says so), the form's
+    fields (the email always), the campaign's qualifying questions (on or off), the button, after sign-up (the link a
+    book-a-call page and a download need), the lead pipeline switch, and the review flags with I checked these (ticked
+    for a page that has been live). What still holds it from going live ([ADD…] and [FILL IN…], by box) shows at the top.
+  - `savePage` (as the teammate) reads the page again, checks the address (3 to 60 lowercase letters, numbers and single
+    dashes; no other page's), reads the boxes back onto the stored content (`contentFrom`: other keys kept, each box cut
+    to what the page shows, the questions only switched), runs the checks before a page goes or stays live
+    (`goLiveProblem`, in the old order), and on Put it live reads the campaign behind it: not approved, the first click
+    says so and the button becomes Approve and put it live; that click sets the package approved, adds an
+    agent_feedback row (target_type funnel_package, "Approved by putting its landing page live (/go/<page>)", author
+    the teammate's email) and puts the page live (`published_at` the first time). Pause, Save, and Delete (a draft
+    that never went live, asking first; the database keeps any other). A page that goes live with ads opens its Ad
+    links.
+  - Ad links: each ad's code, its hook, and its link for Meta, LinkedIn and a post (the page's address with
+    utm_source, utm_medium paid or organic, utm_campaign the page and utm_content the code), each with Copy; a page
+    that is not live says what its links show.
+  - Preview saves first, then opens a new tab: a live page on the public page with `?preview=1` (which counts no
+    visit), any other page at `/preview/landing/<id>` here, drawn from its row as go.html draws it
+    (`landing-preview.tsx`, the `.lp` rules in `globals.css`: the preview line, the brand from the newest company
+    profile as lp_public reads it, the top of the page, the form, whose button only says sign-ups are off, the sections,
+    the proof, the questions and the footer), with the tab's title from `generateMetadata`.
+- Changed on purpose on Landing pages (reported to Kser): Preview of a page that is not live opens here (go.html reads
+  a draft only with the current dashboard's own sign-in, kept in that site's browser storage), and a page that is gone
+  says so with a link back to Landing pages; Today's quick start opens the picker on Landing pages (the old one opened
+  it over Today) and Today's sign-ups open the Sign-ups tab; a save checks the address against every page in the
+  database (the old page checked the pages it had loaded); a page's code is made on the server from a strong random
+  source, and if another page took the address meanwhile the next one along is used; Delete says when the database
+  kept the page (a draft that went live meanwhile; the old page said Deleted); the tab is in the address; the Refresh
+  and Put a page live buttons sit together on the right.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -746,13 +798,20 @@ signed-in teammate's token, as the current dashboard's do.
   them otherwise); `uploads-logic.spec.ts` (without a browser) and `uploads.spec.ts` the upload, build-a-brief and ad
   copy windows and Read this ad, on the same rows; `runs.spec.ts` Runs & uploads, on `runs-fixtures.ts` (the ads
   rows plus a newer ads brief built from uploads, two campaigns, a scheduled and a custom Intel brief, and a custom
-  Intel run still reading). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  Intel run still reading); `landing-logic.spec.ts` (without a browser) and `landing.spec.ts` Landing pages and the
+  preview, on `landing-fixtures.ts` (a live book-a-call page with two ads, a draft webinar page whose campaign was sent
+  back, a paused download page with no campaign; four campaigns for the picker, one approved by its ads; visits and
+  sign-ups dated from now). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
   `winner_creatives` itself (the briefs suite does), and keeps each ad link once (`ad_records.ad_library_url`, 23505,
   as the project's unique index does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and answers the
   industry agent with no industries; the Ad Upload Analyzer reads an ad from what it is sent (an advertiser named
   "Unreadable…" cannot be read) and writes copy for the offer it is sent; Custom Ad Strategy answers with the brief
   `agent2_custom_stub`; the Low-Ticket agent starts. A test gives its own answer with `stubHook`.
+- The data stand-in keeps the project's rules for landing pages: a slug once (23505), the slug, status and kind
+  checks (23514, on insert and update), a new page's column defaults (`DEFAULTS`: draft, landing, updated_at now), and
+  a delete only of a draft that never went live (`DELETABLE`; the rest are kept, as the project's row rules do); and
+  content_results' checks (kind, title, no negative numbers).
 - The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
   session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
   takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
@@ -855,6 +914,11 @@ signed-in teammate's token, as the current dashboard's do.
 - A client component imports only types from a loader (`*-load.ts`, `server-only`): a value, even a constant, pulls
   the loader and the server's Supabase client into the browser bundle and the build fails. Constants the page and its
   loader share go in the rules module (the briefs' tabs are in `briefs.ts`).
+- A tab title set in an effect (`document.title`) is overwritten by Next's metadata, which streams in after a page's
+  deferred content. A page whose title comes from its data sets it in `generateMetadata`, with the read wrapped in
+  React's `cache` so the page and its title share one read per request (`loadPreview`).
+- The landing page preview (`/preview/landing/[id]`) sits outside the `(app)` group, so it has no sidebar or top bar;
+  the proxy still sends anyone signed out to sign-in, and the page checks the teammate again.
 - The briefs page draws one `BriefsView` for every tab and brief (no key), so a brief being edited stays open while
   another tab is looked at, as in the old page. State that belongs to one brief goes in `OrgBrief` or `AdsBrief`,
   which are keyed by run; the view only resets Brief or Structure when the tab changes.

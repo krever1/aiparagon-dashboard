@@ -7,6 +7,15 @@ export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 /** The current dashboard, where pages that are not ported yet still live. */
 export const LEGACY_DASHBOARD_URL = (process.env.NEXT_PUBLIC_LEGACY_DASHBOARD_URL || 'https://aiparagon.vercel.app/dashboard').replace(/\/+$/, '')
 
+/** The site that serves the public landing pages (aiparagon.vercel.app/go/<page>): the current dashboard's own. */
+export const PUBLIC_SITE = (() => {
+  try {
+    return new URL(LEGACY_DASHBOARD_URL).origin
+  } catch {
+    return 'https://aiparagon.vercel.app'
+  }
+})()
+
 /** Only accounts at this domain may use the dashboard (the same rule as the current dashboard and the n8n webhooks). */
 export const TEAM_EMAIL_DOMAIN = (process.env.NEXT_PUBLIC_TEAM_EMAIL_DOMAIN || 'aiparagonconsulting.com').toLowerCase()
 

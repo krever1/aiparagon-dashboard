@@ -148,7 +148,7 @@ function QuickStart() {
     { icon: Users, label: 'Run Catalyst for a lead', sub: 'Catalyst · Lead pipeline', href: '/lead-pipeline?run=new' },
     { icon: Rocket, label: 'Make an ad campaign', sub: 'Pipeline · Marketing Generation', href: out('marketing-generation'), outside: true },
     { icon: Repeat, label: 'Turn content into a post', sub: 'Pipeline · Content Transformation', href: out('content-transformation'), outside: true },
-    { icon: LayoutTemplate, label: 'Put a landing page live', sub: 'Pipeline · Landing pages', href: out('landing-pages'), outside: true },
+    { icon: LayoutTemplate, label: 'Put a landing page live', sub: 'Pipeline · Landing pages', href: '/landing-pages?new=1' },
   ]
   return (
     <Card w={1} title="Quick start" testid="quick-start">
@@ -217,7 +217,7 @@ function Workspace({ data, waitingN, briefs }: { data: TodayData; waitingN: numb
 function Signups({ data, now, hydrated }: { data: TodayData; now: number; hydrated: boolean }) {
   const all = (
     <div className="mt-3 border-t border-line pt-3">
-      <Link href="/landing-pages" className={linkBtn}>
+      <Link href="/landing-pages?tab=signups" className={linkBtn}>
         All sign-ups
         <ArrowRight size={15} aria-hidden="true" />
       </Link>
@@ -251,7 +251,7 @@ function Signups({ data, now, hydrated }: { data: TodayData; now: number; hydrat
       <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
         {data.signups.map((s) => (
           <li key={s.id}>
-            <Link href="/landing-pages" className={row} title={s.page || undefined} data-testid="signup">
+            <Link href="/landing-pages?tab=signups" className={row} title={s.page || undefined} data-testid="signup">
               <User size={17} aria-hidden="true" className="shrink-0 text-ink-2" />
               <span className="min-w-0 grow truncate">{s.who}</span>
               <span className="shrink-0 text-[13px] text-ink-3">{hydrated ? agoWords(s.at, now) : dayText(s.at, 'UTC')}</span>
