@@ -1,7 +1,9 @@
 // Made-up rows for the Ad Testing tests: four ads (one with revenue, one synced from Meta whose title holds a landing
 // page ad's code, one logged by hand with the same code and no leads, one imported from a file), three posts (one with
 // a link, one with a link that is not a web address, one with no impressions), a landing page with its visits and
-// sign-ups, a strategy read, and the pieces a result can belong to. Dates count back from now.
+// sign-ups, two strategy reads (a daily one with codes in its text, an older one asked for, kept as text) and what the
+// next read reads, what is remembered and the house rules made from it, and the pieces a result can belong to. Dates
+// count back from now.
 
 const D = 864e5
 const H = 36e5
@@ -52,10 +54,43 @@ export function testingRows() {
       { ...base, ...zero, id: R.p3, kind: 'post', title: 'Newsletter #12', platform: 'Newsletter', created_at: ago(4 * D), clicks: 40 },
     ],
     agent_outputs: [
-      { id: 'sr-1', agent: 'strategy_insights', output_type: 'strategy_insights', run_id: 'si-1', title: 'Double down on booked calls', created_at: ago(2 * D), data: {} },
+      {
+        id: 'sr-1', agent: 'strategy_insights', output_type: 'strategy_insights', run_id: 'insights_daily', title: 'Strategy read', created_at: ago(2 * D),
+        data: {
+          daily: true, requested_by: 'Daily read', focus: '', review_flags: [],
+          refs: {
+            OB: { kind: 'brief', which: 'organic', run_id: 'agent1_run_9', label: 'Organic brief · 2026-11-09' },
+            AB: { kind: 'brief', which: 'paid', run_id: 'agent2_run_9', label: 'Advertisement brief · 2026-11-08' },
+            C1: { kind: 'campaign', id: 'lt-1', run_id: 'lt-run-1', label: 'Campaign · 2026-11-06 · Onboarding Audit' },
+            R1: { kind: 'result', label: 'Post · Why onboarding stalls' },
+          },
+          insights: {
+            headline: 'Lead with the onboarding audit',
+            summary: 'Posts about onboarding got the most saves [R1], and the audit campaign is still running [C1].',
+            vision_fit: { read: 'It fits the offer [AB].', gaps: ['No proof from a client yet [ZZ].'] },
+            missing: ['Log the results of the audit ads.', 'Save two ideas.'],
+            recommendations: [
+              { title: 'Post the audit checklist', why: 'It got the most saves [R1].', angle: 'Show the three steps.', evidence: ['[OB]', '[R1]'], start: 'source', format: 'thought_leadership', priority: 'now' },
+              { title: 'Run a second audit ad', why: '', angle: '', evidence: ['[C1]'], start: 'marketing', format: 'ad', priority: 'next' },
+            ],
+            double_down: ['Keep the audit hook [C1].', 'Post on Tuesdays.'],
+            change_or_stop: ['Stop the long intro.'],
+            content_mix: 'Two posts a week and one ad.',
+          },
+        },
+      },
+      {
+        id: 'sr-2', agent: 'strategy_insights', output_type: 'strategy_insights', run_id: 'insights_asked', title: 'Strategy read', created_at: ago(9 * D),
+        data: JSON.stringify({
+          requested_by: 'pat@aiparagonconsulting.com', focus: 'What should we post next month?', review_flags: ['Two results were logged without dates.'],
+          refs: {},
+          insights: { headline: 'Book more diagnostic calls', summary: '', vision_fit: {}, missing: ['Log your first results.'], recommendations: [], double_down: [], change_or_stop: [] },
+        }),
+      },
+      { id: 'ob-1', agent: 'intel_tracker', output_type: 'intel_brief', run_id: 'agent1_run_9', title: 'Organic brief', created_at: ago(3 * D), data: {} },
       { id: 'dr-1', agent: 'content_generation', output_type: 'content_draft', run_id: 'cg-1', title: 'Why onboarding stalls', created_at: ago(3 * D), data: {} },
       {
-        id: 'lt-1', agent: 'low_ticket_content', output_type: 'campaign', run_id: 'lt-run-1', created_at: ago(6 * D),
+        id: 'lt-1', agent: 'low_ticket_content', output_type: 'funnel_package', run_id: 'lt-run-1', created_at: ago(6 * D),
         data: JSON.stringify({ offer_name: 'Onboarding Audit', ad_images: [{ file: 'lt1-a.png' }, { file: 'lt1-b.png' }] }),
       },
     ],
@@ -83,6 +118,22 @@ export function testingRows() {
       { id: 'su-3', page_id: 'lp-1', ad_code: '', created_at: ago(2 * D) },
       // older than 30 days: not counted
       { id: 'su-4', page_id: 'lp-1', ad_code: 'PK7Q2-A1', created_at: ago(40 * D) },
+    ],
+    creative_briefs: [{ id: 'cb-1', run_id: 'agent2_run_9', created_at: ago(4 * D) }],
+    brand_voice: [{ id: 'bv-1', created_at: ago(10 * D) }],
+    idea_notes: [
+      { id: 'in-1', status: null },
+      { id: 'in-2', status: 'used' },
+    ],
+    ai_settings: [
+      {
+        key: 'e3_prefs',
+        value: { read_id: 'sr-1', memory: [{ id: 'read:sr-1:dd:1', text: 'Double down: Post on Tuesdays.', at: ago(D), by: 'pat@aiparagonconsulting.com' }] },
+      },
+    ],
+    ai_rules: [
+      { id: 'rule-mem-1', rule: 'The team asked to remember: Double down: Post on Tuesdays.', category: 'Other', applies_to: ['content_generation'], active: true, source: 'profile:memory', created_by: 'pat@aiparagonconsulting.com' },
+      { id: 'rule-man-1', rule: 'Never promise results.', category: 'Compliance', applies_to: ['all'], active: true, source: 'manual', created_by: 'pat@aiparagonconsulting.com' },
     ],
   }
 }

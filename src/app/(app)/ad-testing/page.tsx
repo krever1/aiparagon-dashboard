@@ -9,7 +9,7 @@ import { loadTesting } from '@/lib/pipeline/ad-testing-load'
 
 export const metadata = pageMetadata('ad-testing')
 
-/** Ad Testing: /ad-testing, the leaderboard at ?tab=board, and ?log=1 opens Log a result once. */
+/** Ad Testing: /ad-testing (the Strategy read), ?tab=results, ?tab=board, and ?log=1 opens Log a result once. */
 export default function Page() {
   return (
     <>

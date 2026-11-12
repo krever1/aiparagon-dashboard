@@ -49,15 +49,16 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   Strategist (Nov 11, branch `pipeline/ads`, on top of 1b, PR #14), 2b Runs & uploads and the upload, build-a-brief and
   ad copy windows, with Read this ad and Send to Marketing Generation (Nov 11, branch `pipeline/uploads`, on top of the
   link fix, PR #16), 2c the brief editor and its Structure view (Nov 11, branch `pipeline/brief-editor`, on top of 2b).
-  With 2c, part 2 is done. Part 3 comes as two PRs: 3a Landing pages, with the preview of a page that is not live
+  With 2c, part 2 is done. Part 3 comes as three PRs: 3a Landing pages, with the preview of a page that is not live
   (Nov 12, branch `pipeline/landing-pages`, on top of 2c, PR #18), 3b Ad Testing's Results, Leaderboard, Log a
-  result and the sync line (Nov 12, branch `pipeline/ad-testing`, on top of 3a), 3c Ad Testing's Strategy read and
-  Import a CSV. See Pipeline below.
+  result and the sync line (Nov 12, branch `pipeline/ad-testing`, on top of 3a, PR #19), 3c Ad Testing's Strategy read
+  (New read, Remember) and Import a CSV (Nov 12, branch `pipeline/strategy-read`, on top of 3b). With 3c, part 3 is
+  done. See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Pipeline 3c (Ad Testing's Strategy read and Import a CSV), then parts 4 and 5, then Atlas, Canvas, Settings.
-  Then the cutover.
+- Next: Pipeline parts 4 (Content Transformation, with the creation kit it shares) and 5 (Marketing Generation), then
+  Atlas, Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -86,7 +87,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | The briefs' editor (Edit, Preview, Put back the agent's version) and Structure view | here (Pipeline part 2c, not released) |
 | Pipeline | Landing pages, with the preview of a page that is not live | here (Pipeline part 3a, not released) |
 | Pipeline | Ad Testing: Results, Leaderboard, Log a result, the Meta and LinkedIn sync line | here (Pipeline part 3b, not released) |
-| Pipeline | Content Transformation, Marketing Generation, Ad Testing's Strategy read and Import a CSV | current dashboard |
+| Pipeline | Ad Testing: the Strategy read (New read, Remember) and Import a CSV | here (Pipeline part 3c, not released) |
+| Pipeline | Content Transformation, Marketing Generation | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -412,7 +414,11 @@ signed-in teammate's token, as the current dashboard's do.
 
 ## Pipeline
 - Notes for the later parts, from the map of the current pages: the old Company profile loaders write while they read
-  (v104ReadSync and v104SyncDerived rewrite ai_rules), so that goes with the Company profile port, not a reader;
+  (v104ReadSync and v104SyncDerived rewrite ai_rules), so that goes with the Company profile port, not a reader. The
+  newest strategy read reaches the house rules (ai_rules source profile:read, "From the latest results, lean into: …")
+  only through v104ReadSync, which the current dashboard runs when its pages load the reads (Ad Testing, Marketing
+  Generation's plan, the Overview, the Company profile); the Ad Testing page here writes nothing on view, so until
+  Marketing Generation and the Company profile move, the old pages keep that rule up to date;
   `winner_creatives` is a view of ad_records (the Ad Strategist writes to ad_records); the low-ticket rows keep their data as a
   JSON string; Content Transformation's transcription has size limits to keep; a run in progress is kept for the team
   in ai_settings, as Catalyst's are; the ad-upload, ad-brief, regen-ad-image and e3-content-run webhooks need `auth` in
@@ -485,7 +491,7 @@ signed-in teammate's token, as the current dashboard's do.
   page looked only among the 40 newest runs of every agent, so a quiet agent said Not run yet); ads and results are
   counted (the old page counted what it had loaded, at most 1,000 ads and 500 results); Write a post opens Content
   Transformation without the note filled in (it is still in the current dashboard), and Log a result opens Ad
-  Testing here with its form open (`/ad-testing?log=1`, since 3b); the How it fits together step that said Create says Content Transformation; a long
+  Testing's Results here with its form open (`/ad-testing?tab=results&log=1`, since 3b); the How it fits together step that said Create says Content Transformation; a long
   title in Needs you stays inside its card on a phone (Today's had the same overflow).
 - The Market Intelligence Briefs (part 1b, `src/lib/pipeline/briefs.ts` and `ads.ts` pure rules, `briefs-load.ts`,
   `src/components/pipeline/briefs-*.tsx`, `src/app/(app)/briefs`; NW_PAGES['e3.briefs'] and the nwBr functions as v109
@@ -748,15 +754,18 @@ signed-in teammate's token, as the current dashboard's do.
   source, and if another page took the address meanwhile the next one along is used; Delete says when the database
   kept the page (a draft that went live meanwhile; the old page said Deleted); the tab is in the address; the Refresh
   and Put a page live buttons sit together on the right.
-- Ad Testing (part 3b, `src/lib/pipeline/ad-testing.ts` pure rules, `ad-testing-load.ts`, `src/components/pipeline/testing-*.tsx`,
-  `src/app/(app)/ad-testing`; NW_PAGES['e3.testing'] with v98, v106, v113, v115 and v116 in the current dashboard):
+- Ad Testing (parts 3b and 3c, `src/lib/pipeline/ad-testing.ts`, `strategy.ts` and `ad-testing-import.ts` pure rules,
+  `ad-testing-load.ts`, `src/components/pipeline/testing-*.tsx`, `src/app/(app)/ad-testing`; NW_PAGES['e3.testing']
+  with v98, v106, v113, v115 and v116 in the current dashboard):
   - What it reads, as the teammate, fresh on every visit: the 500 newest results (`content_results`, by the day posted,
-    newest first, then when they were saved), the day of the newest strategy read, and the landing pages that have
+    newest first, then when they were saved), the 12 newest strategy reads and what the next one would read (below),
+    the reads started from the dashboard and what became of them, what is remembered, and the landing pages that have
     been live with their sign-ups and visits of the last 30 days.
-  - The header: the newest strategy read's day and how many results are logged; Import a CSV (the current dashboard
-    until 3c) and Log a result; six numbers (posts and ads logged, the ads' spend, leads, clients won and revenue),
-    each opening Results or the Leaderboard; the tab is the address's (`?tab=board`), and `?log=1` opens Log a result
-    once (the Pipeline Overview's quick start).
+  - The header: a strategy read running, the newest read's day and how many results are logged; Import a CSV and Log a
+    result; six numbers (posts and ads logged, the ads' spend, leads, clients won and revenue), each opening Results or
+    the Leaderboard. The tab is the address's: the Strategy read at a bare address, `?tab=results` and `?tab=board`
+    (the old word insights is the Strategy read); `?log=1` opens Log a result once (the Pipeline Overview's quick start
+    sends `?tab=results&log=1`).
   - The sync line, once the page is on screen (`syncStatus`: Engine 3 · Ad Results Sync, action status): where the daily
     Meta and LinkedIn numbers come from and the last sync, with Sync now (action sync; "3 ads updated" or "Nothing new
     to sync"); not connected, Connect on Integrations (the current dashboard); the workflow off, it says so.
@@ -775,10 +784,61 @@ signed-in teammate's token, as the current dashboard's do.
     The server checks it as the old form did (`resultFrom`, in the same order and words) and saves it as the teammate
     (a new one attribution manual, created_by and updated_by the teammate's email). Edit opens the same window; Delete
     asks first.
-- Changed on purpose on Ad Testing (reported to Kser): the Strategy read and Import a CSV stay in the current dashboard
-  until 3c (the page opens on Results); the sync line says when the ad platforms could not be checked (the old one said
-  to connect them); a synced result cannot be changed or deleted from the server either (the old page only hid the
-  buttons); the Overview's Log a result opens the form here.
+- The Strategy read (part 3c, `strategy.ts`, `testing-read.tsx`, `read-actions.ts`; nwTsReadHtml, nwTsReadCard and
+  nwTsReadsHtml as v107 left them, with v98's run and reference chips, v106's Remember and v113's daily read):
+  - The read on screen (the newest, or one picked from Earlier reads, kept by its id): its day, then Daily read or who
+    asked; the headline, what was asked and the review flags; Why, Fits your offer and Gaps (the vision fit's gaps, else
+    what is missing); Make next, each with its priority and kind, Why (the reason, the angle and its sources) and
+    Create, which opens Marketing Generation (a campaign or an ad) or Content Transformation in the current dashboard;
+    and More from this read (Double down and Change or stop, each line with Remember; the content mix; what is missing
+    when the gaps were given). The read's [CODE]s are chips naming what it read (Organic brief, Ad brief, Campaign
+    6 Nov, Draft, Library, Idea, Ad result, Post result; the whole name on hover); a code the read does not name is
+    left out. A source opens where it lives: a brief on the briefs page at that brief, a result on Results, a campaign,
+    draft, library piece or idea on its page in the current dashboard.
+  - What it read (the chips over New read): Voice (a brand_voice row), Offer and context (ai_settings brand_context: an
+    offer, a difference or claims to avoid), Campaigns (the runs of agent_outputs funnel_package), Drafts, Library and
+    Open ideas (counted), Post results and Ad results (the page's), Briefs (the newest organic and ads briefs' days);
+    what is missing is marked.
+  - New read, with Anything to focus on? (`startRead`): Engine 3 · Strategy Insights (`e3-strategy-insights`) gets the
+    focus and who asked and answers at once with the run id (or "Not enough to read yet…", said on the page). The run is
+    kept for the team in ai_settings `strategy_runs` ({runs: [{run_id, t, by, focus}]}, a day of them); a read started
+    in the last five minutes that has not landed holds the next one back. While it runs, every teammate sees Reading
+    your content and results and the page checks every 5 seconds, on any of its tabs (`useStrategyRun`, `checkRead`),
+    for the read, or the row n8n saves when it cannot make one (strategy_insights_error, its data.error said on the
+    page for half an hour). After five minutes
+    it says it is taking longer and checks every 30 seconds, for half an hour.
+  - Remember (`rememberLine`, v106Remember): the line, without its codes, goes first in ai_settings e3_prefs.memory
+    ({id read:<read id>:<dd|cs>:<n>, text "Double down: …" or "Change or stop: …", at, by}, 40 at most; the rest of
+    e3_prefs is kept), then the post writer's house rules are made again from the list (ai_rules source
+    profile:memory, category Other, for content_generation, as few rules as fit 900 characters, "The team asked to
+    remember: …"), the new ones in before the old ones come out.
+- Import a CSV (part 3c, `ad-testing-import.ts`, `testing-import.tsx`, `import-actions.ts`; v106ImpOpen to v106ImpGo):
+  - The file is read in the browser (3 MB, 5,000 rows at most; commas, semicolons or tabs; quotes; the header is the
+    first line naming two columns we know, so a report line or two before it is fine). Which column holds what is
+    guessed from the headers and can be changed. A file of people with a stage and no spend or impressions is read as a
+    CRM export: one row per lead, each stage guessed (Lead, Qualified, Booked a call, Became a client, Leave out; a booked
+    call is qualified too) and changeable, forty shown. Numbers and days are read as the file writes them (a decimal
+    comma, the day first, no day after today).
+  - A results file becomes one result per ad or post, day and platform (two ad sets added together); a CRM export, the
+    leads, qualified leads, booked calls and clients won of each ad. Each row matches a result logged here (the same
+    kind and name, the same platform when both say; the same day, else the only one with no day; for leads, the one
+    logged nearest before), never one synced from the ad platforms. The first six rows show what will be written and
+    which update a result already logged.
+  - Import reads the results logged again (`importExisting`), then sends the rows a hundred at a time (`importChunk`,
+    every row checked again on the server): a new one with attribution csv (crm for a CRM export) and created_by the
+    teammate, a matched one with only the numbers the file gives. A stop says how many went in, and Try again matches
+    those. The window stays open while it writes.
+- Changed on purpose on Ad Testing (reported to Kser): the sync line says when the ad platforms could not be checked
+  (the old one said to connect them); a synced result cannot be changed or deleted from the server either (the old page
+  only hid the buttons); the Overview's Log a result opens Results here with the form. In 3c: the daily read says Daily
+  read (the old page said "asked by Daily read": v113 changed a function the page no longer drew); a read started is
+  kept for the team, one runs at a time for the team, and a read that failed or is taking longer says so to every
+  teammate (the old page kept a read started in one tab); Create opens Marketing Generation or Content Transformation
+  without filling it in, and a campaign, draft, library piece or idea opens its page, not the item (those pages are
+  still in the current dashboard); the import never matches or changes a synced result (the old one could, and the
+  next sync then counted that ad twice), so a row for such an ad comes in as a new result; the import's preview gives
+  the day of a matched result for a results file too; a stage written with a curly apostrophe ("Won’t buy") is a lead,
+  not a client won; the newest read's day in the header has the year when it is not this one.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -836,10 +896,13 @@ signed-in teammate's token, as the current dashboard's do.
   Intel run still reading); `landing-logic.spec.ts` (without a browser) and `landing.spec.ts` Landing pages and the
   preview, on `landing-fixtures.ts` (a live book-a-call page with two ads, a draft webinar page whose campaign was sent
   back, a paused download page with no campaign; four campaigns for the picker, one approved by its ads; visits and
-  sign-ups dated from now); `testing-logic.spec.ts` (without a browser) and `testing.spec.ts` Ad Testing, on
-  `testing-fixtures.ts` (four ads: one with revenue, one synced from Meta whose title holds a landing page ad's code, one
-  logged by hand with the same code and no leads, one imported; three posts; a landing page with visits and sign-ups; a
-  strategy read; the pieces a result can belong to). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`,
+  sign-ups dated from now); `testing-logic.spec.ts`, `strategy-logic.spec.ts` and `import-logic.spec.ts` (without a
+  browser) and `testing.spec.ts`, `testing-read.spec.ts` (the Strategy read, New read, Remember) and
+  `testing-import.spec.ts` (Import a CSV) Ad Testing, on `testing-fixtures.ts` (four ads: one with revenue, one synced
+  from Meta whose title holds a landing page ad's code, one logged by hand with the same code and no leads, one
+  imported; three posts; a landing page with visits and sign-ups; two strategy reads, a daily one with codes in its
+  text and an older one asked for, kept as text; what the next read reads; a line remembered and its house rule; the
+  pieces a result can belong to). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`,
   `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
   `winner_creatives` itself (the briefs suite does), and keeps each ad link once (`ad_records.ad_library_url`, 23505,
@@ -852,7 +915,9 @@ signed-in teammate's token, as the current dashboard's do.
   a delete only of a draft that never went live (`DELETABLE`; the rest are kept, as the project's row rules do); and
   content_results' checks (kind, title, no negative numbers). The n8n stand-in answers Engine 3 · Ad Results Sync
   (`e3-ad-results`) with nothing connected and nothing to sync; a test gives connected platforms and the rows a sync
-  updated with one `stubHook` (status and sync read the same answer).
+  updated with one `stubHook` (status and sync read the same answer). Engine 3 · Strategy Insights
+  (`e3-strategy-insights`) starts a read as `insights_stub`; a test writes the read, or the error row, n8n would save
+  under it.
 - The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
   session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
   takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
@@ -963,3 +1028,6 @@ signed-in teammate's token, as the current dashboard's do.
 - The briefs page draws one `BriefsView` for every tab and brief (no key), so a brief being edited stays open while
   another tab is looked at, as in the old page. State that belongs to one brief goes in `OrgBrief` or `AdsBrief`,
   which are keyed by run; the view only resets Brief or Structure when the tab changes.
+- A label that wraps a select holds the select's options in its text, so a test that filters labels by their text
+  matches every column whose select lists that header: find the select by its place, or by the label's own span
+  (`testing-import.spec.ts`). Playwright names such a select by the label's words and its chosen option together.

@@ -289,6 +289,9 @@ http
         // Engine 3 · Ad Strategist: a run starts; Engine 3 · Advertiser Industries: names an industry for the advertisers
         // whose ads say what they sell (a test gives its own answer with /__hook)
         if (name === 'ad-strategist-run') return send(res, 200, { ok: true, run_id: 'agent2_stub' })
+        // Engine 3 · Strategy Insights: a read started as insights_stub; the test writes the read (or the error row) n8n
+        // would save under it, or gives another answer with stubHook
+        if (name === 'e3-strategy-insights') return send(res, 200, { ok: true, started: true, run_id: 'insights_stub', counts: {} })
         // Engine 3 · Ad Results Sync: nothing connected yet (a test gives connected platforms, and the rows a sync updated, with stubHook)
         if (name === 'e3-ad-results') {
           return send(res, 200, body.action === 'sync' ? { ok: true, rows: 0 } : { ok: true, meta: { connected: false }, linkedin: { connected: false } })

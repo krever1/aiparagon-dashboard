@@ -1,5 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { dayText, whatLine, resultOf } from '../../src/lib/pipeline/ad-testing'
+import { dayShort } from '../../src/lib/pipeline/strategy'
 import { LEGACY, TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
 import { R, ago, testingRows } from './testing-fixtures'
 
@@ -28,7 +29,7 @@ test.beforeEach(async ({ page }) => {
 test('the status, the six numbers, what it does and the tabs', async ({ page }) => {
   await signIn(page, '/ad-testing')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ad Testing')
-  await expect(page.getByTestId('testing-status').getByRole('listitem')).toHaveText(['Strategy read ' + dayText(ago(2 * 864e5), false, 'UTC'), '7 results logged'])
+  await expect(page.getByTestId('testing-status').getByRole('listitem')).toHaveText(['Strategy read ' + dayShort(ago(2 * 864e5), Date.now(), 'UTC'), '7 results logged'])
   await expect(page.getByRole('list', { name: 'What Ad Testing does' }).getByRole('listitem')).toHaveText([
     'Log post and ad results',
     'Ranks what works',
@@ -42,9 +43,9 @@ test('the status, the six numbers, what it does and the tabs', async ({ page }) 
     '1 client won',
     '$4,500 revenue',
   ])
-  await expect(page.getByRole('link', { name: 'Import a CSV' })).toHaveAttribute('href', LEGACY + '/ad-testing')
-  await expect(page.getByRole('link', { name: 'Strategy read' })).toHaveAttribute('href', LEGACY + '/ad-testing')
-  await expect(page.getByRole('tab')).toHaveText(['Results 7', 'Leaderboard'])
+  await expect(page.getByRole('button', { name: 'Import a CSV' })).toBeVisible()
+  await expect(page.getByRole('tab')).toHaveText(['Strategy read', 'Results 7', 'Leaderboard'])
+  await expect(page.getByRole('tab', { name: 'Strategy read' })).toHaveAttribute('aria-selected', 'true')
   // nothing is connected: the line says where to connect
   await expect(page.getByTestId('sync-line')).toHaveText('Connect Meta and LinkedIn on Integrations and the numbers come in every morning.Connect on Integrations')
   await expect(page.getByTestId('sync-line').getByRole('link')).toHaveAttribute('href', LEGACY + '/integrations')
@@ -53,11 +54,13 @@ test('the status, the six numbers, what it does and the tabs', async ({ page }) 
   await expect(page).toHaveURL(/\/ad-testing\?tab=board$/)
   await expect(page.getByRole('tab', { name: 'Leaderboard' })).toHaveAttribute('aria-selected', 'true')
   await page.getByTestId('testing-strip').getByRole('button', { name: '3 posts logged' }).click()
+  await expect(page).toHaveURL(/\/ad-testing\?tab=results$/)
+  await page.getByRole('tab', { name: 'Strategy read' }).click()
   await expect(page).toHaveURL(/\/ad-testing$/)
 })
 
 test('Results: the landing pages’ sign-ups, how the results came in, what is working, the ads and the posts', async ({ page }) => {
-  await signIn(page, '/ad-testing')
+  await signIn(page, '/ad-testing?tab=results')
   const lp = page.getByTestId('lp-card')
   await expect(lp).toContainText('Last 30 days · spend matched by the code in the ad’s name')
   // the synced Meta numbers for PK7Q2-A1, not the ad logged by hand with the same code
@@ -124,7 +127,7 @@ test('the Leaderboard: the leading ad, cost per lead, every ad ranked and the po
 })
 
 test('Log a result: a post, checked as the old form checked it, then saved', async ({ page }) => {
-  await signIn(page, '/ad-testing')
+  await signIn(page, '/ad-testing?tab=results')
   await page.getByRole('button', { name: 'Log a result' }).click()
   await expect(dlg(page)).toContainText('Use the numbers from the platform, as they are. Nothing is estimated or filled in for you.')
   await expect(dlg(page).getByRole('radio', { name: 'Organic post' })).toHaveAttribute('aria-checked', 'true')
@@ -195,7 +198,7 @@ test('Log a result: an ad from a campaign, which of its ads, and the checks on i
 })
 
 test('Edit and Delete a result logged here; a synced one has neither', async ({ page }) => {
-  await signIn(page, '/ad-testing')
+  await signIn(page, '/ad-testing?tab=results')
   const ads = table(page, 'Ads').getByTestId('result-row')
   const r1 = ads.filter({ hasText: 'Most leads were COOs' })
   await r1.getByRole('button', { name: 'Edit' }).click()
@@ -244,7 +247,7 @@ test('the daily numbers: connected, Sync now, and a workflow that is off', async
 
 test('nothing yet: no results, nothing to rank, no landing page live, and the template', async ({ page }) => {
   await stubSeed({ content_results: [], landing_pages: [], agent_outputs: [] })
-  await signIn(page, '/ad-testing')
+  await signIn(page, '/ad-testing?tab=results')
   await expect(page.getByTestId('testing-status').getByRole('listitem')).toHaveText(['No strategy read yet', 'No results logged yet'])
   await expect(page.getByText('No results logged yet', { exact: true }).last()).toBeVisible()
   await expect(page.getByTestId('lp-card')).toContainText('Put a landing page live and each ad gets a link and a code.')
@@ -261,10 +264,11 @@ test('nothing yet: no results, nothing to rank, no landing page live, and the te
 test('the Pipeline Overview’s Log a result opens the form here, once', async ({ page }) => {
   await signIn(page, '/engine-3')
   const quick = page.getByTestId('quick-start').getByRole('link', { name: /Log a result/ })
-  await expect(quick).toHaveAttribute('href', '/ad-testing?log=1')
+  await expect(quick).toHaveAttribute('href', '/ad-testing?tab=results&log=1')
   await quick.click()
   await expect(dlg(page)).toBeVisible()
-  await expect(page).toHaveURL(/\/ad-testing$/)
+  await expect(page).toHaveURL(/\/ad-testing\?tab=results$/)
+  await expect(page.getByRole('tab', { name: /^Results/ })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Escape')
   await page.reload()
   await expect(page.getByTestId('testing-page')).toBeVisible()
@@ -273,7 +277,7 @@ test('the Pipeline Overview’s Log a result opens the form here, once', async (
 
 test('on a phone: nothing runs off the side; the tables scroll in their box', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await signIn(page, '/ad-testing')
+  await signIn(page, '/ad-testing?tab=results')
   const wide = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   await expect(table(page, 'Ads')).toBeVisible()
   expect(await wide()).toBeLessThanOrEqual(0)

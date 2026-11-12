@@ -150,7 +150,7 @@ function QuickStart({ controls }: { controls?: React.ReactNode }) {
   const q: { icon: typeof Rocket; label: string; sub: string; slug: string; here?: string }[] = [
     { icon: Rocket, label: 'Make an ad campaign', sub: 'Marketing Generation', slug: 'marketing-generation' },
     { icon: Repeat, label: 'Turn content into a post', sub: 'Content Transformation', slug: 'content-transformation' },
-    { icon: FlaskConical, label: 'Log a result', sub: 'Ad Testing', slug: 'ad-testing', here: '/ad-testing?log=1' },
+    { icon: FlaskConical, label: 'Log a result', sub: 'Ad Testing', slug: 'ad-testing', here: '/ad-testing?tab=results&log=1' },
   ]
   return (
     <Card w={W.quick} title="Quick start" testid="quick-start" controls={controls}>

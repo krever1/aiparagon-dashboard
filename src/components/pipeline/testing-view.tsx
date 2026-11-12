@@ -11,21 +11,26 @@ import { useHydrated } from '@/components/ui/local-date'
 import { useNow } from '@/components/ui/clock'
 import { toast } from '@/components/ui/toast'
 import {
-  type Ranked, type Result, type SyncState, TEMPLATE_CSV, clip, dayText, eng, int, isRanked, linkOf, lpRows, money, noDash, pct, per, postsByEngagement, rank, roas, say,
+  type Ranked, type Result, type SyncState, TEMPLATE_CSV, clip, eng, int, isRanked, linkOf, lpRows, money, noDash, pct, per, postsByEngagement, rank, roas, say,
   split, srcLine, srcOf, stats, syncLine, times, whatLine, workLine, working,
 } from '@/lib/pipeline/ad-testing'
 import type { TestingData } from '@/lib/pipeline/ad-testing-load'
 import { Empty, Tag, btn, linkCls, primary } from './bits'
 import { OUT_TIP, legacy } from './briefs-parts'
+import { ImportDialog } from './testing-import'
 import { LogDialog, removeResult } from './testing-log'
+import { ReadTab, useStrategyRun } from './testing-read'
+import { dayShort } from '@/lib/pipeline/strategy'
 
-// The Ad Testing page (NW_PAGES['e3.testing'] with v106, v113, v115 and v116 in the current dashboard): what is logged,
-// the six numbers, where the daily numbers come from (Sync now), Results (the landing pages' sign-ups, how the results
-// came in, what is working, the ads and the posts) and the Leaderboard. Log a result opens the form; ?log=1 opens it
-// once (the Pipeline Overview's quick start). The tab is the address's (?tab=board). The Strategy read and Import a
-// CSV are still in the current dashboard.
+// The Ad Testing page (NW_PAGES['e3.testing'] with v98, v106, v113, v115 and v116 in the current dashboard): what is
+// logged, the six numbers, where the daily numbers come from (Sync now), the Strategy read (the newest read, New read,
+// the earlier reads), Results (the landing pages' sign-ups, how the results came in, what is working, the ads and the
+// posts) and the Leaderboard. Log a result and Import a CSV open their windows; ?log=1 opens Log a result once (the
+// Pipeline Overview's quick start). The tab is the address's: the Strategy read at a bare address, ?tab=results and
+// ?tab=board (the old word insights is the Strategy read).
 
-type Tab = 'results' | 'board'
+type Tab = 'read' | 'results' | 'board'
+const TAB_URL: Record<Tab, string> = { read: '/ad-testing', results: '/ad-testing?tab=results', board: '/ad-testing?tab=board' }
 const RIGHT = 'px-3 py-2 text-right tabular-nums'
 const TH = 'px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-3'
 
@@ -104,9 +109,11 @@ export function TestingView({ data }: { data: TestingData }) {
   const hydrated = useHydrated()
   const now = useNow(data.now)
   const tz = hydrated ? undefined : 'UTC'
-  const tab: Tab = sp.get('tab') === 'board' ? 'board' : 'results'
-  const pick = (t: Tab) => window.history.replaceState(null, '', t === 'board' ? '/ad-testing?tab=board' : '/ad-testing')
+  const want = sp.get('tab')
+  const tab: Tab = want === 'board' ? 'board' : want === 'results' ? 'results' : 'read'
+  const pick = (t: Tab) => window.history.replaceState(null, '', TAB_URL[t])
   const [log, setLog] = useState<Result | 'new' | null>(null)
+  const [imp, setImp] = useState(false)
 
   // the Pipeline Overview's "Log a result" asks for the form once (?log=1)
   const askedLog = sp.get('log') === '1'
@@ -117,7 +124,7 @@ export function TestingView({ data }: { data: TestingData }) {
   }
   if (!askedLog && seenLog) setSeenLog(false)
   useEffect(() => {
-    if (askedLog) window.history.replaceState(null, '', tab === 'board' ? '/ad-testing?tab=board' : '/ad-testing')
+    if (askedLog) window.history.replaceState(null, '', TAB_URL[tab])
   }, [askedLog, tab])
 
   // where the daily numbers come from, asked once the page is on screen (v113AdsLoad)
@@ -147,14 +154,25 @@ export function TestingView({ data }: { data: TestingData }) {
   const T = split(data.results)
   const S = stats(data.results)
   const line = sync ? syncLine(sync, now) : null
+  const readAt = data.reads[0]?.createdAt ?? ''
+  // a strategy read being made is checked on any tab; the one that lands is put on screen
+  const [selId, setSelId] = useState('')
+  const run = useStrategyRun(data, now, () => setSelId(''))
+  const reading = run.state?.st === 'running'
 
   return (
     <div data-testid="testing-page">
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[14px] text-ink-2" data-testid="testing-status" aria-label="Where it stands">
+          {reading ? (
+            <li className="flex items-center gap-2">
+              <i aria-hidden="true" className="h-2 w-2 animate-pulse rounded-full bg-info" />
+              A strategy read is running
+            </li>
+          ) : null}
           <li className="flex items-center gap-2">
-            <i aria-hidden="true" className={`h-2 w-2 rounded-full ${data.readAt ? 'bg-good' : 'bg-warn'}`} />
-            {data.readAt ? 'Strategy read ' + dayText(data.readAt, false, tz) : 'No strategy read yet'}
+            <i aria-hidden="true" className={`h-2 w-2 rounded-full ${readAt ? 'bg-good' : 'bg-warn'}`} />
+            {readAt ? 'Strategy read ' + dayShort(readAt, now, tz) : 'No strategy read yet'}
           </li>
           <li className="flex items-center gap-2">
             <i aria-hidden="true" className={`h-2 w-2 rounded-full ${data.error ? 'bg-bad' : T.all.length ? 'bg-good' : 'bg-warn'}`} />
@@ -176,10 +194,10 @@ export function TestingView({ data }: { data: TestingData }) {
           ))}
         </ul>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <a href={legacy('ad-testing')} title={OUT_TIP} className={btn + ' px-3 py-2 text-[14px]'}>
+          <button type="button" className={btn + ' px-3 py-2 text-[14px]'} onClick={() => setImp(true)}>
             <Upload size={15} aria-hidden="true" />
             Import a CSV
-          </a>
+          </button>
           <button type="button" className={primary + ' px-3.5 py-2 text-[14px]'} onClick={() => setLog('new')}>
             <Plus size={15} aria-hidden="true" />
             Log a result
@@ -212,30 +230,37 @@ export function TestingView({ data }: { data: TestingData }) {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-start gap-x-3">
-        <Tabs
-          label="Ad Testing"
-          tabs={[
-            { key: 'results', label: 'Results', count: T.all.length || '' },
-            { key: 'board', label: 'Leaderboard' },
-          ]}
-          active={tab}
-          onPick={pick}
-        />
-        <a href={legacy('ad-testing')} title={OUT_TIP} className={linkCls + ' mt-2.5'}>
-          Strategy read
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
-      </div>
+      <Tabs
+        label="Ad Testing"
+        tabs={[
+          { key: 'read', label: 'Strategy read' },
+          { key: 'results', label: 'Results', count: T.all.length || '' },
+          { key: 'board', label: 'Leaderboard' },
+        ]}
+        active={tab}
+        onPick={pick}
+      />
 
       <div role="tabpanel">
-        {tab === 'results' ? (
-          <ResultsTab data={data} tz={tz} onLog={() => setLog('new')} onEdit={(r) => setLog(r)} />
+        {tab === 'read' ? (
+          <ReadTab
+            data={data}
+            now={now}
+            tz={tz}
+            onResults={() => pick('results')}
+            state={run.state}
+            onStarted={run.started}
+            selId={selId}
+            onSel={setSelId}
+          />
+        ) : tab === 'results' ? (
+          <ResultsTab data={data} tz={tz} onLog={() => setLog('new')} onEdit={(r) => setLog(r)} onImport={() => setImp(true)} />
         ) : (
           <BoardTab results={T.all} tz={tz} onLog={() => setLog('new')} />
         )}
       </div>
 
+      {imp ? <ImportDialog now={now} onClose={() => setImp(false)} onTemplate={downloadTemplate} /> : null}
       {log ? (
         <LogDialog
           key={log === 'new' ? 'new' : log.id}
@@ -323,7 +348,19 @@ function SecTitle({ title, count, extra }: { title: string; count?: number; extr
   )
 }
 
-function ResultsTab({ data, tz, onLog, onEdit }: { data: TestingData; tz: string | undefined; onLog: () => void; onEdit: (r: Result) => void }) {
+function ResultsTab({
+  data,
+  tz,
+  onLog,
+  onEdit,
+  onImport,
+}: {
+  data: TestingData
+  tz: string | undefined
+  onLog: () => void
+  onEdit: (r: Result) => void
+  onImport: () => void
+}) {
   const T = split(data.results)
   const W = working(T.ads)
   return (
@@ -342,10 +379,10 @@ function ResultsTab({ data, tz, onLog, onEdit }: { data: TestingData; tz: string
                   <Plus size={15} aria-hidden="true" />
                   Log a result
                 </button>
-                <a href={legacy('ad-testing')} title={OUT_TIP} className={btn}>
+                <button type="button" className={btn} onClick={onImport}>
                   <Upload size={15} aria-hidden="true" />
                   Import a CSV
-                </a>
+                </button>
               </span>
               <button type="button" className={linkCls} onClick={downloadTemplate}>
                 Download the template
