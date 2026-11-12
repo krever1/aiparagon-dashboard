@@ -50,14 +50,15 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await expect(form(page).getByRole('group', { name: 'What are you making? Video' }).getByRole('button')).toHaveText(['Video scriptScene by scene', 'Short clipsCut from a long video'])
   await expect(tile(page, 'LinkedIn post')).toHaveAttribute('aria-pressed', 'true')
   const cats = form(page).getByRole('radiogroup', { name: 'Category' }).getByRole('radio')
+  // each with how many findings the briefs have for it (none here: the brief has no posts to file them by)
   await expect(cats).toHaveText([
-    'Opinion and frameworks',
-    'Educational and how-to',
-    'Case studies and results',
-    'Reports and white papers',
-    'News and announcements',
-    'Events and webinars',
-    'Podcasts and video',
+    'Opinion and frameworks0',
+    'Educational and how-to0',
+    'Case studies and results0',
+    'Reports and white papers0',
+    'News and announcements0',
+    'Events and webinars0',
+    'Podcasts and video0',
   ])
   await expect(cats.first()).toHaveAttribute('aria-checked', 'true')
 
@@ -76,7 +77,7 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   const go = side(page).getByTestId('generate')
   await expect(go).toHaveText('Generate post')
   await expect(go).toBeDisabled()
-  await expect(side(page).getByTestId('generate-hint')).toHaveText('Add your material in step 2 to generate.')
+  await expect(side(page).getByTestId('generate-hint')).toHaveText('Add your material in step 3 to generate.')
 
   // the material starts on Upload (a file is read here, content-material.spec.ts); Paste puts the cursor in the box
   await expect(material(page).getByRole('tab')).toHaveText(['Upload', 'Paste', 'Fathom call', 'New idea'])
@@ -91,7 +92,7 @@ test('the form: kinds and categories, the material tabs, the questions, and what
 
   // a newsletter: its own questions and what comes back; a stand-alone article comes back as an article
   await tile(page, 'Newsletter').click()
-  await expect(cats.first()).toHaveText('News and announcements')
+  await expect(cats.first()).toHaveText('News and announcements0')
   await expect(cats.first()).toHaveAttribute('aria-checked', 'true')
   await expect(go).toHaveText('Generate issue')
   await expect(form(page).getByRole('checkbox', { name: 'A short summary at the top' })).toBeChecked()
@@ -292,7 +293,7 @@ test('New idea: from Ideas, who it is for and the proof, and the team’s idea m
   await expect(idea).toHaveValue('Fee talk is up. Advisors post about fees more than last month')
   await idea.fill('Too short to build on.')
   await expect(side(page).getByTestId('generate')).toBeDisabled()
-  await expect(side(page).getByTestId('generate-hint')).toHaveText('Write your point in step 2 to generate.')
+  await expect(side(page).getByTestId('generate-hint')).toHaveText('Write your point in step 3 to generate.')
   await expect(uses(page).nth(1)).toContainText('Your ideaToo short to build on. (a little more, please)')
 })
 

@@ -1,9 +1,12 @@
 import 'server-only'
-import type { SnapItem } from '@/lib/touchpoint/approvals'
+import { type SnapItem, snapItems } from '@/lib/touchpoint/approvals'
+import { type AdsBriefRow, reviewOf as briefReview } from './briefs'
+import { type AdIn, type AdsIn, type Finding, type OrgIn, AD_FMT, adInOf, adPool, orgPool } from './briefs-found'
 import { createClient } from '@/lib/supabase/server'
 import {
   type Draft, type Note, type Piece, type Req, type Review, briefIdeas, draftOf, draftOrigin, kindOf, noteOf, pieceOf, reqOf, reviewOf,
 } from './content'
+import { layoutOf } from './briefs'
 import {
   type Ask, type BriefPick, type Offer, type Persona, type ProofItem, type Tpl, type Voice, ASK_DAYS, leaveOutOf, offerOf, personaOf, pickBrief, proofOf, tplOf,
 } from './content-new'
@@ -70,6 +73,8 @@ export type FormData = {
   orgItems: SnapItem[]
   /** the team's default plans, by plan key (ai_settings build_plans) */
   plans: Record<string, unknown>
+  /** what the newest briefs found (step 2): the organic findings, and the ads briefs' with the ads of each type */
+  found: { org: Finding[]; ads: Finding[]; nOrg: number; error: string | null }
   error: string | null
 }
 
@@ -137,6 +142,8 @@ export async function loadForm(supabase: Supa, now: number, opts: { send?: boole
     const snap = rowsOf(sn).map((r) => r.snapshot)
     orgItems = briefIdeas(str(rowsOf(md)[0]?.content_md), snap.find((s) => briefIdeas('', s).length) ?? null)
   }
+  const st0 = rowsOf(st).find((r) => r.key === 'brief_structure')?.value
+  const found = send ? { org: [], ads: [], nOrg: 0, error: null } : await loadFound(supabase, orgRows, adRows, decided, st0)
   const live = (r: Row) => r.archived !== true && r.archived !== 'true'
   const v = rowsOf(vo)[0]
   const msg = (...es: ({ message: string } | null)[]) => es.filter(Boolean).map((e) => e!.message)[0] ?? null
@@ -148,7 +155,7 @@ export async function loadForm(supabase: Supa, now: number, opts: { send?: boole
     templates: rowsOf(tp)
       .filter((r) => r.active !== false && r.active !== 'false')
       .map(tplOf),
-    leaveOut: leaveOutOf(rowsOf(st).find((r) => r.key === 'brief_structure')?.value),
+    leaveOut: leaveOutOf(st0),
     plans: jsonOf(rowsOf(st).find((r) => r.key === 'build_plans')?.value),
     asks: rowsOf(ak)
       .map((r) => ({ feedback: str(r.feedback), createdAt: str(r.created_at), kind: kinds[str(r.target_id)] ?? '' }))
@@ -156,8 +163,72 @@ export async function loadForm(supabase: Supa, now: number, opts: { send?: boole
     org,
     ads,
     orgItems,
+    found,
     error: msg(pe.error, of.error, tp.error, vo.error, ak.error, st.error, dec.error),
   }
+}
+
+/**
+ * What the briefs found (v111's pools): the six newest organic briefs (their markdown, data and snapshot), the three
+ * newest ads briefs (their parts, snapshot and the sections their review hid), and the best ads of each type the Ad
+ * Strategist read (by score, then the longest running; the old page took them from the 1,000 newest).
+ */
+async function loadFound(supabase: Supa, orgRows: Row[], adRows: Row[], decided: Record<string, string>, structure: unknown): Promise<FormData['found']> {
+  const none = Promise.resolve({ data: [] as Row[], error: null })
+  const oRuns = orgRows.slice(0, 6).map((r) => str(r.run_id))
+  const aRuns = adRows.slice(0, 3).map((r) => str(r.run_id))
+  const runs = [...oRuns, ...aRuns]
+  const fmts = Object.values(AD_FMT)
+  const [ob, ab, sn, rv, ...ads] = await Promise.all([
+    oRuns.length
+      ? supabase.from('agent_outputs').select('run_id,created_at,content_md,data').eq('agent', 'intel_tracker').eq('output_type', 'intel_brief').in('run_id', oRuns).order('created_at', { ascending: false }).limit(30)
+      : none,
+    aRuns.length
+      ? supabase
+          .from('creative_briefs')
+          .select('run_id,created_at,winning_hooks,winning_offers,core_pain_points,objection_themes,differentiation_angle')
+          .in('run_id', aRuns)
+          .order('created_at', { ascending: false })
+          .limit(15)
+      : none,
+    runs.length ? supabase.from('agent_outputs').select('run_id,snapshot').not('snapshot', 'is', null).in('run_id', runs).order('created_at', { ascending: false }).limit(60) : none,
+    aRuns.length ? supabase.from('agent_outputs').select('run_id,data').eq('agent', 'ad_strategist').in('run_id', aRuns).order('created_at', { ascending: false }).limit(30) : none,
+    ...fmts.map((f) =>
+      supabase
+        .from('winner_creatives')
+        .select('id,run_id,advertiser_name,hook,body,cta,format,performance_score,days_running')
+        .in('format', [...f])
+        .order('performance_score', { ascending: false, nullsFirst: false })
+        .order('days_running', { ascending: false, nullsFirst: false })
+        .limit(16),
+    ),
+  ])
+  const first = (r: { data: unknown }) => {
+    const o: Record<string, Row> = {}
+    for (const x of rowsOf(r)) if (!(str(x.run_id) in o)) o[str(x.run_id)] = x
+    return o
+  }
+  const snaps: Record<string, unknown> = {}
+  for (const r of rowsOf(sn)) if (!(str(r.run_id) in snaps) && snapItems(r.snapshot)) snaps[str(r.run_id)] = r.snapshot
+  const hidden: Record<string, string[]> = {}
+  for (const r of rowsOf(rv)) {
+    const k = str(r.run_id)
+    if (k in hidden) continue
+    const rev = briefReview(jsonOf(r.data))
+    if (rev) hidden[k] = rev.hidden
+  }
+  const O = first(ob)
+  const org: OrgIn[] = oRuns
+    .filter((r) => O[r])
+    .map((r) => ({ run: r, date: str(O[r].created_at), ok: decided[r] === 'approved', md: str(O[r].content_md), data: jsonOf(O[r].data), snapshot: snaps[r] ?? null }))
+  const A = first(ab)
+  const briefs: AdsIn[] = aRuns
+    .filter((r) => A[r])
+    .map((r) => ({ row: A[r] as unknown as AdsBriefRow, ok: decided[r] === 'approved', snapshot: snaps[r] ?? null, hidden: hidden[r] ?? [] }))
+  const adList: AdIn[] = ads.flatMap((x) => rowsOf(x).map(adInOf)).filter((a): a is AdIn => !!a)
+  const L = (k: 'org' | 'ads') => layoutOf(structure, k).off
+  const msg = [ob, ab, sn, rv, ...ads].map((x) => x.error?.message).find(Boolean) ?? null
+  return { org: orgPool(org, L('org')), ads: adPool(briefs, adList, L('ads')), nOrg: org.length, error: msg }
 }
 
 export async function loadContent(now = Date.now()): Promise<ContentData> {
@@ -174,6 +245,7 @@ export async function loadContent(now = Date.now()): Promise<ContentData> {
     ads: { use: null, newest: null },
     orgItems: [],
     plans: {},
+    found: { org: [], ads: [], nOrg: 0, error: null },
     error: e instanceof Error ? e.message : String(e),
   }))
   const [rq, df, pc, nt, ib] = await Promise.all([

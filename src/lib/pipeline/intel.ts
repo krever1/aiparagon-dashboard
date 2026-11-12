@@ -449,7 +449,7 @@ export function ranksOf(items: IntelItem[]): Record<string, Rank> {
 }
 
 /** The organic category of each post format, as the tracker files them (V99_CAT_OF). */
-const CAT_OF: Record<string, string> = {
+export const CAT_OF: Record<string, string> = {
   'Opinion post': 'opinion',
   Framework: 'opinion',
   'How-to guide': 'educational',

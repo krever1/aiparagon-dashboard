@@ -6,6 +6,7 @@
 import { type SnapItem, clip, tidy } from '@/lib/touchpoint/approvals'
 import { SEC_TEXT, layoutOf } from './briefs'
 import { plural } from './content'
+import { type Chosen, PICKED_LEAD, insightsOf, picksBlock, picksFrom, picksRule } from './briefs-found'
 import { type Step, planFrom, planKey, planSections } from './content-plan'
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -891,6 +892,8 @@ export type Form = {
   note: string | null
   /** the plan the side shows (its key and parts), sent with the request; null leaves the template's own parts */
   plan: { key: string; steps: Step[] } | null
+  /** what the team picked from the briefs' findings (step 2); a send keeps them, as before */
+  picks: Chosen[]
 }
 export const blankForm = (): Form => ({
   kind: 'thought_leadership',
@@ -916,6 +919,7 @@ export const blankForm = (): Form => ({
   struct: '',
   note: null,
   plan: null,
+  picks: [],
 })
 
 /** A form sent from the browser, checked: known kinds, tabs and choices only, every text cut to what the request keeps. */
@@ -951,6 +955,7 @@ export function formFrom(input: unknown): Form {
   f.struct = str(o.struct).slice(0, 60)
   f.note = UUID.test(str(o.note)) ? str(o.note) : null
   f.plan = planFrom(o.plan)
+  f.picks = picksFrom(o.picks)
   return f
 }
 
@@ -1086,6 +1091,7 @@ export function buildRequest(f: Form, c: Ctx): Built {
     category: cat || null,
     category_name: catLabel(k, cat) || null,
     ...(ad && cat ? { ad_type: cat } : {}),
+    ...(f.picks.length ? { insights: insightsOf(f.picks) } : {}),
   }
   const row: Row = {
     requested_by: c.email,
@@ -1109,14 +1115,18 @@ export function buildRequest(f: Form, c: Ctx): Built {
       source_file_name: f.fileName.trim() || null,
     })
   } else {
-    const th = f.thesis.trim().slice(0, MAX.thesis).trim()
+    let th = f.thesis.trim().slice(0, MAX.thesis).trim()
     if (th.length < IDEA_MIN) return { ok: false, error: 'Say a little more about the point you want to make, a few sentences, so there is something real to build from.' }
+    // the picks go with an idea: as what it was written from (Write it from these), else as a block after it
+    const fromPicks = th.startsWith(PICKED_LEAD)
+    if (f.picks.length && !fromPicks) th = th + '\n\n' + picksBlock(f.picks)
     Object.assign(row, {
       audience: p ? personaLine(p) : 'Everyone who follows us',
       pain: p?.pain || null,
       thesis: th,
       proof: [f.proof.trim(), must.length ? 'It must use: ' + must.join('; ') : ''].filter(Boolean).join('\n\n') || null,
-      title: th.split(/[.\n]/)[0].slice(0, 90),
+      // an idea written from the picks is named after the first one (the old page named it after the lead line)
+      title: fromPicks && f.picks.length ? clip(f.picks[0].text, 90) : th.split(/[.\n]/)[0].slice(0, 90),
     })
   }
   const tp = baseTemplate(f, c, must)
@@ -1127,6 +1137,8 @@ export function buildRequest(f: Form, c: Ctx): Built {
   const extra = join([ans ? 'The team answered: ' + ans + '.' : '', notes ? 'Notes from the team: ' + notes : ''])
   if (extra) T.description = join([T.description, extra])
   if (c.leaveOut.length) T.rules = join(['Leave these parts of the organic brief out: ' + c.leaveOut.join(', ') + '.', T.rules])
+  // a piece made from material is framed by the picks: the rule goes first (v111Dress)
+  if (f.picks.length && !idea) T.rules = join([picksRule(f.picks), T.rules])
   row.template = T
   if (tp.id) row.template_id = tp.id
   return { ok: true, row, templateId: tp.id, title: str(row.title) }
@@ -1238,6 +1250,7 @@ export function previewOf(f: Form, c: PreviewCtx, short: (iso: string) => string
   if (ans) asked.push(['Your answers', ans])
   if (must.length) asked.push(['Must use', must.join('; ')])
   if (f.notes.trim()) asked.push(['Notes', clip(f.notes, 300)])
+  if (f.picks.length) asked.push(['From the briefs', f.picks.map((x) => clip(x.text, 120)).join('; ')])
   const fb = feedbackLines(c.asks, k, c.now)
   if (fb.length) asked.push(['Asked on earlier drafts', fb.join(' / ')])
   if (c.leaveOut.length) asked.push(['Leaves out of the organic brief', c.leaveOut.join(', ')])

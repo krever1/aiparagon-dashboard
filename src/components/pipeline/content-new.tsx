@@ -9,12 +9,13 @@ import {
 } from 'lucide-react'
 import { approveItems, undoItems } from '@/app/(app)/approvals/actions'
 import {
-  type CallPick, contentCallText, contentCalls, fillItIn, materialFor, readLink, retryRequest, sendRequest,
+  type CallPick, contentCallText, contentCalls, fillItIn, keepFinding, materialFor, readLink, retryRequest, sendRequest,
 } from '@/app/(app)/content-transformation/actions'
 import { ErrorNotice } from '@/components/catalyst/bits'
 import { Dialog } from '@/components/ui/dialog'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
+import { type Finding, catCount, findingsFor, ideaFromPicks, laterNote, pickOf, picksSide, savedIds, topicsFrom } from '@/lib/pipeline/briefs-found'
 import type { Note } from '@/lib/pipeline/content'
 import { type FillAnswer, FILL_MSG, type NoteKey, applyFill, fillFrom, fillIntro, fillKey } from '@/lib/pipeline/content-fill'
 import { FILE_MSG, fileTitle, guessType } from '@/lib/pipeline/content-files'
@@ -22,11 +23,12 @@ import type { ContentData } from '@/lib/pipeline/content-load'
 import { type Step, builtinSteps, samePlan, teamSteps } from '@/lib/pipeline/content-plan'
 import {
   type Answer, type Form, type Prefill, type Q, type Src, CATS, GROUPS, KINDS, MAX, SAMPLE, SRCS, SRC_TYPES, TEXT_MAX, type Use, adTypeLine, afterSend,
-  answersOf, baseParts, blankForm, briefUse, catOf, ctaList, ctaOf, feedbackUse, getsOf, hintOf, materialLine, materialUse, mustOf, mustSuggest, num, offerChoices, offerSum,
+  answersOf, baseParts, blankForm, briefUse, catLabel, catOf, ctaList, ctaOf, feedbackUse, getsOf, hintOf, materialLine, materialUse, mustOf, mustSuggest, num, offerChoices, offerSum,
   personaSum, pickOffer, pickPersona, planKeyOf, prefillOf, questionsOf, readyOf, structChoices, structOf, typeOf, voiceOf, voiceOpts, voiceUse, withMaterial, wordCount,
 } from '@/lib/pipeline/content-new'
 import { briefHref } from '@/lib/touchpoint/approvals'
 import { btn, inputCls, linkCls, primary, selectCls } from './bits'
+import { FoundBody, setDropped, useDrops } from './briefs-found'
 import { type CallList, FathomPanel, type Msg, UploadPanel, Why } from './content-material'
 import { OUT_TIP, legacy } from './content-view'
 import { PlanPreview } from './content-new-preview'
@@ -67,8 +69,8 @@ const chipCls = (on: boolean, sm = false) =>
   `inline-flex items-center gap-1.5 rounded-full border font-semibold ${sm ? 'px-2.5 py-0.5 text-[13px]' : 'px-3 py-1 text-[13.5px]'} ${
     on ? 'border-accent bg-accent-soft text-accent-text' : 'border-line bg-panel text-ink-2 hover:border-line-2'
   }`
-/** The step the material is in, for the line under Generate (step 2 until the briefs' findings take it, in 4d). */
-const MATERIAL_STEP = 2
+/** The step the material is in, for the line under Generate (after What the briefs found). */
+const MATERIAL_STEP = 3
 
 export type Watch = { id: string; title: string; t0: number }
 /** Fill it in for me: not asked, reading, did not work, or done (with what to put back on Undo). */
@@ -129,6 +131,10 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
   const [moreOpen, setMoreOpen] = useState(false)
   const [info, setInfo] = useState(false)
   const [planEdits, setPlanEdits] = useState<Record<string, Step[]>>({})
+  // what is used from the briefs' findings, by id (kept while the page is open, a send included, as before)
+  const [use, setUse] = useState<Record<string, true>>({})
+  const [keptNow, setKeptNow] = useState<Record<string, true>>({})
+  const drops = useDrops()
   const fRef = useRef(f)
   useEffect(() => {
     fRef.current = f
@@ -217,6 +223,12 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     team: !!team && !edited,
     template: parts.template,
   }
+  // the briefs' findings for the kind and category; only the ones in use there go with the request (v111Picks)
+  const found = findingsFor(k === 'adcopy', cat, D.found.org, D.found.ads)
+  const foundLive = found.filter((x) => !drops[x.id])
+  const picks = foundLive.filter((x) => use[x.id]).map(pickOf)
+  const kept = { ...savedIds(data.notes), ...keptNow }
+  const catName = catLabel(k, cat)
   const setAnswer = (id: string, v: Answer) => setF((x) => ({ ...x, answers: { ...x.answers, [x.kind]: { ...answersOf(x.kind, x.answers[x.kind]), [id]: v } } }))
 
   const pickSrc = (s: Src) => {
@@ -350,6 +362,54 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     setNotes({})
   }
 
+  // the briefs' findings: use, drop (Undo), keep for later, write from the picks
+  const useFinding = (x: Finding) =>
+    setUse((u) => {
+      const n = { ...u }
+      if (n[x.id]) delete n[x.id]
+      else n[x.id] = true
+      return n
+    })
+  const dropFinding = (x: Finding) => {
+    setDropped([x.id], true)
+    setUse((u) => {
+      const n = { ...u }
+      delete n[x.id]
+      return n
+    })
+    toast('Dropped. It will not come up again.', 'ok', { label: 'Undo', run: () => setDropped([x.id], false) })
+  }
+  const keepLater = async (x: Finding) => {
+    if (kept[x.id]) return
+    setKeptNow((m) => ({ ...m, [x.id]: true }))
+    const r = await keepFinding({ note: laterNote(x, catName, day).note, label: catName || x.src, id: x.id }).catch(() => ({
+      ok: false as const,
+      error: 'Could not reach the dashboard.',
+    }))
+    if (!r.ok) {
+      setKeptNow((m) => {
+        const n = { ...m }
+        delete n[x.id]
+        return n
+      })
+      return toast('Could not save it: ' + r.error, 'warn')
+    }
+    toast('Saved for later. It is in Ideas on Content Transformation.')
+  }
+  /** Write it from these (v111WriteFrom): with the material ready it generates; without, the picks become the idea. */
+  const writeFrom = () => {
+    if (!picks.length) return
+    if (ready) return void send()
+    const th = ideaFromPicks(picks)
+    up({ src: 'idea', thesis: th, note: null })
+    void send({ src: 'idea', thesis: th, note: null })
+  }
+  const fillTopics = () => {
+    const t = topicsFrom(picks, foundLive)
+    setAnswer('topics', t)
+    if (!t) toast('Nothing in the briefs for this category yet')
+  }
+
   const addMust = (s: string) => {
     const v = s.trim()
     if (!v) return
@@ -357,15 +417,19 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     setMustTyped('')
     mustRef.current?.focus()
   }
-  const send = async () => {
-    if (busy || !ready) return
+  const send = async (over?: Partial<Form>) => {
+    const base = { ...f, ...over }
+    if (busy || !readyOf(base)) return
     setBusy(true)
     setErr('')
-    const form = { ...f, must: mustOf(f.must, mustTyped), plan: { key: plan.key, steps: plan.steps } }
-    const r = await sendRequest(form).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.' }))
+    const form = { ...base, must: mustOf(base.must, mustTyped), plan: { key: plan.key, steps: plan.steps }, picks }
+    // the time it went out is read in the promise's callback (React's purity rule refuses Date.now() here)
+    const { r, t0 } = await sendRequest(form)
+      .catch(() => ({ ok: false as const, error: 'Could not reach the dashboard. Try again in a minute.' }))
+      .then((r) => ({ r, t0: Date.now() }))
     setBusy(false)
     if (!r.ok) return setErr(r.error)
-    setWatch({ id: r.id, title: r.title, t0: Date.now() })
+    setWatch({ id: r.id, title: r.title, t0 })
     if (r.started) toast('Draft started. It usually takes about a minute.')
     else {
       setKicks((x) => ({ ...x, [r.id]: r.error ?? 'network error' }))
@@ -380,7 +444,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     setNotes({})
   }
 
-  const steps: { title: string; side?: ReactNode; body: ReactNode }[] = [
+  const steps: { title: string; id?: string; side?: ReactNode; body: ReactNode }[] = [
     {
       title: 'What are you making?',
       body: (
@@ -423,6 +487,11 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
                   <button key={c} type="button" role="radio" aria-checked={c === cat} onClick={() => up({ cat: { ...f.cat, [k]: c } })} className={chipCls(c === cat)}>
                     {c === cat ? <Check size={13} aria-hidden="true" /> : null}
                     {label}
+                    {k !== 'adcopy' ? (
+                      <span className="rounded-full bg-sunk px-1.5 text-[12px] font-semibold text-ink-3" aria-label={', ' + catCount(D.found.org, c, drops) + ' found in the briefs'}>
+                        {catCount(D.found.org, c, drops)}
+                      </span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -430,6 +499,31 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
             </div>
           ) : null}
         </>
+      ),
+    },
+    {
+      title: 'What the briefs found',
+      id: 'briefs-found',
+      side: <span className="text-[13px] text-ink-3">{cat ? 'for ' + catName.toLowerCase() : 'across every category'}</span>,
+      body: (
+        <FoundBody
+          all={found}
+          adcopy={k === 'adcopy'}
+          cat={cat}
+          catName={catName}
+          nOrg={D.found.nOrg}
+          noun={K.noun}
+          use={use}
+          drops={drops}
+          saved={kept}
+          error={D.found.error}
+          day={day}
+          onUse={useFinding}
+          onDrop={dropFinding}
+          onUndrop={(ids) => setDropped(ids, false)}
+          onSave={(x) => void keepLater(x)}
+          onWrite={writeFrom}
+        />
       ),
     },
     {
@@ -586,7 +680,15 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
             <Why text={notes.per} />
           </div>
           {questionsOf(k).map((q) => (
-            <QField key={k + ':' + q.id} q={q} v={A[q.id]} set={(v) => setAnswer(q.id, v)} />
+            <div key={k + ':' + q.id}>
+              <QField q={q} v={A[q.id]} set={(v) => setAnswer(q.id, v)} />
+              {q.id === 'topics' ? (
+                <button type="button" className={linkCls + ' mt-1.5 text-[13px]'} onClick={fillTopics}>
+                  <Sparkles size={14} aria-hidden="true" />
+                  Use what the briefs found for the topics
+                </button>
+              ) : null}
+            </div>
           ))}
           {!idea ? (
             <div>
@@ -786,6 +888,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
         {steps.map((s, i) => (
           <section
             key={s.title}
+            id={s.id}
             ref={s.title === 'Details' ? detailsRef : undefined}
             className="min-w-0 scroll-mt-20 rounded-lg border border-line bg-panel p-5 shadow-card"
             aria-label={s.title}
@@ -834,6 +937,17 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
               ) : null
             }
           />
+          {picks.length ? (
+            <UseRow
+              use={{ ok: true, ...picksSide(picks) }}
+              onTitle={() => document.getElementById('briefs-found')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              action={
+                <button type="button" className={btn + ' px-1.5'} aria-label="Stop using the picks" onClick={() => setUse({})}>
+                  <X size={14} aria-hidden="true" />
+                </button>
+              }
+            />
+          ) : null}
           <UseRow use={materialUse(f)} />
           <UseRow
             use={voiceUse(D.voice, day)}
@@ -886,7 +1000,7 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
       ) : null}
       {preview ? (
         <PlanPreview
-          f={{ ...f, must: mustOf(f.must, mustTyped), plan: { key: plan.key, steps: plan.steps } }}
+          f={{ ...f, must: mustOf(f.must, mustTyped), plan: { key: plan.key, steps: plan.steps }, picks }}
           ctx={{ ...ctx, org: D.org, ads: D.ads, orgItems: D.orgItems }}
           tz={tz}
           ready={ready && !busy}
@@ -1133,7 +1247,7 @@ function MustUse({
 }
 
 /** A row of It will use (nwUse): a tick, or a warning when it is missing; its title opens it when it has a place. */
-function UseRow({ use, href, out, action }: { use: Use; href?: string; out?: boolean; action?: ReactNode }) {
+function UseRow({ use, href, out, action, onTitle }: { use: Use; href?: string; out?: boolean; action?: ReactNode; onTitle?: () => void }) {
   return (
     <li className="flex items-start gap-2.5" data-testid="use-row">
       <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ${use.ok ? 'bg-good-soft text-good' : 'bg-warn-soft text-warn'}`} aria-hidden="true">
@@ -1151,6 +1265,10 @@ function UseRow({ use, href, out, action }: { use: Use; href?: string; out?: boo
                 {use.title}
               </Link>
             )
+          ) : onTitle ? (
+            <button type="button" onClick={onTitle} className="text-left hover:underline">
+              {use.title}
+            </button>
           ) : (
             use.title
           )}
