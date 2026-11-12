@@ -73,7 +73,7 @@ test('this week’s lead, the newest campaign, what the agents know, the newest 
   await expect(lead).toContainText('Pricing')
   const organic = rows.agent_outputs.find((o) => o.run_id === 'intel_run_new' && o.output_type === 'intel_brief')!.created_at
   await expect(lead).toContainText('From the brief of ' + dayText(organic, 'UTC'))
-  await expect(lead.getByRole('link', { name: 'Write a post' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(lead.getByRole('link', { name: 'Write a post' })).toHaveAttribute('href', LEGACY + '/marketing-generation')
   await expect(lead.getByRole('link', { name: 'Open the brief' })).toHaveAttribute('href', '/briefs?run=intel_run_new')
 
   const camp = page.getByTestId('camp')
@@ -96,6 +96,9 @@ test('this week’s lead, the newest campaign, what the agents know, the newest 
   await expect(tl).toContainText('Thought leadership · ' + dayText(draft, 'UTC'))
   await expect(tl).toContainText('Most firms lose a week to onboarding.')
   await expect(tl).toContainText('To check')
+  // the draft opens on Content Transformation's Drafts, at that draft
+  const dr = rows.agent_outputs.find((o) => o.output_type === 'content_draft')!
+  await expect(tl.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/content-transformation?tab=drafts&draft=' + dr.id)
 
   const runs = page.getByTestId('run')
   await expect(runs).toHaveCount(4)

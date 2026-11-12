@@ -213,7 +213,7 @@ export function TakeawaysTab({ ctx }: { ctx: Ctx }) {
           <p className="mt-1 text-[14px] text-ink-2">Approved briefs shape every new post, newsletter and email.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {data.five.length ? (
-              <a href={legacy('content-transformation')} title={OUT_TIP} className={primary}>
+              <a href={legacy('marketing-generation')} title={OUT_TIP} className={primary}>
                 <PenLine size={15} aria-hidden="true" />
                 Write a post
               </a>

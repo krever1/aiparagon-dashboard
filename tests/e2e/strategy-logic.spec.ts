@@ -84,7 +84,9 @@ test('where a source opens, and where a recommendation is made', () => {
   expect(refGo(daily.refs.AB)).toEqual({ href: '/briefs?tab=ads&run=agent2_run_9' })
   expect(refGo(daily.refs.C1)).toEqual({ legacy: 'marketing-generation' })
   expect(refGo(daily.refs.R1)).toEqual({ tab: 'results' })
-  expect(refGo({ kind: 'draft', label: 'Draft · x', runId: '', id: 'd1', which: '' })).toEqual({ legacy: 'content-transformation' })
+  expect(refGo({ kind: 'draft', label: 'Draft · x', runId: '', id: 'd1', which: '' })).toEqual({ href: '/content-transformation?tab=drafts&draft=d1' })
+  expect(refGo({ kind: 'draft', label: 'Draft · x', runId: '', id: '', which: '' })).toEqual({ href: '/content-transformation?tab=ideas' })
+  expect(refGo({ kind: 'library', label: 'Library · x', runId: '', id: 'p1', which: '' })).toEqual({ href: '/content-transformation?tab=ideas' })
   expect(refGo({ kind: 'brief', label: '', runId: '', id: '', which: 'organic' })).toEqual({ href: '/briefs' })
   expect(daily.recs.map(makeIn)).toEqual(['content-transformation', 'marketing-generation'])
   expect(makeIn({ ...daily.recs[0], start: 'source', format: 'ad' })).toBe('marketing-generation')
@@ -114,9 +116,9 @@ test('what the next read reads, as chips, and whether the offer and context are 
     { legacy: 'company-profile' },
     { legacy: 'company-profile' },
     { legacy: 'marketing-generation' },
-    { legacy: 'content-transformation' },
-    { legacy: 'content-transformation' },
-    { legacy: 'content-transformation' },
+    { href: '/content-transformation?tab=drafts' },
+    { href: '/content-transformation?tab=ideas' },
+    { href: '/content-transformation?tab=ideas' },
     { tab: 'results' },
     { tab: 'results' },
     { href: '/briefs' },

@@ -461,7 +461,7 @@ test('Combined: the six cards from both briefs and the company profile, and a cr
   await expect(d).toContainText('Claims and where they come from5 days on average, from our own records')
   await expect(d).toContainText('Asked forOne newsletter issue')
   await expect(d.getByTestId('creative-decision')).toHaveText('The draft is written alongside this brief. Review both before anything is published.')
-  await expect(d.getByRole('link', { name: 'See the draft' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  await expect(d.getByRole('link', { name: 'See the draft' })).toHaveAttribute('href', /^\/content-transformation\?tab=drafts&draft=/)
   await d.getByRole('button', { name: 'Approve' }).click()
   await expect(toast(page, 'Brief approved. Drafts use approved briefs first.')).toBeVisible()
   await expect(d).toHaveCount(0)

@@ -338,6 +338,8 @@ http
         // Low-Ticket Ads Content Agent: answers that it started
         if (name === 'e3-low-ticket-run') return send(res, 200, { ok: true, started: true })
         if (name === 'e3-ad-industries') return send(res, 200, { ok: true, industries: {} })
+        // Engine 3 · Content from Source answers at once (Respond Started) and writes the draft later
+        if (name === 'e3-content-run') return send(res, 200, { ok: true, queued: true })
         if (['870a1ffa-cbc6-4085-894a-6f3bc90a40f2', 'e1-custom-run-erica', 'catalyst-meeting-prep'].includes(name)) {
           return send(res, 200, { ok: true, started: true })
         }

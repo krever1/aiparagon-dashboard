@@ -173,8 +173,8 @@ export function daysAgo(iso: string, now: number): number | null {
 
 export type IntelBrief = { run_id: string; created_at: string; content_md: string; n_items: number }
 export type AdsBrief = { run_id: string; created_at: string; winning_hooks: unknown; core_pain_points: unknown }
-/** A content request (content_requests): one with status error waits as a failed request. */
-export type ContentRequest = { id: string; title: string; status: string; error: string; created_at: string }
+/** A content request (content_requests): one with status error waits as a failed request. source_type brief: made on Marketing Generation. */
+export type ContentRequest = { id: string; title: string; status: string; error: string; created_at: string; source_type?: string }
 /** A content draft (agent_outputs, content_generation content_draft), its data read from JSON. */
 export type ContentDraft = { id: string; title: string; created_at: string; data: Record<string, unknown> }
 /** A book a call or low-ticket campaign (agent_outputs, low_ticket_content): the newest row of a run, data read. */
@@ -279,9 +279,11 @@ export function approvalItems(x: ApprovalInput): Item[] {
       icon: 'alert',
       title: (r.title || 'A content request') + ' did not finish',
       text: r.error || 'Open it to see why and try again.',
-      tags: [{ text: 'Failed', tone: 'bad' }, { text: 'Content Transformation' }, { day: r.created_at }],
+      tags: [{ text: 'Failed', tone: 'bad' }, { text: r.source_type === 'brief' ? 'Marketing Generation' : 'Content Transformation' }, { day: r.created_at }],
       approve: false,
-      review: at('content-transformation'),
+      // one made from your own material opens on Content Transformation's Drafts, with Try again; one made from the
+      // briefs on Marketing Generation, still in the current dashboard
+      review: r.source_type === 'brief' ? at('marketing-generation') : { kind: 'link', href: '/content-transformation?tab=drafts' },
       when: r.created_at,
     })
   }
@@ -340,10 +342,13 @@ export function approvalItems(x: ApprovalInput): Item[] {
       })
     })
   }
-  // content drafts nobody has marked ready: checked and approved on their own page
+  // content drafts nobody has marked ready: checked and approved on their own page (Content Transformation's Drafts
+  // for one made from your own material, Marketing Generation for one made from the briefs)
   const ready = new Set(x.ready ?? [])
+  const fromBriefs = new Set((x.requests ?? []).filter((r) => r.source_type === 'brief').map((r) => r.id))
   for (const o of x.drafts ?? []) {
     if (ready.has(o.id)) continue
+    const briefMade = str(o.data.source_type) === 'brief' || fromBriefs.has(str(o.data.request_id))
     const h = list(o.data.hooks)[0] as Record<string, unknown> | undefined
     out.push({
       key: 'draft:' + o.id,
@@ -353,7 +358,9 @@ export function approvalItems(x: ApprovalInput): Item[] {
       text: clip(str(h?.text) || str(o.data.body), 200),
       tags: [{ text: 'Draft' }, { text: FORMATS[str(o.data.format)] || 'Content' }, { day: o.created_at }],
       approve: false,
-      review: at('content-transformation', 'Check and approve'),
+      review: briefMade
+        ? at('marketing-generation', 'Check and approve')
+        : { kind: 'link', href: '/content-transformation?tab=drafts&draft=' + encodeURIComponent(o.id), label: 'Check and approve' },
       when: o.created_at,
     })
   }

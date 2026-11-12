@@ -452,7 +452,7 @@ export function PostPanel({ p, runAt, feeds, reps, L, tz, briefHref, onTheme, on
               <ArrowUpRight size={15} aria-hidden="true" />
             </a>
           ) : null}
-          <a href={legacy('content-transformation')} title={OUT_TIP} className={primary}>
+          <a href={legacy('marketing-generation')} title={OUT_TIP} className={primary}>
             <PenLine size={15} aria-hidden="true" />
             Write a post on this
           </a>
@@ -649,7 +649,7 @@ export function FiveDrawer({ ctx, n, onClose, onPost }: { ctx: Ctx; n: number; o
               See them in Posts
             </button>
           ) : null}
-          <a href={legacy('content-transformation')} title={OUT_TIP} className={primary}>
+          <a href={legacy('marketing-generation')} title={OUT_TIP} className={primary}>
             <PenLine size={15} aria-hidden="true" />
             Write a post with this
           </a>

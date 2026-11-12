@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ArrowUpRight, Check, ChevronRight, FileText, PenLine, Rocket } from 'lucide-react'
 import { Drawer } from '@/components/ui/drawer'
 import { dayText, useHydrated } from '@/components/ui/local-date'
@@ -20,6 +22,25 @@ const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 export function ComboView({ ctx }: { ctx: BCtx }) {
   const c = ctx.data.combo
   const [open, setOpen] = useState<string | null>(null)
+  // a draft's "See the creative brief" asks for one (?creative=<request id>): it opens once
+  const sp = useSearchParams()
+  const asked = sp.get('creative')
+  const [seen, setSeen] = useState<string | null>(null)
+  if (asked && asked !== seen) {
+    setSeen(asked)
+    // a creative brief is its content request's, named here content:<request id>
+    const want = asked.startsWith('content:') ? asked : 'content:' + asked
+    if (c?.creatives.some((x) => x.id === want)) setOpen(want)
+  }
+  if (!asked && seen) setSeen(null)
+  const close = () => {
+    setOpen(null)
+    if (asked) {
+      const q = new URLSearchParams(window.location.search)
+      q.delete('creative')
+      window.history.replaceState(null, '', window.location.pathname + (q.toString() ? '?' + q.toString() : ''))
+    }
+  }
   if (!c) return null
   const { tz } = ctx
   const cards = comboCards({ ...c.input, day: (iso) => dayText(iso, tz) })
@@ -98,7 +119,7 @@ export function ComboView({ ctx }: { ctx: BCtx }) {
         </section>
       ) : null}
 
-      {cr ? <CreativeDrawer ctx={ctx} c={cr} onClose={() => setOpen(null)} /> : null}
+      {cr ? <CreativeDrawer ctx={ctx} c={cr} onClose={close} /> : null}
     </div>
   )
 }
@@ -133,10 +154,9 @@ function CreativeDrawer({ ctx, c, onClose }: { ctx: BCtx; c: Creative; onClose: 
       footer={
         <>
           {c.outputId ? (
-            <a href={legacy('content-transformation')} title={OUT_TIP} className={btn}>
+            <Link href={'/content-transformation?tab=drafts&draft=' + encodeURIComponent(c.outputId)} className={btn}>
               See the draft
-              <ArrowUpRight size={14} aria-hidden="true" />
-            </a>
+            </Link>
           ) : null}
           <span className="grow" />
           <button

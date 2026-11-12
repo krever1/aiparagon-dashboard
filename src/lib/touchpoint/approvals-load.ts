@@ -68,7 +68,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(500),
-    supabase.from('content_requests').select('id,title,status,error,created_at').order('created_at', { ascending: false }).limit(60),
+    supabase.from('content_requests').select('id,title,status,error,created_at,source_type').order('created_at', { ascending: false }).limit(60),
     supabase
       .from('agent_outputs')
       .select('id,title,created_at,data')
@@ -99,6 +99,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
     status: str(r.status),
     error: str(r.error),
     created_at: str(r.created_at),
+    source_type: str(r.source_type),
   }))
   const drafts: ContentDraft[] = rowsOf(df).map((o) => ({ id: str(o.id), title: str(o.title), created_at: str(o.created_at), data: json(o.data) }))
   // the newest row of each campaign, then the three newest campaigns (as nwApprovalAll takes them)

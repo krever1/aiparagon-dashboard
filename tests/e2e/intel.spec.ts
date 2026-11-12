@@ -144,7 +144,8 @@ test('a post in full: its score, why it is in the brief, its reply, approved fro
   await expect(cap.getByRole('link', { name: 'Open the brief' })).toHaveAttribute('href', '/briefs?run=' + RUN_A)
   await expect(d).toContainText('Feeds these takeaways')
   await expect(d).toContainText('Proof beats promises')
-  await expect(d.getByRole('link', { name: 'Write a post on this' })).toHaveAttribute('href', LEGACY + '/content-transformation')
+  // a post is written on Marketing Generation, from the briefs, as the current dashboard does it
+  await expect(d.getByRole('link', { name: 'Write a post on this' })).toHaveAttribute('href', LEGACY + '/marketing-generation')
   await d.getByText('Read the full post').click()
   await expect(d).toContainText('Line two of the post.')
   await expect(d).toContainText('Waiting')

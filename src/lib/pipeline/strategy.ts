@@ -159,9 +159,9 @@ export function evidenceOf(r: Rec, refs: Record<string, Ref>): { code: string; r
 }
 
 /**
- * Where a source opens (v98RefGo): a brief on the briefs page, a result on Results, anything else on its page in the
- * current dashboard (a campaign on Marketing Generation; a draft, a library piece or an idea on Content
- * Transformation).
+ * Where a source opens (v98RefGo): a brief on the briefs page, a result on Results, a draft on Content Transformation's
+ * Drafts (at that draft), a library piece or an idea on its Ideas, and a campaign on Marketing Generation, still in the
+ * current dashboard.
  */
 export type Go = { href: string } | { legacy: string } | { tab: 'results' }
 export function refGo(r: Ref): Go {
@@ -175,7 +175,8 @@ export function refGo(r: Ref): Go {
   }
   if (r.kind === 'campaign') return { legacy: 'marketing-generation' }
   if (r.kind === 'result') return { tab: 'results' }
-  return { legacy: 'content-transformation' }
+  if (r.kind === 'draft' && r.id) return { href: '/content-transformation?tab=drafts&draft=' + encodeURIComponent(r.id) }
+  return { href: '/content-transformation?tab=ideas' }
 }
 
 /** What a recommendation is made in (v98Make): a campaign or an ad on Marketing Generation, anything else on Content Transformation. */
@@ -200,9 +201,9 @@ export function chips(R: Reads, now: number, timeZone?: string): Chip[] {
     { label: 'Voice', value: R.voice ? 'set' : 'not set', ok: R.voice, go: { legacy: 'company-profile' } },
     { label: 'Offer and context', value: R.ctx ? 'set' : 'not set', ok: R.ctx, go: { legacy: 'company-profile' } },
     { label: 'Campaigns', value: String(R.camps), ok: true, go: { legacy: 'marketing-generation' } },
-    { label: 'Drafts', value: String(R.drafts), ok: true, go: { legacy: 'content-transformation' } },
-    { label: 'Library', value: String(R.lib), ok: true, go: { legacy: 'content-transformation' } },
-    { label: 'Open ideas', value: String(R.ideas), ok: true, go: { legacy: 'content-transformation' } },
+    { label: 'Drafts', value: String(R.drafts), ok: true, go: { href: '/content-transformation?tab=drafts' } },
+    { label: 'Library', value: String(R.lib), ok: true, go: { href: '/content-transformation?tab=ideas' } },
+    { label: 'Open ideas', value: String(R.ideas), ok: true, go: { href: '/content-transformation?tab=ideas' } },
     { label: 'Post results', value: String(R.posts), ok: R.posts > 0, go: { tab: 'results' } },
     { label: 'Ad results', value: String(R.ads), ok: R.ads > 0, go: { tab: 'results' } },
     { label: 'Briefs', value: briefs || 'none yet', ok: !!briefs, go: { href: '/briefs' } },

@@ -14,6 +14,7 @@ import type { IconName } from '@/lib/nav'
 import { safeUrl } from '@/lib/touchpoint/approvals'
 import type { OverviewData } from '@/lib/pipeline/overview-load'
 import { W, W_NAME, type WKey, agentTiles, campStatus, moved, voiceLine } from '@/lib/pipeline/overview'
+import { draftHref } from '@/lib/pipeline/content'
 import { hello, needLine, plural, todayText, waiting, whenText } from '@/lib/touchpoint/today'
 import { Pill, Tag } from './bits'
 import { hideCard, resetCards, setOrder, showCard, useCards } from './widget-store'
@@ -291,7 +292,7 @@ function LeadCard({ data, tz, controls }: { data: OverviewData; tz: string | und
         <span className="text-[12.5px] text-ink-3">From the brief of {dayText(L.createdAt, tz)}</span>
       </div>
       <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
-        <Out slug="content-transformation" className={btnPri}>
+        <Out slug="marketing-generation" className={btnPri}>
           Write a post
         </Out>
         <Link href={'/briefs?run=' + encodeURIComponent(L.runId)} className={btnSm}>
@@ -405,9 +406,9 @@ function DraftCard({ data, tz, controls }: { data: OverviewData; tz: string | un
       <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">
         {o.ready ? <Pill tone="good">Ready</Pill> : <Pill tone="warn">To check</Pill>}
         <span className="grow" />
-        <Out slug="content-transformation" className={btnSm}>
+        <Link href={draftHref(o.id)} className={btnSm}>
           Open
-        </Out>
+        </Link>
       </div>
     </Card>
   )

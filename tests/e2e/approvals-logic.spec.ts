@@ -241,7 +241,7 @@ test('part B: failed requests first, then the briefs, the ads, the drafts and th
     text: 'The transcript could not be read.',
     tags: [{ text: 'Failed', tone: 'bad' }, { text: 'Content Transformation' }, { day: B().content_requests[0].created_at }],
     approve: false,
-    review: { kind: 'link', href: LEGACY + '/content-transformation', out: true },
+    review: { kind: 'link', href: '/content-transformation?tab=drafts' },
   })
   expect([untitled.title, untitled.text]).toEqual(['A content request did not finish', 'Open it to see why and try again.'])
   // a brief's Review opens that brief on the briefs page
@@ -280,7 +280,8 @@ test('part B: content drafts not marked ready, opened on their own page to check
   expect(drafts[0].text).toBe('Most firms lose a week to onboarding.')
   expect(drafts[1].text.length).toBeLessThanOrEqual(200)
   expect(drafts[1].text.endsWith('…')).toBe(true)
-  expect(drafts[0]).toMatchObject({ approve: false, review: { kind: 'link', href: LEGACY + '/content-transformation', label: 'Check and approve', out: true } })
+  expect(drafts[0]).toMatchObject({ approve: false, review: { kind: 'link', href: '/content-transformation?tab=drafts&draft=' + drafts[0].key.slice(6), label: 'Check and approve' } })
+  expect(drafts[0].review).not.toHaveProperty('out')
   expect(draftTitle({ id: 'x', title: '', created_at: '', data: { title: 'draft title' } })).toBe('Content draft')
   expect(draftTitle({ id: 'x', title: 'Row title', created_at: '', data: {} })).toBe('Row title')
 
@@ -414,4 +415,29 @@ test('part C: the key a comment’s Resolve takes; leads are never written', () 
   const id = '73000000-0000-4000-8000-000000000001'
   expect(parseKey('cmt:' + id)).toEqual({ kind: 'comment', id })
   for (const k of ['cmt:', 'cmt:42', 'cmt:' + id + ':x', 'cmt:' + id + "'", 'lead:lee.ready@example.com', 'lead:' + id]) expect(parseKey(k)).toBeNull()
+})
+
+test('a draft or a failed request made from the briefs opens on Marketing Generation; one from your own material here', () => {
+  const at = new Date(NOW - D).toISOString()
+  const items = approvalItems(
+    input({
+      requests: [
+        { id: 'rq-b', title: 'From the organic brief', status: 'error', error: 'No brief', created_at: at, source_type: 'brief' },
+        { id: 'rq-m', title: 'The webinar', status: 'error', error: 'No text', created_at: at, source_type: 'article' },
+      ],
+      drafts: [
+        { id: 'd-b', title: 'Made from the briefs', created_at: at, data: { source_type: 'brief', format: 'thought_leadership' } },
+        { id: 'd-r', title: 'Its request was', created_at: at, data: { request_id: 'rq-b', format: 'newsletter' } },
+        { id: 'd-m', title: 'Mine', created_at: at, data: { request_id: 'rq-m', format: 'email', source_type: 'article' } },
+      ],
+    }),
+  )
+  const by = (k: string) => items.find((x) => x.key === k)!
+  expect(by('req:rq-b')).toMatchObject({ review: { kind: 'link', href: LEGACY + '/marketing-generation', out: true } })
+  expect(by('req:rq-b').tags[1]).toEqual({ text: 'Marketing Generation' })
+  expect(by('req:rq-m')).toMatchObject({ review: { kind: 'link', href: '/content-transformation?tab=drafts' } })
+  expect(by('req:rq-m').tags[1]).toEqual({ text: 'Content Transformation' })
+  expect(by('draft:d-b').review).toEqual({ kind: 'link', href: LEGACY + '/marketing-generation', label: 'Check and approve', out: true })
+  expect(by('draft:d-r').review).toEqual({ kind: 'link', href: LEGACY + '/marketing-generation', label: 'Check and approve', out: true })
+  expect(by('draft:d-m').review).toEqual({ kind: 'link', href: '/content-transformation?tab=drafts&draft=d-m', label: 'Check and approve' })
 })

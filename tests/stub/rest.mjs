@@ -4,6 +4,8 @@
 // DELETE. Like the real project's row rules for this app, it answers only a signed-in user (the caller's own token),
 // never the public key alone, so a test fails if the app ever reads or writes without the person's session.
 
+import { randomUUID } from 'node:crypto'
+
 const RESERVED = new Set(['select', 'order', 'limit', 'offset', 'on_conflict', 'columns'])
 
 /** Primary keys, for upserts (the app's tables; anything else falls back to `id`). */
@@ -27,6 +29,10 @@ const CHECKS = {
     (r.slug === undefined || (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(String(r.slug)) && String(r.slug).length >= 3 && String(r.slug).length <= 60)) &&
     (r.status === undefined || ['draft', 'live', 'paused'].includes(r.status)) &&
     (r.kind === undefined || ['book_call', 'webinar', 'download', 'newsletter_signup', 'landing'].includes(r.kind)),
+  content_requests: (r) =>
+    (r.format === undefined || ['ad', 'thought_leadership', 'newsletter', 'email'].includes(r.format)) &&
+    (r.start_mode === undefined || ['source', 'idea'].includes(r.start_mode)) &&
+    (r.status === undefined || ['queued', 'extracting', 'drafting', 'done', 'error'].includes(r.status)),
   content_results: (r) =>
     (r.kind === undefined || ['post', 'ad'].includes(r.kind)) &&
     (r.title === undefined || String(r.title ?? '').trim().length > 0) &&
@@ -36,7 +42,13 @@ const CHECKS = {
 /** Column defaults a new row gets, as in the project (beyond the id and created_at every table gets here). */
 const DEFAULTS = {
   landing_pages: () => ({ title: '', status: 'draft', kind: 'landing', content: {}, ads: [], add_to_pipeline: true, updated_at: new Date().toISOString(), published_at: null }),
+  content_pieces: () => ({ status: 'draft', tags: [], updated_at: new Date().toISOString() }),
+  idea_notes: () => ({ status: 'open', tags: [], updated_at: new Date().toISOString() }),
+  content_requests: () => ({ status: 'queued', updated_at: new Date().toISOString() }),
 }
+
+/** Tables whose new rows get a uuid, as the project makes them (the app checks those ids are uuids). */
+const UUID_IDS = new Set(['content_pieces', 'idea_notes', 'content_requests'])
 
 /** Row rules for deletes, as in the project: a landing page can be deleted only while a draft that never went live. */
 const DELETABLE = { landing_pages: (r) => r.status === 'draft' && !r.published_at }
@@ -260,7 +272,7 @@ export function createRest(initial, claimsOf) {
       for (const item of list) {
         const row = { ...item }
         if (CHECKS[name] && !CHECKS[name](row)) return send(res, 400, { code: '23514', message: `new row for relation "${name}" violates a check constraint` })
-        if (key === 'id' && row.id === undefined) row.id = `stub-${name}-${seq++}`
+        if (key === 'id' && row.id === undefined) row.id = UUID_IDS.has(name) ? randomUUID() : `stub-${name}-${seq++}`
         if (row.created_at === undefined && name !== 'ai_settings') row.created_at = new Date().toISOString()
         const existing = row[key] !== undefined ? rows.find((r) => r[key] === row[key]) : undefined
         const clash = (UNIQUE[name] || []).find((c) => row[c] !== undefined && row[c] !== null && rows.some((r) => r !== existing && r[c] === row[c]))
