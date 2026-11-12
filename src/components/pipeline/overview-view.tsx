@@ -146,16 +146,22 @@ export function OverviewView({ data, name }: { data: OverviewData; name: string 
 }
 
 function QuickStart({ controls }: { controls?: React.ReactNode }) {
-  const q: { icon: typeof Rocket; label: string; sub: string; slug: string }[] = [
+  // a page that has moved here opens with its form (here), the others in the current dashboard
+  const q: { icon: typeof Rocket; label: string; sub: string; slug: string; here?: string }[] = [
     { icon: Rocket, label: 'Make an ad campaign', sub: 'Marketing Generation', slug: 'marketing-generation' },
     { icon: Repeat, label: 'Turn content into a post', sub: 'Content Transformation', slug: 'content-transformation' },
-    { icon: FlaskConical, label: 'Log a result', sub: 'Ad Testing', slug: 'ad-testing' },
+    { icon: FlaskConical, label: 'Log a result', sub: 'Ad Testing', slug: 'ad-testing', here: '/ad-testing?log=1' },
   ]
   return (
     <Card w={W.quick} title="Quick start" testid="quick-start" controls={controls}>
       <div className="grid gap-2 min-[641px]:grid-cols-2 min-[1081px]:grid-cols-1">
         {q.map((x) => (
-          <a key={x.label} href={out(x.slug)} title={OUT_TIP} className="flex min-w-0 items-center gap-3 rounded-md bg-sunk p-3 text-left text-ink hover:bg-line/60">
+          <a
+            key={x.label}
+            href={x.here ?? out(x.slug)}
+            title={x.here ? undefined : OUT_TIP}
+            className="flex min-w-0 items-center gap-3 rounded-md bg-sunk p-3 text-left text-ink hover:bg-line/60"
+          >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-panel text-ink-2">
               <x.icon size={19} aria-hidden="true" />
             </span>
@@ -163,7 +169,11 @@ function QuickStart({ controls }: { controls?: React.ReactNode }) {
               <b className="block text-[14.5px] font-semibold">{x.label}</b>
               <small className="block text-[12.5px] text-ink-3">{x.sub}</small>
             </span>
-            <ArrowUpRight size={15} aria-hidden="true" className="ml-auto shrink-0 text-ink-3" />
+            {x.here ? (
+              <ArrowRight size={15} aria-hidden="true" className="ml-auto shrink-0 text-ink-3" />
+            ) : (
+              <ArrowUpRight size={15} aria-hidden="true" className="ml-auto shrink-0 text-ink-3" />
+            )}
           </a>
         ))}
       </div>

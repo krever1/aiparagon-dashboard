@@ -50,11 +50,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   ad copy windows, with Read this ad and Send to Marketing Generation (Nov 11, branch `pipeline/uploads`, on top of the
   link fix, PR #16), 2c the brief editor and its Structure view (Nov 11, branch `pipeline/brief-editor`, on top of 2b).
   With 2c, part 2 is done. Part 3 comes as two PRs: 3a Landing pages, with the preview of a page that is not live
-  (Nov 12, branch `pipeline/landing-pages`, on top of 2c), 3b Ad Testing. See Pipeline below.
+  (Nov 12, branch `pipeline/landing-pages`, on top of 2c, PR #18), 3b Ad Testing's Results, Leaderboard, Log a
+  result and the sync line (Nov 12, branch `pipeline/ad-testing`, on top of 3a), 3c Ad Testing's Strategy read and
+  Import a CSV. See Pipeline below.
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
-- Next: Pipeline 3b (Ad Testing), then parts 4 and 5, then Atlas, Canvas, Settings. Then the cutover.
+- Next: Pipeline 3c (Ad Testing's Strategy read and Import a CSV), then parts 4 and 5, then Atlas, Canvas, Settings.
+  Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
   run question's Reads, a stage run). The current dashboard calls n8n from the browser; this app never does.
 - Live (Nov 9, PR #1): production at aiparagon-dashboard.vercel.app, Vercel's own domain for now (Kser's call; a
@@ -82,7 +85,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Pipeline | Runs & uploads; the upload, build-a-brief and ad copy windows; Read this ad | here (Pipeline part 2b, not released) |
 | Pipeline | The briefs' editor (Edit, Preview, Put back the agent's version) and Structure view | here (Pipeline part 2c, not released) |
 | Pipeline | Landing pages, with the preview of a page that is not live | here (Pipeline part 3a, not released) |
-| Pipeline | Content Transformation, Marketing Generation, Ad Testing | current dashboard |
+| Pipeline | Ad Testing: Results, Leaderboard, Log a result, the Meta and LinkedIn sync line | here (Pipeline part 3b, not released) |
+| Pipeline | Content Transformation, Marketing Generation, Ad Testing's Strategy read and Import a CSV | current dashboard |
 | Atlas | Knowledge base, Files, Company profile, Templates | current dashboard |
 | Settings and account | Integrations, AI settings, Audit log, Your account | current dashboard |
 
@@ -480,8 +484,8 @@ signed-in teammate's token, as the current dashboard's do.
 - Changed on purpose on the Overview (reported to Kser): each tile's last run is that agent's own newest run (the old
   page looked only among the 40 newest runs of every agent, so a quiet agent said Not run yet); ads and results are
   counted (the old page counted what it had loaded, at most 1,000 ads and 500 results); Write a post opens Content
-  Transformation without the note filled in, and Log a result opens Ad Testing without its form open (both pages are
-  still in the current dashboard); the How it fits together step that said Create says Content Transformation; a long
+  Transformation without the note filled in (it is still in the current dashboard), and Log a result opens Ad
+  Testing here with its form open (`/ad-testing?log=1`, since 3b); the How it fits together step that said Create says Content Transformation; a long
   title in Needs you stays inside its card on a phone (Today's had the same overflow).
 - The Market Intelligence Briefs (part 1b, `src/lib/pipeline/briefs.ts` and `ads.ts` pure rules, `briefs-load.ts`,
   `src/components/pipeline/briefs-*.tsx`, `src/app/(app)/briefs`; NW_PAGES['e3.briefs'] and the nwBr functions as v109
@@ -744,6 +748,37 @@ signed-in teammate's token, as the current dashboard's do.
   source, and if another page took the address meanwhile the next one along is used; Delete says when the database
   kept the page (a draft that went live meanwhile; the old page said Deleted); the tab is in the address; the Refresh
   and Put a page live buttons sit together on the right.
+- Ad Testing (part 3b, `src/lib/pipeline/ad-testing.ts` pure rules, `ad-testing-load.ts`, `src/components/pipeline/testing-*.tsx`,
+  `src/app/(app)/ad-testing`; NW_PAGES['e3.testing'] with v98, v106, v113, v115 and v116 in the current dashboard):
+  - What it reads, as the teammate, fresh on every visit: the 500 newest results (`content_results`, by the day posted,
+    newest first, then when they were saved), the day of the newest strategy read, and the landing pages that have
+    been live with their sign-ups and visits of the last 30 days.
+  - The header: the newest strategy read's day and how many results are logged; Import a CSV (the current dashboard
+    until 3c) and Log a result; six numbers (posts and ads logged, the ads' spend, leads, clients won and revenue),
+    each opening Results or the Leaderboard; the tab is the address's (`?tab=board`), and `?log=1` opens Log a result
+    once (the Pipeline Overview's quick start).
+  - The sync line, once the page is on screen (`syncStatus`: Engine 3 · Ad Results Sync, action status): where the daily
+    Meta and LinkedIn numbers come from and the last sync, with Sync now (action sync; "3 ads updated" or "Nothing new
+    to sync"); not connected, Connect on Integrations (the current dashboard); the workflow off, it says so.
+  - Results: the landing pages' sign-ups by ad code (visits, sign-ups, the rate, the spend matched by the code in the
+    ad's name over the same 30 days, its synced numbers when it has any, else what was logged, never both, and the cost
+    per sign-up), how the results came in (by hand, imported, from a CRM export, synced), what is working and what is not
+    yet (by cost per lead against the middle of the ads with spend, or by return once revenue is logged), then the ads
+    and the posts, each with its day, where and how it came in, its link (a web address only), its note, and Edit and
+    Delete unless it is synced (the next sync would undo them; the server refuses both too). Download the template.
+  - The Leaderboard: the leading ad, cost per lead as bars (lower is better), every ad ranked (return on spend, then what
+    a client won, a booked call, a qualified lead and a lead cost, then the most spent) and the posts by engagement.
+  - Log a result (`testing-log.tsx`, `saveResult`): an organic post or an ad; the piece it was (a book-a-call or
+    low-ticket campaign and which of its ads, which also saves the ad image's file; a draft; a library piece); the title,
+    where, the day posted, a link, the platform's numbers as they are (spend, impressions, reactions, comments, shares,
+    clicks, leads, qualified leads, booked calls, clients won, revenue: those of the kind) and what the team noticed.
+    The server checks it as the old form did (`resultFrom`, in the same order and words) and saves it as the teammate
+    (a new one attribution manual, created_by and updated_by the teammate's email). Edit opens the same window; Delete
+    asks first.
+- Changed on purpose on Ad Testing (reported to Kser): the Strategy read and Import a CSV stay in the current dashboard
+  until 3c (the page opens on Results); the sync line says when the ad platforms could not be checked (the old one said
+  to connect them); a synced result cannot be changed or deleted from the server either (the old page only hid the
+  buttons); the Overview's Log a result opens the form here.
 
 ## Porting a page
 1. Read the page in the current dashboard's file. The "Finding things in the file" index in krever1/aiparagon's
@@ -801,7 +836,11 @@ signed-in teammate's token, as the current dashboard's do.
   Intel run still reading); `landing-logic.spec.ts` (without a browser) and `landing.spec.ts` Landing pages and the
   preview, on `landing-fixtures.ts` (a live book-a-call page with two ads, a draft webinar page whose campaign was sent
   back, a paused download page with no campaign; four campaigns for the picker, one approved by its ads; visits and
-  sign-ups dated from now). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`, `stubHook`, `stubFathom`.
+  sign-ups dated from now); `testing-logic.spec.ts` (without a browser) and `testing.spec.ts` Ad Testing, on
+  `testing-fixtures.ts` (four ads: one with revenue, one synced from Meta whose title holds a landing page ad's code, one
+  logged by hand with the same code and no leads, one imported; three posts; a landing page with visits and sign-ups; a
+  strategy read; the pieces a result can belong to). Helpers in `helpers.ts`: `stubCalls`, `stubRows`, `stubSeed`,
+  `stubHook`, `stubFathom`.
 - The data stand-in serves `winner_creatives` as a view of `ad_records`, as the project does, unless a test seeds
   `winner_creatives` itself (the briefs suite does), and keeps each ad link once (`ad_records.ad_library_url`, 23505,
   as the project's unique index does). The n8n stand-in starts an Ad Strategist run (`agent2_stub`) and answers the
@@ -811,7 +850,9 @@ signed-in teammate's token, as the current dashboard's do.
 - The data stand-in keeps the project's rules for landing pages: a slug once (23505), the slug, status and kind
   checks (23514, on insert and update), a new page's column defaults (`DEFAULTS`: draft, landing, updated_at now), and
   a delete only of a draft that never went live (`DELETABLE`; the rest are kept, as the project's row rules do); and
-  content_results' checks (kind, title, no negative numbers).
+  content_results' checks (kind, title, no negative numbers). The n8n stand-in answers Engine 3 · Ad Results Sync
+  (`e3-ad-results`) with nothing connected and nothing to sync; a test gives connected platforms and the rows a sync
+  updated with one `stubHook` (status and sync read the same answer).
 - The Storage stand-in (`/storage/v1`, buckets lead-files and creatives): signs an upload address for a signed-in
   session, takes the upload, serves public reads and removes files, and answers the browser's CORS checks; creatives
   takes uploads under `uploads/` only, as the project's rule does; `/__storage` lists what lead-files keeps
