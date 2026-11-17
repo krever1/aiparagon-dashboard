@@ -9,7 +9,7 @@
 // Test-only routes: GET /health, GET /__calls (requests seen, passwords left out), POST /__reset (calls, the account
 // override, the rows, the documents and canned answers back to the start), POST /__as {email} (from now on /user
 // answers as that account, to test a session that is not the team's), POST /__seed {table: rows[]} (a test's own rows),
-// GET /__rows?table=<name>, POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
+// GET /__rows?table=<name>, POST /__recovery {email} (the session a password reset link carries), POST /__docs {id: {kind, text} | {ok: false, message}} (documents doc-reader can read),
 // POST /__hook {path, status, body} (a canned answer for /webhook/<path>), POST /__fathom {connected, hint, items?,
 // transcripts?, ...} (the team's Fathom key as the Fathom proxy keeps it, and the first page of calls it lists and their
 // transcripts when a test gives them), GET /__storage (the files kept), POST /__storage {deny} (Storage
@@ -39,6 +39,8 @@ const USERS = {
 }
 
 let calls = []
+// passwords changed through the reset page (email -> password); the rest keep PASSWORD
+let passwords = new Map()
 let actAs = null
 let docs = docFixtures()
 let hooks = {}
@@ -182,6 +184,7 @@ http
         signed = new Map()
         creatives = new Map()
         denyStorage = false
+        passwords = new Map()
         return send(res, 200, { ok: true })
       }
       if (url.pathname === '/__storage') {
@@ -194,6 +197,8 @@ http
       }
       if (url.pathname === '/__docs') { Object.assign(docs, body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__hook') { hooks[body.path] = { status: body.status || 200, body: body.body }; return send(res, 200, { ok: true }) }
+      // a reset email's link: the session Supabase puts in the address it sends the browser to
+      if (url.pathname === '/__recovery') return send(res, 200, session(String(body.email || '').toLowerCase()))
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__fathom') { fathom = { ...body }; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
@@ -208,7 +213,7 @@ http
         const grant = url.searchParams.get('grant_type')
         if (grant === 'password') {
           const email = String(body.email || '').toLowerCase()
-          if (!USERS[email] || body.password !== PASSWORD) return fail(res, 400, 'invalid_credentials', 'Invalid login credentials')
+          if (!USERS[email] || body.password !== (passwords.get(email) ?? PASSWORD)) return fail(res, 400, 'invalid_credentials', 'Invalid login credentials')
           return send(res, 200, session(email))
         }
         if (grant === 'refresh_token') {
@@ -223,6 +228,17 @@ http
         const claims = verify(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''))
         if (!claims) return fail(res, 401, 'bad_jwt', 'invalid JWT: unable to parse or verify signature')
         return send(res, 200, userJson(actAs || claims.email))
+      }
+      if (req.method === 'PUT' && url.pathname === '/auth/v1/user') {
+        const claims = claimsOf(req)
+        if (!claims) return fail(res, 401, 'bad_jwt', 'invalid JWT: unable to parse or verify signature')
+        const email = actAs || claims.email
+        if (typeof body.password === 'string') {
+          if (body.password.length < 6) return fail(res, 422, 'weak_password', 'Password should be at least 6 characters.')
+          if (body.password === (passwords.get(email) ?? PASSWORD)) return fail(res, 422, 'same_password', 'New password should be different from the old password.')
+          passwords.set(email, body.password)
+        }
+        return send(res, 200, userJson(email))
       }
       if (req.method === 'POST' && url.pathname === '/auth/v1/logout') return send(res, 204)
       if (req.method === 'POST' && url.pathname === '/auth/v1/recover') return send(res, 200, {})
