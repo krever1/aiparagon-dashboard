@@ -1,7 +1,8 @@
 'use server'
 
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { NOT_SET_UP, TEAM_EMAIL_DOMAIN, isTeamEmail, supabaseConfigured } from '@/lib/config'
+import { NOT_SET_UP, SUPABASE_ANON_KEY, SUPABASE_URL, TEAM_EMAIL_DOMAIN, isTeamEmail, supabaseConfigured } from '@/lib/config'
 import { safeNext } from '@/lib/nav'
 import { createClient } from '@/lib/supabase/server'
 
@@ -35,15 +36,46 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
   redirect(next)
 }
 
+/** Where the reset email's link comes back to: this app's Set a new password page, on the address the request came
+ * from (production, a preview or a local copy). Supabase sends the link there only when the address is in the
+ * project's Redirect URLs; otherwise it falls back to the Site URL. */
+async function resetUrl(): Promise<string> {
+  const h = await headers()
+  const host = h.get('x-forwarded-host') || h.get('host') || ''
+  const proto = (h.get('x-forwarded-proto') || 'https').split(',')[0].trim()
+  let origin = h.get('origin') || (host ? proto + '://' + host : '')
+  try {
+    const u = new URL(origin)
+    const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+    origin = u.protocol === 'https:' || local ? u.origin : ''
+  } catch {
+    origin = ''
+  }
+  return (origin || 'https://aiparagon-dashboard.vercel.app') + '/auth/reset'
+}
+
+/**
+ * Asks Supabase for the reset email. Sent straight to Supabase Auth rather than through the client library, which
+ * would ask for a link that only works in the browser that asked for it (PKCE). This link works on any device, the
+ * same kind of link the current dashboard asks for, and /auth/reset reads it.
+ */
+async function sendRecoveryEmail(email: string, redirectTo: string) {
+  const res = await fetch(SUPABASE_URL + '/auth/v1/recover?redirect_to=' + encodeURIComponent(redirectTo), {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error('recover ' + res.status)
+}
+
 export async function sendReset(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = readEmail(formData)
   if (!email) return { error: 'Enter your email first, then press this again.' }
   const sent = { ok: 'If that address has an account, a reset link is on its way.', email }
   if (!isTeamEmail(email) || !supabaseConfigured()) return sent
   try {
-    const supabase = await createClient()
-    // The link opens the current dashboard (the project's Site URL), which sets the new password for both apps.
-    await supabase.auth.resetPasswordForEmail(email)
+    await sendRecoveryEmail(email, await resetUrl())
   } catch {
     // Same answer either way, so nobody learns which addresses have accounts.
   }
