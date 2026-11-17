@@ -62,6 +62,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 - Links into a page kept alive (Nov 11, branch `fix/link-state`, on top of 2a): a link that asks for a tab, a filter,
   a reply or a form now gets it on a page Next.js kept from a moment ago (see Gotchas: React Activity). Found while
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
+- Password reset (Nov 17, branch `fix/password-reset`): Set a new password at /auth/reset, and Forgot your password?
+  asks for a link back to it. Kser could not reset a password: the link opened http://localhost:3000. See Gotchas.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -154,7 +156,12 @@ signed-in teammate's token, as the current dashboard's do.
 - `src/lib/supabase/server.ts` `createClient()`: Supabase as the signed-in person, so the database's row rules apply.
   Never use a service key in this app.
 - `src/app/login`: email and password sign-in and Forgot your password, in the current dashboard's words.
-  `src/app/auth/signout`: signs this browser out.
+  `src/app/auth/signout`: signs this browser out. `src/app/auth/reset`: Set a new password, where the reset email's link
+  comes back to (see Gotchas). The page takes the link's tokens out of the address at once (`replaceState`), hands them
+  to `startReset` (a Server Action: `setSession`, so they become the session cookies; an account outside the team is
+  signed out again), then `setPassword` (`updateUser`; at least 8 characters, typed twice). An expired or used link
+  (`#error=...`) says so; opened with no link, the page says where links come from, or shows the form to a teammate
+  already signed in. `src/components/auth-layout.tsx` is the sign-in pages' frame.
 - `src/components/shell`: the sidebar (one product open at a time; the page's product opens on arrival), the top bar
   (product, then page) and the user card. Below 900px wide the sidebar is a drawer.
 - Styling: Tailwind with the current dashboard's tokens in `src/app/globals.css` (`@theme`: colors, Newsreader for
@@ -1094,6 +1101,12 @@ signed-in teammate's token, as the current dashboard's do.
   canned answer), with made-up accounts (qa.teammate@aiparagonconsulting.com, outsider@example.org) and made-up leads
   at example.com (`fixtures.mjs` says where each one sits), so the tests never touch the real project.
   `npm run test:e2e` builds with the stand-in's address (NEXT_PUBLIC_ values are built in).
+- `auth.spec.ts` checks sign-in and sign-out, `reset.spec.ts` the password reset: the request's `redirect_to` and no
+  PKCE, the link's tokens leaving the address, the form's checks and Supabase's same-password answer, the new password
+  signing in and the old one refused, an expired link, a link Supabase refuses, no link, an account outside the team, a
+  reload. The stand-in changes a password on `PUT /auth/v1/user` (under 6 characters weak_password, the current one
+  same_password; `/__reset` puts every password back) and `POST /__recovery {email}` hands out the session a reset
+  link carries.
 - `catalyst-logic.spec.ts` checks the lead, call and follow rules without a browser, `proposal-logic.spec.ts` the
   chart and client proposal rules; `catalyst.spec.ts` and `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts`
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
@@ -1222,7 +1235,14 @@ signed-in teammate's token, as the current dashboard's do.
 - Next.js adds a hidden `role="alert"` route announcer to every page: in tests, scope alert checks (for example to the
   form).
 - Sign out ends this browser's session only; the current dashboard keeps its own session.
-- Password reset links open the current dashboard (the project's Site URL), which sets the password for both apps.
+- Password reset (Nov 17): both dashboards send the reset email's link to /auth/reset here, the only Set a new
+  password page (one Supabase account, so the password works in both). The link goes to the `redirect_to` the request
+  names only when that address is in the Supabase project's Redirect URLs (Authentication, URL Configuration); any other
+  falls back to the Site URL. On Nov 16 the Site URL was http://localhost:3000 and no page read the link, so a reset
+  never worked. Keep this app's addresses (production, previews, localhost) in the Redirect URLs, and the Site URL on the
+  current dashboard (https://aiparagon.vercel.app/dashboard), which forwards a reset link that lands there to /auth/reset.
+  The request goes straight to Supabase Auth (`/auth/v1/recover`), not through `resetPasswordForEmail`: the server
+  client would ask for a PKCE link, which only works in the browser that asked for it (a phone would fail).
   Creating an account stays in the current dashboard for now.
 - The logo is on www.aiparagonconsulting.com, which cloud sessions cannot reach: the mark shows the P until it loads,
   and the tests serve a stand-in picture.
