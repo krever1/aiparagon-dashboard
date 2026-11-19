@@ -61,15 +61,22 @@ export const KINDS: Readonly<Record<KindKey, KindDef>> = {
   other: { t: 'Something else', s: 'One-pager, case study, page', icon: 'plus', gets: ['1 draft in the shape you describe', '3 title options'], btn: 'Generate draft', noun: 'draft', base: 'thought_leadership' },
 }
 export const GROUPS: readonly (readonly [string, readonly KindKey[]])[] = [
-  ['Posts and emails', ['thought_leadership', 'newsletter', 'email', 'adcopy']],
+  // Paid ad left New draft (Nov 19, as v142 in the current dashboard): ads are made on Marketing Generation. KINDS.adcopy
+  // stays, to name the ad drafts made before.
+  ['Posts and emails', ['thought_leadership', 'newsletter', 'email']],
   ['Long reads', ['report', 'white_paper', 'news_article', 'how_to']],
   ['Events and decks', ['event_kit', 'deck', 'webinar_deck']],
   ['Video', ['video', 'clips']],
   ['Something else', ['other']],
 ]
 export const isKind = (k: unknown): k is KindKey => typeof k === 'string' && Object.prototype.hasOwnProperty.call(KINDS, k)
-/** A kind asked for from elsewhere: a format of the strategy read ('ad' is Paid ad), else a tile's own key. */
-export const kindFrom = (k: unknown): KindKey | null => (k === 'ad' ? 'adcopy' : isKind(k) ? k : null)
+/** The kinds New draft makes: the tiles. */
+export const MAKES: readonly KindKey[] = GROUPS.flatMap(([, keys]) => keys)
+export const makes = (k: unknown): k is KindKey => isKind(k) && MAKES.includes(k)
+/** An ad asked for from elsewhere ('ad' is the strategy read's format, 'adcopy' the old tile's key): made on Marketing Generation. */
+export const asksAd = (k: unknown) => k === 'ad' || k === 'adcopy'
+/** A kind asked for from elsewhere: a tile's own key, else none. */
+export const kindFrom = (k: unknown): KindKey | null => (makes(k) ? k : null)
 
 // ---------- kinds of post: the shape and rules each is written to (V105_CT, V105_CT_D, V105_CT_TPL, v111, v113) ----------
 
@@ -926,7 +933,7 @@ export const blankForm = (): Form => ({
 export function formFrom(input: unknown): Form {
   const o = input && typeof input === 'object' ? (input as Row) : {}
   const f = blankForm()
-  if (isKind(o.kind)) f.kind = o.kind
+  if (makes(o.kind)) f.kind = o.kind
   if (isSrc(o.src)) f.src = o.src
   const cat = o.cat && typeof o.cat === 'object' ? (o.cat as Row) : {}
   for (const k of Object.keys(KINDS) as KindKey[]) if (typeof cat[k] === 'string' && CATS[k].some((c) => c[0] === cat[k])) f.cat[k] = cat[k] as string
@@ -1293,6 +1300,8 @@ export function previewOf(f: Form, c: PreviewCtx, short: (iso: string) => string
 export type Prefill = {
   sig: string
   kind: KindKey | null
+  /** the address asked for an ad, which Marketing Generation makes */
+  ad: boolean
   src: Src | null
   thesis: string | null
   title: string | null
@@ -1320,6 +1329,7 @@ export function prefillOf(sp: { get(k: string): string | null }): Prefill | null
   return {
     sig: PRE_KEYS.map((k) => k + '=' + (v[k] ?? '')).join('&'),
     kind: kindFrom(v.kind),
+    ad: asksAd(v.kind),
     src,
     thesis: v.idea !== null ? v.idea.slice(0, MAX.thesis) : null,
     title: v.title !== null ? v.title.slice(0, MAX.title) : null,

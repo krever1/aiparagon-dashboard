@@ -1,7 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { dayText } from '../../src/components/ui/local-date'
 import { PICKED_LEAD } from '../../src/lib/pipeline/briefs-found'
-import { AD, INTEL_RUN, contentRows, formRows, foundRows } from './content-fixtures'
+import { INTEL_RUN, contentRows, formRows, foundRows } from './content-fixtures'
 import { serveLogo, signIn, stubReset, stubRows, stubSeed } from './helpers'
 
 // New draft's step 2, What the briefs found (v111): the findings for the kind and category, each card's Use, Not this
@@ -121,32 +121,6 @@ test('Write it from these with no material: the picks become the idea, named aft
   await cat(page, 'Case studies and results').click()
   await expect(step(page).getByTestId('found-count')).toHaveText('Nothing picked yet')
   await expect(cards(page).locator('b')).toHaveText(['Client numbers win replies', 'Lead with one client number'])
-})
-
-test('a paid ad: the best ads of its type first, the catalog ad left out, then the ads brief; a type with no ads says so', async ({ page }) => {
-  await signIn(page, '/content-transformation')
-  await tile(page, 'Paid ad').click()
-  await expect(step(page)).toContainText('for image ad')
-  await expect(step(page)).toContainText('From your ads briefs and the ads the Ad Strategist read.')
-  const texts = cards(page).locator('b')
-  await expect(texts.nth(0)).toHaveText('Get your Mondays back')
-  await expect(texts.nth(1)).toHaveText('Onboarding in a day')
-  await expect(card(page, 'Get your Mondays back')).toContainText('From the Ad Strategist')
-  await expect(card(page, 'Get your Mondays back')).toContainText('Northwind Advisory · 40 days running · Book a call')
-  const link = card(page, 'Get your Mondays back').getByRole('link', { name: /See the ad/ })
-  await expect(link).toHaveAttribute('href', '/ad-strategist?ad=' + AD.best)
-  await expect(link).toHaveAttribute('target', '_blank')
-  await expect(step(page)).not.toContainText('{{product.name}}')
-  await expect(step(page)).not.toContainText('Watch a real intake')
-  await step(page).getByRole('button', { name: /^Show all/ }).click()
-  await expect(step(page)).toContainText('Onboarding audit at $497')
-  await expect(card(page, 'Too busy to switch')).toContainText('Answer it before the buyer raises it')
-  // no counts on an ad type's chips
-  await expect(cat(page, 'Video ad script')).toHaveText('Video ad script')
-  await cat(page, 'Video ad script').click()
-  await expect(texts.nth(0)).toHaveText('Watch a real intake')
-  await cat(page, 'Carousel ad').click()
-  await expect(step(page).getByTestId('found-note')).toHaveText('No carousel ads in what the Ad Strategist read yet. The brief’s hooks and pains still apply.')
 })
 
 test('Email: findings across every category, no posts, and a note for a brief not approved', async ({ page }) => {

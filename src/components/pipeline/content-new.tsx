@@ -2,7 +2,7 @@
 
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle, BarChart3, BookOpen, Check, CheckCircle2, ChevronDown, Clock, Copy, FileText, Info, Layers, Lightbulb, Link2, Loader2, Mail, Megaphone,
   MessageSquare, Newspaper, PenLine, Play, Plus, Repeat, Sparkles, Upload, Users, X,
@@ -108,6 +108,7 @@ function applyPre(x: Form, p: Prefill, notes: Note[]): Form {
 export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
   const D = data.form
   const sp = useSearchParams()
+  const router = useRouter()
   const [f, setF] = useState<Form>(() => {
     const p = prefillOf(sp)
     return p ? applyPre(blankForm(), p, data.notes) : blankForm()
@@ -161,6 +162,11 @@ export function NewDraft({ data, now, tz, kicks, setKicks, onReview }: Props) {
     const p = asked.pre
     if (!asked.n || !p) return
     let live = true
+    // an ad is made on Marketing Generation (Paid ad left New draft, as v142 in the current dashboard)
+    if (p.ad && !p.kind) {
+      router.replace('/marketing-generation')
+      return
+    }
     // the address goes back to New draft, so a reload does not fill the form in again
     window.history.replaceState(null, '', '/content-transformation')
     if (p.note && !data.notes.some((n) => n.id === p.note)) toast('That idea is not on file any more.', 'warn')
