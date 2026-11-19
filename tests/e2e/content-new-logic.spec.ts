@@ -3,7 +3,7 @@ import {
   type Ask, type Ctx, type Form, CATS, SAMPLE, adTypeLine, afterSend, answersLine, answersMap, asksFor, blankForm, briefUse, briefWarn, buildRequest, catOf,
   ctaList, dbErr, feedbackLines, feedbackUse, formFrom, getsOf, hintOf, ideaThesis, leaveOutOf, materialLine, materialUse, mustOf, mustSuggest,
   newDraftHref, offerLine, offerOf, personaLine, personaOf, pickBrief, prefillOf, proofOf, readHref, readyOf, splitAsk, structChoices, structOf, tplOf,
-  typeOf, usesNote, voiceOpts,
+  typeOf, usesNote, voiceOpts, GROUPS, MAKES, makes, kindFrom, KINDS,
 } from '../../src/lib/pipeline/content-new'
 import { FM, formRows } from './content-fixtures'
 
@@ -378,8 +378,17 @@ test('addresses that fill the form in: Ideas, the quick starts and the strategy 
   expect(newDraftHref({ src: 'upload' })).toBe('/content-transformation?src=upload')
   expect(newDraftHref({ note: FM.founder })).toBe('/content-transformation?note=' + FM.founder)
   expect(ideaThesis({ text: 'Fee talk is up — and rising', why: 'Advisors post about fees' })).toBe('Fee talk is up, and rising. Advisors post about fees')
-  const p = prefillOf(new URLSearchParams('src=idea&idea=An+idea&from=read&kind=ad'))
-  expect(p).toMatchObject({ kind: 'adcopy', src: 'idea', thesis: 'An idea', say: 'Filled in from the strategy read. Check it, then generate.' })
+  const p = prefillOf(new URLSearchParams('src=idea&idea=An+idea&from=read&kind=newsletter'))
+  expect(p).toMatchObject({ kind: 'newsletter', ad: false, src: 'idea', thesis: 'An idea', say: 'Filled in from the strategy read. Check it, then generate.' })
+  // Paid ad left New draft: an ad asked for goes to Marketing Generation
+  expect(prefillOf(new URLSearchParams('kind=ad&src=paste'))).toMatchObject({ kind: null, ad: true })
+  expect(prefillOf(new URLSearchParams('kind=adcopy'))).toMatchObject({ kind: null, ad: true })
+  expect(prefillOf(new URLSearchParams('kind=nonsense'))).toMatchObject({ kind: null, ad: false })
+  expect(GROUPS[0][1]).toEqual(['thought_leadership', 'newsletter', 'email'])
+  expect(MAKES).not.toContain('adcopy')
+  expect([makes('adcopy'), makes('email'), kindFrom('ad'), kindFrom('adcopy'), kindFrom('report')]).toEqual([false, true, null, null, 'report'])
+  expect(formFrom({ kind: 'adcopy' }).kind).toBe('thought_leadership')
+  expect(KINDS.adcopy.t).toBe('Paid ad')
   expect(prefillOf(new URLSearchParams('tab=drafts&draft=x'))).toBe(null)
   expect(prefillOf(new URLSearchParams('use=piece:' + FM.story))).toMatchObject({ src: null, use: { kind: 'piece', id: FM.story } })
   expect(prefillOf(new URLSearchParams('use=piece:not-an-id'))).toMatchObject({ src: null, use: null })
