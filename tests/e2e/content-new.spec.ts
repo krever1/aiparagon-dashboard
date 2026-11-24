@@ -1,7 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { dayText } from '../../src/components/ui/local-date'
 import { SAMPLE } from '../../src/lib/pipeline/content-new'
-import { AD_RUN, FM, INTEL_RUN, NT, PC, contentRows, formRows } from './content-fixtures'
+import { FM, INTEL_RUN, NT, PC, contentRows, formRows } from './content-fixtures'
 import { TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
 
 // Content Transformation's New draft (Pipeline part 4b): what is being made and its category, the material (pasted,
@@ -45,8 +45,9 @@ test('the form: kinds and categories, the material tabs, the questions, and what
     'LinkedIn postThought leadership',
     'NewsletterFull issue or one section',
     'EmailFollow-up or nurture',
-    'Paid adAd copy from your material',
   ])
+  // Paid ad left New draft: ads are made on Marketing Generation
+  await expect(tile(page, 'Paid ad')).toHaveCount(0)
   await expect(form(page).getByRole('group', { name: 'What are you making? Video' }).getByRole('button')).toHaveText(['Video scriptScene by scene', 'Short clipsCut from a long video'])
   await expect(tile(page, 'LinkedIn post')).toHaveAttribute('aria-pressed', 'true')
   const cats = form(page).getByRole('radiogroup', { name: 'Category' }).getByRole('radio')
@@ -100,28 +101,17 @@ test('the form: kinds and categories, the material tabs, the questions, and what
   await cats.filter({ hasText: 'Stand-alone article' }).click()
   await expect(plan).toContainText('1 article with short sections, in these parts:')
   await expect(plan).toContainText('Also: 3 title options')
-  // email has no categories; a paid ad has its ad types, and leads with the ads brief
+  // email has no categories
   await tile(page, 'Email').click()
   await expect(form(page).getByRole('radiogroup', { name: 'Category' })).toHaveCount(0)
   await expect(form(page).getByRole('textbox', { name: /Who gets it\?/ })).toBeVisible()
-  await tile(page, 'Paid ad').click()
-  await expect(cats).toHaveText(['Image ad', 'Text ad', 'Carousel ad', 'Video ad script'])
-  await expect(form(page).getByTestId('categories')).toContainText('Ad copy from your material: a body, three hooks and a call to action.')
-  await cats.filter({ hasText: 'Video ad script' }).click()
-  await expect(form(page).getByTestId('categories')).toContainText('A 30 to 45 second video ad: hook, problem, proof, ask.')
-  const cb = contentRows().creative_briefs[0]
-  await expect(uses(page).nth(0)).toContainText('Ads brief · ' + day(cb.created_at) + 'Needs review')
-  // a video ad's plan is its own shape, the parts that are sent
-  await expect(plan).toContainText('1 ad body, in these parts:')
-  await expect(plan.getByTestId('plan-step').locator('b')).toHaveText(['The first three seconds', 'The problem', 'The proof', 'The ask'])
-  await expect(plan).toContainText('Also: 3 hooks to test, A call to action and a headline')
   // a report's questions, with their defaults
   await tile(page, 'Report').click()
   await expect(form(page).getByRole('radiogroup', { name: 'Length' }).getByRole('radio', { name: 'Medium (5 to 8 pages)' })).toHaveAttribute('aria-checked', 'true')
   await expect(form(page).getByRole('checkbox', { name: 'Suggest charts (only from figures in the material)' })).toBeChecked()
   // the category picked for a kind is kept while the page is open
-  await tile(page, 'Paid ad').click()
-  await expect(cats.filter({ hasText: 'Video ad script' })).toHaveAttribute('aria-checked', 'true')
+  await tile(page, 'Newsletter').click()
+  await expect(cats.filter({ hasText: 'Stand-alone article' })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('Generate: the request as Content from Source reads it, the template counted, and the draft on its way to Review it', async ({ page }) => {
@@ -344,34 +334,17 @@ test('Read link, the sample, and what a link reader that cannot read says', asyn
   expect(await newReq('Sample · Why AI pilots stall after week three')).toMatchObject({ source_type: 'article', takeaway: SAMPLE.take })
 })
 
-test('a paid ad: the carousel’s shape and content type; Approve the brief it leads with', async ({ page }) => {
-  await openWith(page, 'kind=ad&src=paste')
-  await expect(tile(page, 'Paid ad')).toHaveAttribute('aria-pressed', 'true')
-  await form(page).getByRole('radiogroup', { name: 'Category' }).getByRole('radio', { name: 'Carousel ad' }).click()
-  await form(page).getByRole('textbox', { name: /Source text/ }).fill(TEXT)
-  await form(page).getByText('More options').click()
-  await form(page).getByRole('textbox', { name: /Source title/ }).fill('Carousel test')
-  await expect(form(page).getByRole('combobox', { name: 'Structure' }).locator('option').first()).toHaveText('Let the brief suggest a structure')
-  await side(page).getByTestId('generate').click()
-  await expect(toast(page, 'Draft started. It usually takes about a minute.')).toBeVisible()
-  const r = await newReq('Carousel test')
-  expect(r).toMatchObject({ format: 'ad', content_type: 'ad_carousel' })
-  expect(r!.setup).toMatchObject({ type: 'ad', ad_type: 'ad_carousel', category_name: 'Carousel ad', questions: { Length: 'Short' } })
-  expect((r!.template as Row).name).toBe('Carousel ad')
-
-  // Approve the ads brief from the side, with Undo
-  const brief = uses(page).nth(0)
-  await brief.getByRole('button', { name: 'Approve' }).click()
-  await expect(page.getByTestId('toasts')).toContainText('Approved')
-  expect((await stubRows<Row>('agent_feedback')).find((f) => f.target_type === 'brief_approval')).toMatchObject({
-    agent: 'ad_strategist',
-    target_id: AD_RUN,
-    action: 'approved',
-    feedback: 'Approved in Approvals',
-    author: TEAM.email,
-  })
-  await expect(brief).toContainText('Approved')
-  await expect(brief.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/briefs?tab=ads&run=' + AD_RUN)
+test('an ad asked for opens Marketing Generation (Paid ad left New draft)', async ({ page }) => {
+  await signIn(page, '/content-transformation')
+  for (const kind of ['ad', 'adcopy']) {
+    await page.goto('/content-transformation?kind=' + kind + '&src=paste')
+    await expect(page).toHaveURL(/\/marketing-generation$/)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Marketing Generation')
+  }
+  // a kind it still makes stays on New draft
+  await page.goto('/content-transformation?kind=newsletter')
+  await expect(page).toHaveURL(/\/content-transformation$/)
+  await expect(tile(page, 'Newsletter')).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('links that fill the form in: Use, Add a piece, the quick start and the strategy read; the form keeps what was typed', async ({ page }) => {

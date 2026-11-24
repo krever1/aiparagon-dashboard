@@ -919,8 +919,12 @@ signed-in teammate's token, as the current dashboard's do.
     (doc_templates, active), the briefs' layout (ai_settings brief_structure), the changes asked on drafts in the last
     120 days with each draft's kind, and the briefs a draft can lead with (the 10 newest organic, the 12 newest ads
     briefs) with the decisions on them, and the five things of the organic one it leads with.
-  - 1 What are you making?: the tiles in five groups (14 kinds; `KINDS`, `GROUPS`) and the categories (`CATS`: they set
-    the kind of post for LinkedIn post and Newsletter, the ad type for Paid ad; Email has none). 2 Your material: the
+  - 1 What are you making?: the tiles in five groups (13 kinds; `GROUPS`, `MAKES`) and the categories (`CATS`: they set
+    the kind of post for LinkedIn post and Newsletter; Email has none). Paid ad left the tiles on Nov 19 (Kser, with v142
+    in the current dashboard): ads are made on Marketing Generation. `KINDS.adcopy` stays, to name the ad drafts made
+    before, and its code paths (ad types, the ads brief, the ads among the findings) are left in place, though nothing
+    reaches them; an address asking for an ad (`kind=ad` or `kind=adcopy`, `asksAd`) opens /marketing-generation, and a
+    form sent with `adcopy` is written as a LinkedIn post (`formFrom` takes only `makes()`). 2 Your material: the
     tabs Upload and Fathom call (since 4c, below), Paste (Source text with its word count, Read link, Try it with a
     sample article) and New idea; What is this
     material?; the line for a file's or a call's text. 3 Details: Who is it for? (the persona chips, Anyone who follows
@@ -1052,6 +1056,8 @@ signed-in teammate's token, as the current dashboard's do.
     market briefs …" first in the template's rules; an idea gets "What the team picked from the briefs to build on:"
     and the numbered picks after it. Write it from these generates when the material is ready; without it, the picks
     become the idea ("The point I want to make, from what the market briefs found:" and a line per pick), on New idea.
+- Paid ad off New draft (Nov 19, branch `pipeline/no-paid-ad`, on `dev`): the tile is gone, an address asking for an
+  ad opens Marketing Generation, and the paid ad tests went with it (the old dashboard's v142 does the same).
 - Changed on purpose in 4e (reported to Kser): an idea written from the picks is named after the first pick (the old
   page named it after the lead line, so every such draft was called "The point I want to make, from what the market
   briefs found:"); the best ads of a type are picked from every ad read (the old page looked among the 1,000 newest),
