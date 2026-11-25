@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { type LeadCallRow, leadCallsFor } from '@/app/(app)/lead-pipeline/actions'
 import { PageHeader } from '@/components/moving-page'
 import { usePlaceName } from '@/components/shell/back-store'
+import { useFeedbackLead } from '@/components/shell/feedback-store'
 import { LocalDate, LocalDateTime, LocalUsDay } from '@/components/ui/local-date'
 import type { E1Doc, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
 import { type Stage, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel } from '@/lib/catalyst/stages'
@@ -22,6 +23,7 @@ import { useCheckBack } from './check-back'
 import { DocReader } from './doc-reader'
 import { StageChecklist, StageSetup } from './setup-dialogs'
 import { Workspace } from './workspace'
+import { HubspotLive } from './hubspot-live'
 import { Md } from './markdown'
 import { ProposalCard } from './proposal-card'
 import { type Ask, StageQuestion, moveOnly, stillWriting } from './stage-question'
@@ -48,7 +50,10 @@ export function LeadView({ data }: { data: Found }) {
   const ready = hasDoc(data.lead, data.stage)
   const { lead } = data
   // the top bar's Back names this page by the lead (v143)
-  usePlaceName(usePathname(), lead.name)
+  const path = usePathname()
+  usePlaceName(path, lead.name)
+  // feedback left on this page is this lead's (v144FbKey)
+  useFeedbackLead(path, lead.email)
 
   const tabs: TabDef<LeadTab>[] = []
   for (const d of data.docs) {
@@ -191,7 +196,7 @@ export function LeadView({ data }: { data: Found }) {
         />
       ) : null}
       {tab === 'files' ? <Workspace data={data} calls={calls} onCalls={() => setCallsRead((n) => n + 1)} onTab={go} /> : null}
-      {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} /> : null}
+      {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} email={lead.email} /> : null}
       {tab === 'calls' ? <CallsPanel name={lead.name} calls={calls} stages={byKey} onFile={setFileIt} /> : null}
       {fileIt ? <CallQuestion lead={lead} stages={stages} call={fileIt} onClose={() => setFileIt(null)} onDone={() => setCallsRead((n) => n + 1)} /> : null}
       {ask ? <StageQuestion key={ask.stage} ask={ask} stages={stages} rec={data.recs.find((r) => r.key === ask.stage)} onClose={() => setAsk(null)} /> : null}
@@ -427,10 +432,12 @@ function RunButton({ stage, done, onRun, className = '' }: { stage: Stage; done:
   )
 }
 
-function HubspotPanel({ c }: { c: Found['hubspot']['contact'] }) {
+function HubspotPanel({ c, email }: { c: Found['hubspot']['contact']; email: string }) {
+  const live = email && email.toLowerCase() !== 'contact@deltaadvisory.com' ? <HubspotLive email={email} /> : null
   if (!c) {
     return (
       <Panel id="hubspot" title="HubSpot">
+        {live}
         <p className="text-[14.5px] text-ink-2">
           No HubSpot contact synced for this email yet. The sync runs every 6 hours, or start it by hand in n8n.
         </p>
@@ -452,6 +459,7 @@ function HubspotPanel({ c }: { c: Found['hubspot']['contact'] }) {
       title="HubSpot"
       extra={c.syncedAt ? <span className="font-sans text-[13.5px] font-normal text-ink-3">synced <LocalDateTime iso={c.syncedAt} /></span> : null}
     >
+      {live}
       <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {rows
           .filter(([, v]) => !!v)

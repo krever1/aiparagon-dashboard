@@ -6,10 +6,16 @@ import { useSearchParams } from 'next/navigation'
 import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react'
 import { removeTask, restoreTask, setCallType, tickTask } from '@/app/(app)/calls/actions'
 import { EditDetails, NewTypeDialog, TypeOptions } from '@/components/calls/call-dialogs'
+import { FoldersTypes } from '@/components/calls/folders-types'
+import { TypeNamesProvider } from '@/components/calls/names'
 import { ErrorNotice } from '@/components/catalyst/bits'
 import { LocalUsDate, dueText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
-import { type CallRow, type FtCall, type Task, catLabel, folderChoices, isOutside, tagChoices, typeLabel, withLine } from '@/lib/catalyst/calls'
+import {
+  type CallRow, type FtCall, type Task, type TypeNames, callsByFolder, catLabel, filedFolder, folderChoices, isOutside, keptAfterDelete, leadOf, tagChoices,
+  typeLabel, withLine,
+} from '@/lib/catalyst/calls'
+import { NotionSend } from './notion-send'
 import { type TaskCard, openOf, shownCat, taskButtons, taskFolders } from '@/lib/catalyst/tasks'
 import type { TasksData } from '@/lib/catalyst/tasks-load'
 
@@ -93,6 +99,11 @@ export function TasksView({ data }: { data: TasksData }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [newTypeFor, setNewTypeFor] = useState<string | null>(null)
   const [typeBusy, setTypeBusy] = useState<string | null>(null)
+  const [manage, setManage] = useState(false)
+  // Select (v143 and v144): the calls picking tasks, and the tasks picked on each
+  const [picking, setPicking] = useState<Record<string, boolean>>({})
+  const [sel, setSel] = useState<Record<string, Record<string, boolean>>>({})
+  const [notion, setNotion] = useState<{ card: TaskCard; only: string[] } | null>(null)
 
   const setType = useCallback((key: string) => {
     const u = new URL(window.location.href)
@@ -145,7 +156,7 @@ export function TasksView({ data }: { data: TasksData }) {
     toast(r.ok ? r.toast : r.error, r.ok ? 'ok' : 'warn')
   }
 
-  const buttons = taskButtons(data.cards)
+  const buttons = taskButtons(data.cards, data.names)
   const shown = data.cards.filter((c) => !picked || c.cat === picked)
   const open = shown.reduce((n, c) => n + openOf(tasksOf(c)), 0)
   const editingCard = editing ? data.cards.find((c) => c.id === editing) : null
@@ -166,7 +177,7 @@ export function TasksView({ data }: { data: TasksData }) {
   } else if (!shown.length) {
     body = (
       <p className="text-[14.5px] text-ink-3" data-testid="tasks-empty">
-        Nothing under {catLabel(picked)} yet.{' '}
+        Nothing under {catLabel(picked, data.names)} yet.{' '}
         <button type="button" className="font-semibold text-accent-text hover:underline" onClick={() => setType('')}>
           Show all
         </button>
@@ -205,6 +216,7 @@ export function TasksView({ data }: { data: TasksData }) {
                       card={c}
                       tasks={tasksOf(c)}
                       custom={data.types}
+                      names={data.names}
                       typeBusy={typeBusy === c.id}
                       onType={(v) => (v === '__new' ? setNewTypeFor(c.id) : saveType(c.id, v))}
                       onEdit={() => setEditing(c.id)}
@@ -212,6 +224,15 @@ export function TasksView({ data }: { data: TasksData }) {
                       onRemove={(t) => void remove(c, t)}
                       shut={!!callShut[c.id]}
                       onFold={() => setShut(c.id, !callShut[c.id])}
+                      picking={!!picking[c.id]}
+                      picked={sel[c.id] ?? {}}
+                      onPicking={() => {
+                        const on = !picking[c.id]
+                        setPicking((x) => ({ ...x, [c.id]: on }))
+                        if (on && callShut[c.id]) setShut(c.id, false)
+                      }}
+                      onPick={(ids, v) => setSel((x) => ({ ...x, [c.id]: { ...(x[c.id] ?? {}), ...Object.fromEntries(ids.map((id) => [id, v])) } }))}
+                      onNotion={() => setNotion({ card: c, only: Object.keys(sel[c.id] ?? {}).filter((k) => sel[c.id]?.[k]) })}
                     />
                   ))}
                 </div>
@@ -223,7 +244,15 @@ export function TasksView({ data }: { data: TasksData }) {
     )
   }
 
+  // Folders and types (v144): every call the page knows, by its folder
+  const knownRows = data.known.map((c) => {
+    const m = data.meta[c.id] ?? null
+    return { folder: filedFolder(c, m, data.outputs[c.id] ?? null, data.filing, leadOf(c, m, data.leads)?.company ?? '') }
+  })
+  const allFolders = folderChoices(knownRows, data.metas, data.teamFolders)
+
   return (
+    <TypeNamesProvider value={data.names}>
     <section className="rounded-lg border border-line bg-panel p-4 shadow-card sm:p-5" aria-labelledby="tk-h" data-testid="todos">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -236,8 +265,13 @@ export function TasksView({ data }: { data: TasksData }) {
             Post-call to-dos
           </h2>
         </div>
-        <span className="rounded-full bg-sunk px-2.5 py-1 text-[13px] font-semibold text-ink-2" data-testid="open-count">
-          {open} open
+        <span className="flex flex-wrap items-center gap-2.5">
+          <button type="button" className={ghost} onClick={() => setManage(true)}>
+            Folders and types
+          </button>
+          <span className="rounded-full bg-sunk px-2.5 py-1 text-[13px] font-semibold text-ink-2" data-testid="open-count">
+            {open} open
+          </span>
         </span>
       </div>
 
@@ -264,7 +298,7 @@ export function TasksView({ data }: { data: TasksData }) {
       {editingCard ? (
         <EditDetails
           row={rowOf(editingCard)}
-          folders={folderChoices(data.cards, data.metas)}
+          folders={folderChoices(data.cards, data.metas, data.teamFolders)}
           tags={tagChoices(data.metas)}
           custom={data.types}
           onClose={() => setEditing(null)}
@@ -279,7 +313,27 @@ export function TasksView({ data }: { data: TasksData }) {
           }}
         />
       ) : null}
+      {manage ? (
+        <FoldersTypes
+          folders={allFolders}
+          folderCalls={callsByFolder(data.known, data.meta, data.outputs, data.leads, data.filing)}
+          custom={data.types}
+          kept={(del) => keptAfterDelete(data.known, data.meta, data.outputs, data.leads, data.filing, del)}
+          onClose={() => setManage(false)}
+        />
+      ) : null}
+      {notion ? (
+        <NotionSend
+          callId={notion.card.id}
+          call={notion.card.call?.title || notion.card.out.call_title || 'the call'}
+          start={notion.card.call?.start || notion.card.out.call_start}
+          tasks={tasksOf(notion.card)}
+          only={notion.only}
+          onClose={() => setNotion(null)}
+        />
+      ) : null}
     </section>
+    </TypeNamesProvider>
   )
 }
 
@@ -294,10 +348,23 @@ function TaskCallCard({
   onRemove,
   shut,
   onFold,
+  names,
+  picking,
+  picked,
+  onPicking,
+  onPick,
+  onNotion,
 }: {
   card: TaskCard
   tasks: Task[]
   custom: string[]
+  names: TypeNames
+  /** Select: picking tasks to send, and the ones picked */
+  picking: boolean
+  picked: Record<string, boolean>
+  onPicking: () => void
+  onPick: (ids: string[], on: boolean) => void
+  onNotion: () => void
   typeBusy: boolean
   onType: (v: string) => void
   onEdit: () => void
@@ -330,9 +397,14 @@ function TaskCallCard({
             {openOf(tasks)} of {tasks.length} open
           </small>
         </h3>
-        <Link href={`/calls?call=${encodeURIComponent(card.id)}&seg=post`} className={ghost}>
-          Open call
-        </Link>
+        <span className="flex flex-wrap gap-2">
+          <button type="button" className={ghost} aria-pressed={picking} onClick={onPicking}>
+            Select
+          </button>
+          <Link href={`/calls?call=${encodeURIComponent(card.id)}&seg=post`} className={ghost}>
+            Open call
+          </Link>
+        </span>
       </div>
       {card.out.call_start || asana ? (
         <p className="mt-0.5 text-[13px] text-ink-3">
@@ -356,7 +428,7 @@ function TaskCallCard({
             onChange={(e) => onType(e.target.value)}
             className="h-8 max-w-full rounded-sm border border-line bg-panel px-2 text-[13.5px] font-normal text-ink"
           >
-            <option value="">{!set && card.type ? 'AI pick: ' + typeLabel(card.type) : 'No type yet'}</option>
+            <option value="">{!set && card.type ? 'AI pick: ' + typeLabel(card.type, names) : 'No type yet'}</option>
             <TypeOptions current={set} custom={custom} />
             <option value="__new">+ New type…</option>
           </select>
@@ -371,8 +443,17 @@ function TaskCallCard({
 
       <ul id={'tk-' + card.id} hidden={shut} className="mt-2.5 space-y-2">
         {tasks.map((t) => (
-          <li key={t.id} className="group relative pr-8" data-testid="task">
-            <label className="flex gap-2.5 text-[14px] text-ink">
+          <li key={t.id} className="group relative flex gap-2.5 pr-8" data-testid="task">
+            {picking ? (
+              <input
+                type="checkbox"
+                className="mt-1 accent-[var(--color-accent)]"
+                aria-label={'Pick “' + (t.text || 'this task') + '”'}
+                checked={!!picked[t.id]}
+                onChange={(e) => onPick([t.id], e.target.checked)}
+              />
+            ) : null}
+            <label className="flex min-w-0 gap-2.5 text-[14px] text-ink">
               <input type="checkbox" checked={t.done} onChange={(e) => onTick(t, e.target.checked)} className="mt-1" />
               <span className="min-w-0">
                 <span className={t.done ? 'text-ink-3 line-through' : ''}>{t.text}</span>
@@ -393,6 +474,28 @@ function TaskCallCard({
           </li>
         ))}
       </ul>
+      {picking && !shut ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-md bg-sunk/70 px-3 py-2" data-testid="pick-bar">
+          <b className="mr-auto text-[13.5px] font-semibold text-ink">
+            {(() => {
+              const n = tasks.filter((t) => picked[t.id]).length
+              return n ? n + ' picked' : 'Pick the tasks to send'
+            })()}
+          </b>
+          <button type="button" className={ghost} onClick={() => onPick(tasks.map((t) => t.id), true)}>
+            All
+          </button>
+          <button type="button" className={ghost} onClick={() => onPick(tasks.map((t) => t.id), false)}>
+            None
+          </button>
+          <button type="button" className={ghost} onClick={onNotion}>
+            Send to Notion
+          </button>
+          <button type="button" className={ghost} onClick={onPicking}>
+            Done
+          </button>
+        </div>
+      ) : null}
     </article>
   )
 }

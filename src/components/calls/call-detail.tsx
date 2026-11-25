@@ -13,6 +13,7 @@ import {
 } from '@/lib/catalyst/calls'
 import { leadHref } from '@/lib/catalyst/view'
 import { NewTypeDialog, TypeOptions } from './call-dialogs'
+import { useTypeNames } from './names'
 import { MiniMd } from './mini-md'
 import { PostCall, type WriteRequest } from './post-call'
 
@@ -195,6 +196,7 @@ export function CallDetail({
   onEdit: () => void
   onRunAssessment: () => Promise<void>
 }) {
+  const names = useTypeNames()
   const c = row.call
   const m = row.meta
   const o = row.out
@@ -231,7 +233,7 @@ export function CallDetail({
       start: c.start,
       end: c.end,
       emails,
-      body: crmBody({ type: row.type, meta: m, out: o, ftSummary: c.summary, link }),
+      body: crmBody({ type: row.type, meta: m, out: o, ftSummary: c.summary, link, names }),
     }).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard.' }))
     setCrmBusy(false)
     toast(r.ok ? r.toast : r.error, r.ok ? 'ok' : 'warn')
@@ -307,7 +309,7 @@ export function CallDetail({
               onChange={(e) => (e.target.value === '__new' ? setNewType(true) : saveType(e.target.value))}
               className="h-8 rounded-sm border border-line bg-panel px-2 text-[13.5px] font-normal text-ink"
             >
-              <option value="">{!set && row.type ? 'AI pick: ' + typeLabel(row.type) : 'No type yet'}</option>
+              <option value="">{!set && row.type ? 'AI pick: ' + typeLabel(row.type, names) : 'No type yet'}</option>
               <TypeOptions current={set} custom={custom} />
               <option value="__new">+ New type…</option>
             </select>
@@ -460,7 +462,7 @@ export function CallDetail({
             custom={custom}
             writing={writing}
             onWrite={onWrite}
-            slackText={slackText({ title: row.title, day: usDateText(c.start), type: row.type, out: o, link })}
+            slackText={slackText({ title: row.title, day: usDateText(c.start), type: row.type, out: o, link, names })}
             onRunAssessment={onRunAssessment}
           />
         )}

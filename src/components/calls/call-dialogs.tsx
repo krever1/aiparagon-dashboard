@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { addCallType, saveCallDetails, slackChannels, slackPost, type SlackChannel } from '@/app/(app)/calls/actions'
 import { Dialog } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
-import { CATS, type CallRow, type Guest, NO_CLIENT, ftGuests, guestsOf, newTypeProblem, typeLabel } from '@/lib/catalyst/calls'
+import { CATS, type CallRow, type Guest, NO_CLIENT, catName, ftGuests, guestsOf, newTypeProblem, typeLabel } from '@/lib/catalyst/calls'
+import { useTypeNames } from './names'
 
 // The Calls page's windows: Edit details, New call type, and Share to Slack, in the current dashboard's words.
 
@@ -17,15 +18,16 @@ const TAG_SUGGEST = ['onboarding', 'proposal', 'discovery', 'prequal', 'follow-u
 
 /** The type picker's choices: grouped like the buttons, then the team's own types. */
 export function TypeOptions({ current, custom }: { current: string; custom: string[] }) {
+  const names = useTypeNames()
   const mine = [...custom]
   if (current && !CATS.some((c) => c[2].includes(current)) && !mine.includes(current)) mine.push(current)
   return (
     <>
       {CATS.map((c) => (
-        <optgroup key={c[0]} label={c[1]}>
+        <optgroup key={c[0]} label={catName(c[0], names)}>
           {c[2].map((k) => (
             <option key={k} value={k}>
-              {typeLabel(k)}
+              {typeLabel(k, names)}
             </option>
           ))}
         </optgroup>
@@ -204,11 +206,12 @@ export function EditDetails({ row, folders, tags, custom, onClose }: { row: Call
 
 /** New call type (v121NewType): a kind of call of the team's own. */
 export function NewTypeDialog({ onDone }: { onDone: (name: string | null) => void }) {
+  const names = useTypeNames()
   const [name, setName] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const add = async () => {
-    const bad = newTypeProblem(name)
+    const bad = newTypeProblem(name, names)
     if (bad) return setMsg(bad)
     setBusy(true)
     const r = await addCallType(name).catch(() => ({ ok: false as const, error: 'Could not add it: the dashboard could not be reached.' }))

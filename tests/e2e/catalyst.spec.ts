@@ -238,7 +238,8 @@ test.describe('the Lead pipeline', () => {
     await signIn(page, '/lead-pipeline')
     await expect(card(page, 'proposal', 'pat-example')).toBeVisible()
     // the stand-in turns away any read without the person's session, so the board showing at all proves the point
-    const reads = (await stubCalls()).filter((c) => c.method === 'GET' && c.path.startsWith('/rest/v1/'))
+    // (the top bar's Feedback reads its notes from dashboard_comments on every page, v144)
+    const reads = (await stubCalls()).filter((c) => c.method === 'GET' && c.path.startsWith('/rest/v1/') && c.path !== '/rest/v1/dashboard_comments')
     expect(new Set(reads.map((c) => c.path))).toEqual(new Set(['/rest/v1/agent_outputs', '/rest/v1/ai_settings', '/rest/v1/e1_leads']))
     // the board never reads the documents' text
     for (const c of reads.filter((x) => x.path === '/rest/v1/agent_outputs')) expect(decodeURIComponent(c.query)).not.toContain('content_md')
@@ -482,7 +483,9 @@ test.describe('a lead’s page', () => {
     const hs = page.getByRole('region', { name: /HubSpot/ })
     await expect(hs).toContainText('synced 5 Nov · 06:00')
     for (const t of ['Pat Example', 'Example Ridge Advisors', 'Managing Partner', '555-0100', 'lead', 'NEW']) await expect(hs).toContainText(t)
-    await expect(hs.getByRole('link', { name: 'example.com ↗' })).toHaveAttribute('href', 'https://example.com')
+    // the synced copy, under what HubSpot has right now (v144)
+    await expect(hs.getByTestId('hubspot-live')).toContainText('Live from HubSpot')
+    await expect(hs.getByRole('link', { name: 'example.com ↗' }).last()).toHaveAttribute('href', 'https://example.com')
     await expect(hs.getByRole('link', { name: 'Open in HubSpot ↗' })).toHaveAttribute('href', 'https://app.hubspot.com/contacts')
 
     await page.goto(`/lead-pipeline/${SAM}?tab=files`)

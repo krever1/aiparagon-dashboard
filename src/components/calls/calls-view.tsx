@@ -10,10 +10,13 @@ import { LocalCallWhen, useHydrated } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import type { CallsData } from '@/lib/catalyst/calls-load'
 import {
-  type CallRow, type CallTab, type FtCall, callRow, catButtons, emptyLine, filterRows, folderChoices, ftGuests, guestsOf, hoursText, leadOf, minutesOf,
-  tagChoices, typeGuessed, typeShort,
+  type CallRow, type CallTab, type FtCall, callRow, callsByFolder, catButtons, emptyLine, filterRows, folderChoices, ftGuests, guestsOf, hoursText,
+  keptAfterDelete, leadOf, minutesOf, tagChoices, typeGuessed, typeShort,
 } from '@/lib/catalyst/calls'
 import { EditDetails } from './call-dialogs'
+import { CallsCalendar, oldestDay } from './calls-calendar'
+import { FoldersTypes } from './folders-types'
+import { TypeNamesProvider } from './names'
 import { CallDetail, SEGS, type Seg, type Transcript } from './call-detail'
 import { FathomKeyDialog, FathomSetup } from './fathom-key'
 import type { WriteRequest } from './post-call'
@@ -36,6 +39,8 @@ export function CallsView({ data }: { data: CallsData }) {
   const sp = useSearchParams()
   const hydrated = useHydrated()
   const tab: CallTab = sp.get('tab') === 'ext' ? 'ext' : sp.get('tab') === 'int' ? 'int' : 'all'
+  // the Calendar tab (v144): every call loaded, by day
+  const calTab = sp.get('tab') === 'cal'
   const cat = sp.get('type') ?? ''
   const callParam = sp.get('call') ?? ''
   const segParam = sp.get('seg') as Seg | null
@@ -62,6 +67,7 @@ export function CallsView({ data }: { data: CallsData }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [keyOpen, setKeyOpen] = useState(false)
   const [run, setRun] = useState<NewRunPrefill | null>(null)
+  const [manage, setManage] = useState(false)
   const [checked, setChecked] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
   const asked = useRef(new Set<string>())
@@ -92,15 +98,15 @@ export function CallsView({ data }: { data: CallsData }) {
       calls.map((c) => {
         const m = data.meta[c.id] ?? null
         const lead = leadOf(c, m, data.leads)
-        return callRow(c, m, data.outputs[c.id] ?? null, lead?.company ?? '')
+        return callRow(c, m, data.outputs[c.id] ?? null, lead?.company ?? '', data.filing)
       }),
-    [calls, data.meta, data.outputs, data.leads],
+    [calls, data.meta, data.outputs, data.leads, data.filing],
   )
   const filters = { q, folder, tag, cat }
   const shown = filterRows(rows, tab, filters)
   const selected = shown.find((r) => r.call.id === callParam) ?? shown[0] ?? null
   const metas = useMemo(() => Object.values(data.meta), [data.meta])
-  const folders = folderChoices(rows, metas)
+  const folders = folderChoices(rows, metas, data.teamFolders)
   const tags = tagChoices(metas)
 
   // ---------- new calls within a minute ----------
@@ -237,6 +243,30 @@ export function CallsView({ data }: { data: CallsData }) {
     })
   }
 
+  // the calendar's Load older calls: older pages until the calls reach back to the month on screen, six at most
+  const loadOlderUntil = async (until: string) => {
+    let cur = next
+    const have = new Set(calls.map((c) => c.id))
+    const got: FtCall[] = []
+    for (let i = 0; i < 6 && cur; i++) {
+      const r = await moreCalls(cur).catch(() => ({ ok: false as const, error: 'Could not reach the dashboard.' }))
+      if (!r.ok) {
+        toast(r.error, 'warn')
+        break
+      }
+      for (const c of r.items) {
+        if (have.has(c.id)) continue
+        have.add(c.id)
+        got.push(c)
+      }
+      cur = r.next
+      const o = oldestDay(got.map((c) => ({ call: c })))
+      if (o && o <= until) break
+    }
+    if (got.length) setOlder((x) => [...x, ...got])
+    setCursor(cur)
+  }
+
   const loadOlder = async () => {
     if (!next) return
     setMoreBusy(true)
@@ -276,7 +306,7 @@ export function CallsView({ data }: { data: CallsData }) {
   const thisMonth = rows.filter((r) => r.call.start && monthOf(r.call.start)).length
   const monthName = new Date(now).toLocaleString('en-US', { month: 'long', timeZone: hydrated ? undefined : 'UTC' })
   const mins = rows.reduce((a, r) => a + minutesOf(r.call), 0)
-  const cats = catButtons(rows, tab)
+  const cats = catButtons(rows, tab, data.names)
   const empty = emptyLine(rows, tab, filters)
   const anyFilter = !!(folder || tag || cat)
   const clear = () => {
@@ -284,10 +314,11 @@ export function CallsView({ data }: { data: CallsData }) {
     setTag('')
     setParams({ type: null })
   }
-  const go = (t: CallTab) => setParams({ tab: t === 'all' ? null : t })
+  const go = (t: CallTab | 'cal') => setParams({ tab: t === 'all' ? null : t })
+  const folderCalls = () => callsByFolder(calls, data.meta, data.outputs, data.leads, data.filing)
 
   return (
-    <>
+    <TypeNamesProvider value={data.names}>
       <Banner
         tag="Fathom"
         text="Read live from Fathom"
@@ -318,16 +349,29 @@ export function CallsView({ data }: { data: CallsData }) {
         <StripTile n={thisMonth} label="This month" tip={monthName} />
         <StripTile n={hoursText(mins)} label="Hours recorded" tip="across the loaded calls" />
       </div>
-      <Tabs<CallTab>
+      <Tabs<CallTab | 'cal'>
         label="Calls"
-        active={tab}
+        active={calTab ? 'cal' : tab}
         onPick={go}
         tabs={[
           { key: 'all', label: 'All', count: rows.length },
           { key: 'ext', label: 'Clients', count: clientN },
           { key: 'int', label: 'Internal', count: rows.length - clientN },
+          { key: 'cal', label: 'Calendar' },
         ]}
       />
+      {calTab ? (
+        <CallsCalendar
+          rows={rows}
+          more={!!next}
+          onMore={loadOlderUntil}
+          onOpen={(id) => {
+            setParams({ tab: null, call: id, seg: null })
+            window.setTimeout(() => document.querySelector(`[data-testid="call-rows"] [data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' }), 30)
+          }}
+        />
+      ) : (
+        <>
       <div role="toolbar" aria-label="Show calls by type" className="mb-4 flex flex-wrap gap-1.5">
         {cats.map((b) => (
           <button
@@ -379,6 +423,9 @@ export function CallsView({ data }: { data: CallsData }) {
                 Clear
               </button>
             ) : null}
+            <button type="button" onClick={() => setManage(true)} className="ml-auto text-[13px] font-semibold text-accent-text hover:underline">
+              Folders and types
+            </button>
           </div>
           {shown.length ? (
             <ul className="mt-2 space-y-1" data-testid="call-rows">
@@ -421,7 +468,7 @@ export function CallsView({ data }: { data: CallsData }) {
                             className={`rounded-full px-1.5 py-px text-[11.5px] font-semibold ${typeGuessed(r.meta, r.out) ? 'border border-dashed border-line-2 text-ink-2' : 'bg-sunk text-ink-2'}`}
                             title={typeGuessed(r.meta, r.out) ? 'Picked by the AI from the call. Pick a call type to set it.' : 'Call type'}
                           >
-                            {typeShort(r.type)}
+                            {typeShort(r.type, data.names)}
                           </span>
                         ) : null}
                         {r.meta?.folder ? (
@@ -499,6 +546,8 @@ export function CallsView({ data }: { data: CallsData }) {
           <div className="rounded-lg border border-dashed border-line p-6 text-[14px] text-ink-3">Pick a call to see it here.</div>
         )}
       </div>
+        </>
+      )}
 
       {editing ? (
         (() => {
@@ -508,7 +557,16 @@ export function CallsView({ data }: { data: CallsData }) {
       ) : null}
       {keyOpen ? <FathomKeyDialog onClose={() => setKeyOpen(false)} /> : null}
       {run ? <NewRunDialog prefill={run} onClose={() => setRun(null)} /> : null}
-    </>
+      {manage ? (
+        <FoldersTypes
+          folders={folders}
+          folderCalls={folderCalls()}
+          custom={data.types}
+          kept={(del) => keptAfterDelete(calls, data.meta, data.outputs, data.leads, data.filing, del)}
+          onClose={() => setManage(false)}
+        />
+      ) : null}
+    </TypeNamesProvider>
   )
 }
 

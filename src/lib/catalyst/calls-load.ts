@@ -1,6 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
-import { type CallMeta, type CallOutput, type FtCall, customTypes, normMeta, normOutput } from './calls'
+import { type CallMeta, type CallOutput, type FileContact, type FilingCtx, type FtCall, type TypeNames, cleanNames, customTypes, knownFolders, normMeta, normOutput } from './calls'
 import { FathomError, ftList, ftStatus } from './fathom'
 import { buildLeads } from './leads'
 import { readCatalyst, toView } from './load'
@@ -34,7 +34,19 @@ export type CallsData = {
   auto: boolean
   /** the team's own call types (ai_settings call_types) */
   types: string[]
+  /** the team's names for the built-in types and buttons (ai_settings call_type_names, v144) */
+  names: TypeNames
+  /** the folders the team added (ai_settings call_folders, v144) */
+  teamFolders: string[]
   leads: CallLead[]
+  /** what files a call by its people (v144): the leads, the HubSpot contacts and the folders the team made */
+  filing: FilingCtx
+}
+
+/** The team's own folders (ai_settings call_folders): names, each once. */
+export function teamFoldersOf(v: unknown): string[] {
+  const L = Array.isArray(v) ? v : []
+  return [...new Set(L.map((x) => String(x ?? '').trim()).filter(Boolean))]
 }
 
 const errOf = (e: unknown) => ({ message: e instanceof Error ? e.message : String(e), code: e instanceof FathomError ? e.code : '' })
@@ -50,7 +62,7 @@ export async function readCallRows(): Promise<{
   const [m, o, s] = await Promise.all([
     supabase.from('call_meta').select('*').limit(2000),
     supabase.from('call_outputs').select('*').order('created_at', { ascending: false }).limit(400),
-    supabase.from('ai_settings').select('key,value').in('key', ['call_auto_actions', 'call_types']),
+    supabase.from('ai_settings').select('key,value').in('key', ['call_auto_actions', 'call_types', 'call_type_names', 'call_folders']),
   ])
   const meta: Record<string, CallMeta> = {}
   for (const r of (m.data ?? []) as Record<string, unknown>[]) {
@@ -65,6 +77,23 @@ export async function readCallRows(): Promise<{
   const settings: Record<string, unknown> = {}
   for (const r of (s.data ?? []) as { key: string; value: unknown }[]) settings[r.key] = r.value
   return { meta, outputs, settings, error: o.error ? o.error.message || 'the post-call actions could not be read' : null }
+}
+
+/** The HubSpot contacts' companies, for filing a call by its people (v144). */
+export async function filingContacts(): Promise<FileContact[]> {
+  const { data } = await (await createClient()).from('hubspot_contacts').select('email,company').not('company', 'is', null).limit(5000)
+  return ((data ?? []) as { email: string | null; company: string | null }[])
+    .map((r) => ({ email: String(r.email ?? '').trim(), company: String(r.company ?? '').trim() }))
+    .filter((r) => r.email && r.company)
+}
+
+/** What files a call by its people, from what is read. */
+export function filingOf(leads: CallLead[], contacts: FileContact[], meta: Record<string, CallMeta>, team: string[]): FilingCtx {
+  return {
+    leads: leads.map((l) => ({ emails: l.emails, company: l.company, name: l.name })),
+    contacts,
+    folders: knownFolders(Object.values(meta), team),
+  }
 }
 
 /** The Catalyst leads, for the lead box on a call and the folder of a call with a lead on it. */
@@ -86,7 +115,8 @@ export async function callLeads(): Promise<CallLead[]> {
 
 export async function loadCalls(): Promise<CallsData> {
   const base: CallsData = {
-    connected: false, hint: '', updatedBy: '', updatedAt: '', error: null, calls: [], next: null, meta: {}, outputs: {}, auto: true, types: [], leads: [],
+    connected: false, hint: '', updatedBy: '', updatedAt: '', error: null, calls: [], next: null, meta: {}, outputs: {}, auto: true, types: [], names: {},
+    teamFolders: [], leads: [], filing: { leads: [], contacts: [], folders: [] },
   }
   let st
   try {
@@ -102,7 +132,12 @@ export async function loadCalls(): Promise<CallsData> {
     // the key no longer works (bad_key), or the list failed: the page offers the key again
     return { ...base, hint: st.hint, error: errOf(e) }
   }
-  const [rows, leads] = await Promise.all([readCallRows(), callLeads().catch(() => [] as CallLead[])])
+  const [rows, leads, contacts] = await Promise.all([
+    readCallRows(),
+    callLeads().catch(() => [] as CallLead[]),
+    filingContacts().catch(() => [] as FileContact[]),
+  ])
+  const teamFolders = teamFoldersOf(rows.settings.call_folders)
   return {
     ...base,
     connected: true,
@@ -115,6 +150,9 @@ export async function loadCalls(): Promise<CallsData> {
     outputs: rows.outputs,
     auto: rows.settings.call_auto_actions !== false,
     types: customTypes(rows.settings.call_types),
+    names: cleanNames(rows.settings.call_type_names),
+    teamFolders,
     leads,
+    filing: filingOf(leads, contacts, rows.meta, teamFolders),
   }
 }

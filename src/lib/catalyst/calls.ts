@@ -232,9 +232,30 @@ export const CAT_MAIN = ['demo', 'sales', 'dev']
 export const IN_FOLDER = 'AI Paragon (internal)'
 export const NO_CLIENT = 'No client yet'
 
-export const typeLabel = (t: string) => (t && MT[t] ? MT[t].label : t)
+/**
+ * The team's names for the built-in types and the buttons (ai_settings call_type_names, v144): {type key or
+ * cat:<button>: name}; an empty name is the usual one.
+ */
+export type TypeNames = Record<string, string>
+
+export function cleanNames(v: unknown): TypeNames {
+  const o = obj(v)
+  if (!o) return {}
+  const out: TypeNames = {}
+  for (const [k, x] of Object.entries(o)) {
+    if (typeof x !== 'string') continue
+    const n = str(x).replace(/\s+/g, ' ').trim().slice(0, 30)
+    if (n) out[k] = n
+  }
+  return out
+}
+
+/** A built-in type's name, the team's when it has one (v144Labels); a type of the team's own is its name. */
+export const typeLabel = (t: string, names: TypeNames = {}) => (t && MT[t] ? names[t] || MT[t].label : t)
 /** The chip's short name: "Interview" for "Interview / prequal"; a type of the team's own is its name. */
-export const typeShort = (t: string) => (t && MT[t] ? MT[t].label.split(' /')[0] : t)
+export const typeShort = (t: string, names: TypeNames = {}) => (t && MT[t] ? typeLabel(t, names).split(' /')[0] : t)
+/** A button's name, the team's when it has one. */
+export const catName = (k: string, names: TypeNames = {}) => names['cat:' + k] || (CATS.find((x) => x[0] === k)?.[1] ?? k)
 export const deliverableOf = (t: string) => (t && MT[t] ? MT[t].deliv : 'meeting notes')
 
 export function catOf(t: string): string {
@@ -242,10 +263,10 @@ export function catOf(t: string): string {
   const c = CATS.find((x) => x[2].includes(t))
   return c ? c[0] : 'x:' + t
 }
-export function catLabel(k: string): string {
+export function catLabel(k: string, names: TypeNames = {}): string {
   if (k === 'none') return 'No type yet'
   if (k.startsWith('x:')) return k.slice(2)
-  return CATS.find((x) => x[0] === k)?.[1] ?? k
+  return catName(k, names)
 }
 
 /** A call's type: the team's, else the AI's pick on its post-call actions. */
@@ -259,13 +280,17 @@ export function customTypes(v: unknown): string[] {
     .filter(Boolean)
 }
 
-/** Why a new type's name is turned away, in the current dashboard's words, or ''. */
-export function newTypeProblem(name: string): string {
+/** Why a new type's name is turned away, in the current dashboard's words, or ''. The team's names count. */
+export function newTypeProblem(name: string, names: TypeNames = {}): string {
   const v = name.replace(/\s+/g, ' ').trim()
   const lo = v.toLowerCase()
   if (v.length < 2) return 'Give it a name, two letters or more.'
   if (/[<>{}[\]\\]/.test(v)) return 'Use letters, numbers and spaces.'
-  if (MT_KEYS.some((k) => k === lo || MT[k].label.toLowerCase() === lo) || CATS.some((c) => c[1].toLowerCase() === lo) || lo === 'no type yet') {
+  if (
+    MT_KEYS.some((k) => k === lo || typeLabel(k, names).toLowerCase() === lo) ||
+    CATS.some((c) => catName(c[0], names).toLowerCase() === lo) ||
+    lo === 'no type yet'
+  ) {
     return 'That type is already in the list.'
   }
   return ''
@@ -346,6 +371,137 @@ export function folderOf(c: FtCall | null, m: CallMeta | null | undefined, o: Ca
   return cat === 'dev' || cat === 'internal' ? IN_FOLDER : NO_CLIENT
 }
 
+// ---------- filing a call by its people (v144: v144Match, v144Norm, v144Dom, v144KnownFolders, the v121Folder wrapper) ----------
+
+export type FileLead = { emails: string[]; company: string; name: string }
+export type FileContact = { email: string; company: string }
+/** What files a call by its people: the Catalyst leads, the HubSpot contacts, and the folders the team made (set on a
+ * call, or kept in ai_settings call_folders). */
+export type FilingCtx = { leads: FileLead[]; contacts: FileContact[]; folders: string[] }
+export const NO_FILING: FilingCtx = { leads: [], contacts: [], folders: [] }
+
+/** A company name to compare: lower case, no Inc, LLC, Group or The, letters and numbers only. */
+export const normName = (t: unknown) =>
+  str(t)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\b(inc|llc|ltd|co|corp|corporation|company|group|the)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, '')
+
+/** A work email's domain; none for free mail or the team's own. */
+export function workDomain(email: string): string {
+  const d = lower(email).split('@')[1] || ''
+  return d && !FREE.test(d) && !/aiparagonconsulting\.com$/.test(d) ? d : ''
+}
+
+/** A folder the team has by that company name, else the name as it is. */
+export function asFolder(name: string, known: string[]): string {
+  const n = normName(name)
+  if (!n) return ''
+  return known.find((f) => normName(f) === n) ?? str(name).trim()
+}
+
+/** The folders the team made: set on a call, or kept in call_folders. */
+export function knownFolders(metas: CallMeta[], team: string[]): string[] {
+  return [...new Set([...metas.map((m) => m.folder).filter(Boolean), ...team.filter(Boolean)])]
+}
+
+const PLACEHOLDER = /deltaadvisory\.com$/i
+
+/** The people on a call from outside the team, with an email. */
+export const outsiders = (c: FtCall | null, m: CallMeta | null | undefined) =>
+  peopleOf(c, m).filter(isOutside).filter((p) => p.email && !TEAM_EMAIL.test(p.email))
+
+export type Match = { folder: string; how: 'lead' | 'domain' | 'contact' | 'folder' }
+
+/**
+ * What files a call by its people (v144Match): a lead with a guest's email, then a lead at a guest's company (the same
+ * work email domain), then a HubSpot contact's company, then a folder the team already has with the guest's company
+ * name. Free mail never counts. Null when none of those.
+ */
+export function matchCall(c: FtCall | null, m: CallMeta | null | undefined, ctx: FilingCtx): Match | null {
+  const ext = outsiders(c, m)
+  if (!ext.length) return null
+  const leads = ctx.leads.filter((l) => l.emails.length && !PLACEHOLDER.test(l.emails[0]))
+  const known = ctx.folders
+  for (const p of ext) {
+    const e = lower(p.email)
+    const l = leads.find((x) => x.emails.map(lower).includes(e))
+    if (l) return { folder: asFolder(l.company || l.name || e, known), how: 'lead' }
+  }
+  for (const p of ext) {
+    const d = workDomain(p.email)
+    if (!d) continue
+    const l = leads.find((x) => x.emails.some((y) => workDomain(y) === d) && x.company)
+    if (l) return { folder: asFolder(l.company, known), how: 'domain' }
+  }
+  for (const p of ext) {
+    const ct = ctx.contacts.find((x) => lower(x.email) === lower(p.email))
+    if (ct?.company) return { folder: asFolder(ct.company, known), how: 'contact' }
+  }
+  for (const p of ext) {
+    const co = companyOf(p.email)
+    if (!co) continue
+    const f = known.find((x) => normName(x) === normName(co))
+    if (f) return { folder: f, how: 'folder' }
+  }
+  return null
+}
+
+/** The two folders the dashboard sets on its own. */
+export const autoFolder = (f: string) => f === IN_FOLDER || f === NO_CLIENT
+
+/**
+ * The folder a call is filed in, with v144's filing: the folder or client set on it, else what its people match, else
+ * folderOf, with a company name that matches a folder the team has taking that folder's name.
+ */
+export function filedFolder(c: FtCall | null, m: CallMeta | null | undefined, o: CallOutput | null | undefined, ctx: FilingCtx, leadCompany = ''): string {
+  if (m?.folder || m?.client) return folderOf(c, m, o, leadCompany)
+  const x = matchCall(c, m, ctx)
+  if (x) return x.folder
+  const f = folderOf(c, m, o, leadCompany)
+  return autoFolder(f) ? f : asFolder(f, ctx.folders) || f
+}
+
+/** Every call the page knows (Fathom's list, the saved details, the post-call actions) by the folder it is filed in
+ * (v144CallIds, v144InFolder). */
+export function callsByFolder(
+  calls: FtCall[],
+  meta: Record<string, CallMeta>,
+  outputs: Record<string, CallOutput>,
+  leads: { emails: string[]; company: string }[],
+  ctx: FilingCtx,
+): Record<string, string[]> {
+  const byId = new Map(calls.map((c) => [c.id, c]))
+  const ids = new Set<string>([...calls.map((c) => c.id), ...Object.keys(meta), ...Object.values(outputs).map((o) => o.call_id).filter(Boolean)])
+  const out: Record<string, string[]> = {}
+  for (const id of ids) {
+    const c = byId.get(id) ?? null
+    const m = meta[id] ?? null
+    const lead = c ? leadOf(c, m, leads) : null
+    const f = filedFolder(c, m, outputs[id] ?? null, ctx, lead?.company ?? '')
+    ;(out[f] ??= []).push(id)
+  }
+  return out
+}
+
+/** How many calls stay filed under deleted folders by the people on them (or their client) once the folders are taken off
+ * the calls they were set on (v144Save's toast). */
+export function keptAfterDelete(
+  calls: FtCall[],
+  meta: Record<string, CallMeta>,
+  outputs: Record<string, CallOutput>,
+  leads: { emails: string[]; company: string }[],
+  ctx: FilingCtx,
+  deleted: string[],
+): number {
+  if (!deleted.length) return 0
+  const m2: Record<string, CallMeta> = {}
+  for (const [k, m] of Object.entries(meta)) m2[k] = deleted.includes(m.folder) ? { ...m, folder: '' } : m
+  const by = callsByFolder(calls, m2, outputs, leads, { ...ctx, folders: ctx.folders.filter((f) => !deleted.includes(f)) })
+  return deleted.reduce((n, f) => n + (by[f]?.length ?? 0), 0)
+}
+
 /** The Catalyst lead among a call's guests, by email (apCxLead). */
 export function leadOf<L extends { emails: string[] }>(c: FtCall, m: CallMeta | null | undefined, leads: L[]): L | null {
   for (const e of guestsOf(c, m).map((g) => g.email.toLowerCase()).filter(Boolean)) {
@@ -380,9 +536,9 @@ export type CallRow = {
   hay: string
 }
 
-export function callRow(c: FtCall, m: CallMeta | null, o: CallOutput | null, leadCompany = ''): CallRow {
+export function callRow(c: FtCall, m: CallMeta | null, o: CallOutput | null, leadCompany = '', ctx: FilingCtx = NO_FILING): CallRow {
   const type = typeOf(m, o)
-  const folder = folderOf(c, m, o, leadCompany)
+  const folder = filedFolder(c, m, o, ctx, leadCompany)
   const title = m?.title || c.title
   const hay = [
     title,
@@ -426,27 +582,29 @@ export type CatButton = { key: string; label: string; n: number }
  * (Client demos, Sales and Internal development always, Client work and Internal meetings once a call has them), the
  * team's own types A to Z, Other, and No type yet, each with how many there are.
  */
-export function catButtonsOf(cats: string[]): CatButton[] {
+export function catButtonsOf(cats: string[], names: TypeNames = {}): CatButton[] {
   const n = (k: string) => cats.filter((c) => c === k).length
   const out = [{ key: '', label: 'All', n: cats.length }]
-  for (const [k] of CATS) if (k !== 'other' && (n(k) || CAT_MAIN.includes(k))) out.push({ key: k, label: catLabel(k), n: n(k) })
+  for (const [k] of CATS) if (k !== 'other' && (n(k) || CAT_MAIN.includes(k))) out.push({ key: k, label: catLabel(k, names), n: n(k) })
   const mine = [...new Set(cats.filter((k) => k.startsWith('x:')))].sort((a, b) => a.localeCompare(b))
   for (const k of mine) out.push({ key: k, label: catLabel(k), n: n(k) })
-  if (n('other')) out.push({ key: 'other', label: catLabel('other'), n: n('other') })
+  if (n('other')) out.push({ key: 'other', label: catLabel('other', names), n: n('other') })
   if (n('none')) out.push({ key: 'none', label: catLabel('none'), n: n('none') })
   return out
 }
 
 /** The type buttons on Calls: each kind of call with how many there are on the tab. */
-export function catButtons(rows: CallRow[], tab: CallTab): CatButton[] {
-  return catButtonsOf(rows.filter((r) => inTab(r, tab)).map((r) => r.cat))
+export function catButtons(rows: CallRow[], tab: CallTab, names: TypeNames = {}): CatButton[] {
+  return catButtonsOf(rows.filter((r) => inTab(r, tab)).map((r) => r.cat), names)
 }
 
-/** The folder filter's choices: every call's folder and every folder set, A to Z, No client yet last. */
-export function folderChoices(rows: { folder: string }[], metas: CallMeta[]): string[] {
+/** The folder filter's choices: every call's folder, every folder set and the team's own (call_folders, v144), A to Z,
+ * No client yet last. */
+export function folderChoices(rows: { folder: string }[], metas: CallMeta[], team: string[] = []): string[] {
   const s = new Set<string>()
   rows.forEach((r) => s.add(r.folder))
   metas.forEach((m) => m.folder && s.add(m.folder))
+  team.forEach((f) => f && s.add(f))
   return [...s].sort((a, b) => (a === NO_CLIENT ? 1 : b === NO_CLIENT ? -1 : a.localeCompare(b)))
 }
 
@@ -489,10 +647,10 @@ export function tasksText(tasks: Task[], onlyOpen: boolean): string {
 }
 
 /** The Slack message, ready to edit: the call, the summary, the open next steps, the recording. */
-export function slackText(p: { title: string; day: string; type: string; out: CallOutput | null; link: string }): string {
+export function slackText(p: { title: string; day: string; type: string; out: CallOutput | null; link: string; names?: TypeNames }): string {
   const sum = p.out?.summary ?? []
   const open = (p.out?.tasks ?? []).filter((t) => !t.done)
-  const L = ['*' + p.title + '*' + (p.day ? ' · ' + p.day : '') + (p.type ? ' · ' + typeLabel(p.type) : '')]
+  const L = ['*' + p.title + '*' + (p.day ? ' · ' + p.day : '') + (p.type ? ' · ' + typeLabel(p.type, p.names) : '')]
   if (sum.length) L.push('', '*Summary*', sum.map((s) => '• ' + s).join('\n'))
   if (open.length) L.push('', '*Next steps*', open.map((t) => '• ' + t.text + (t.owner ? ' (' + t.owner + (t.due ? ', due ' + t.due : '') + ')' : '')).join('\n'))
   if (p.link) L.push('', '<' + p.link + '|Recording in Fathom>')
@@ -505,9 +663,9 @@ export function crmEmails(guests: Guest[]): string[] {
 }
 
 /** The note HubSpot logs on the contacts. */
-export function crmBody(p: { type: string; meta: CallMeta | null; out: CallOutput | null; ftSummary: string; link: string }): string {
+export function crmBody(p: { type: string; meta: CallMeta | null; out: CallOutput | null; ftSummary: string; link: string; names?: TypeNames }): string {
   const L: string[] = []
-  if (p.type) L.push('Call type: ' + typeLabel(p.type))
+  if (p.type) L.push('Call type: ' + typeLabel(p.type, p.names))
   if (p.meta?.folder) L.push('Folder: ' + p.meta.folder)
   if (p.meta?.tags.length) L.push('Tags: ' + p.meta.tags.map((t) => '#' + t).join(' '))
   if (p.meta?.description) L.push('', 'Notes: ' + p.meta.description)

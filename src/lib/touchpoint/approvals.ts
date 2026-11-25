@@ -3,7 +3,8 @@
 
 import { CUSTOM_STAGE, FOLLOW_UP, STAGES, type Stage, isBoardKey, isStageKey } from '@/lib/catalyst/stages'
 import { type LeadView, hasDoc, inApprovals, leadHref, viewStage } from '@/lib/catalyst/view'
-import { legacyUrl, pageBySlug } from '@/lib/nav'
+import { PORTED, legacyUrl, pageBySlug } from '@/lib/nav'
+import { fbPlace, goHref, whoOf } from './feedback'
 
 export type Kind = 'brief' | 'ad' | 'draft' | 'reply' | 'lead' | 'comment' | 'failed'
 
@@ -290,6 +291,8 @@ export type ApprovalInput = {
   /** open comments, newest first, and each lead's page by its emails (lower case), for a comment on a lead's document */
   comments?: CommentRow[]
   leadIds?: Record<string, string>
+  /** each lead's name by its emails (lower case), for where a feedback note was left */
+  leadNames?: Record<string, string>
   /** the current dashboard's address, where the briefs page still lives */
   legacy: string
   now: number
@@ -467,6 +470,23 @@ export function approvalItems(x: ApprovalInput): Item[] {
   }
   // open comments: resolved from the list, or opened where they were left
   for (const c of x.comments ?? []) {
+    // a feedback note (v144): "Feedback from <name>", where it was left, and Go to it opens the page at the note
+    if (str(c.target).startsWith('fb:')) {
+      const place = fbPlace(c.target, (e) => (x.leadIds?.[e] ? { id: x.leadIds[e], name: x.leadNames?.[e] ?? '' } : null), PORTED)
+      out.push({
+        key: 'cmt:' + c.id,
+        kind: 'comment',
+        icon: 'message',
+        title: 'Feedback from ' + whoOf(c.author).replace(/^Someone$/, 'someone'),
+        text: c.body,
+        tags: [{ text: 'Feedback' }, { text: place.where }],
+        approve: true,
+        approveLabel: 'Resolve',
+        review: { kind: 'link', href: goHref(place, c.id), label: 'Go to it', ...(place.out ? { out: true } : {}) },
+        when: c.createdAt,
+      })
+      continue
+    }
     out.push({
       key: 'cmt:' + c.id,
       kind: 'comment',

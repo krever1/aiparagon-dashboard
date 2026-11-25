@@ -45,10 +45,11 @@ const DEFAULTS = {
   content_pieces: () => ({ status: 'draft', tags: [], updated_at: new Date().toISOString() }),
   idea_notes: () => ({ status: 'open', tags: [], updated_at: new Date().toISOString() }),
   content_requests: () => ({ status: 'queued', updated_at: new Date().toISOString() }),
+  dashboard_comments: () => ({ resolved: false, resolved_by: null }),
 }
 
 /** Tables whose new rows get a uuid, as the project makes them (the app checks those ids are uuids). */
-const UUID_IDS = new Set(['content_pieces', 'idea_notes', 'content_requests'])
+const UUID_IDS = new Set(['content_pieces', 'idea_notes', 'content_requests', 'dashboard_comments'])
 
 /** Row rules for deletes, as in the project: a landing page can be deleted only while a draft that never went live. */
 const DELETABLE = { landing_pages: (r) => r.status === 'draft' && !r.published_at }

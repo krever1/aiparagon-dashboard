@@ -3,7 +3,7 @@
 import { refresh } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
 import {
-  type CallOutput, type FtCall, type FtLine, type Guest, cleanTags, customTypes, newTypeProblem, normOutput, typeLabel,
+  type CallOutput, type FtCall, type FtLine, type Guest, type TypeNames, cleanNames, cleanTags, customTypes, newTypeProblem, normOutput, typeLabel,
 } from '@/lib/catalyst/calls'
 import { ftAccess, ftConnect, ftDisconnect, ftList, ftStatus, ftTranscript } from '@/lib/catalyst/fathom'
 import { callN8n } from '@/lib/n8n'
@@ -34,6 +34,12 @@ async function saveMeta(supabase: Supa, id: string, patch: Record<string, unknow
     const ins = await supabase.from('call_meta').insert({ call_id: id, created_at: now, ...body })
     if (ins.error) throw new Error(ins.error.message)
   }
+}
+
+/** The team's names for the built-in types and buttons (ai_settings call_type_names, v144). */
+async function readNames(supabase: Supa): Promise<TypeNames> {
+  const { data } = await supabase.from('ai_settings').select('value').eq('key', 'call_type_names').maybeSingle()
+  return cleanNames(data?.value)
 }
 
 // ---------- Fathom ----------
@@ -160,13 +166,14 @@ export async function setCallType(id: string, type: string): Promise<Res<{ toast
   if (!CALL_ID.test(str(id))) return { ok: false, error: 'That is not a Fathom call.' }
   const t = cut(type, 30)
   if (/[<>{}[\]\\]/.test(t)) return { ok: false, error: 'Could not save the call type: that is not a call type.' }
+  const supabase = await createClient()
   try {
-    await saveMeta(await createClient(), str(id), { meeting_type: t || null }, user.email)
+    await saveMeta(supabase, str(id), { meeting_type: t || null }, user.email)
   } catch (e) {
     return { ok: false, error: 'Could not save the call type: ' + msgOf(e) }
   }
   refresh()
-  return { ok: true, toast: t ? `Call type: ${typeLabel(t)}.` : 'Call type cleared. The AI’s pick shows until one is set.' }
+  return { ok: true, toast: t ? `Call type: ${typeLabel(t, await readNames(supabase).catch(() => ({})))}.` : 'Call type cleared. The AI’s pick shows until one is set.' }
 }
 
 /** A call type of the team's own; a name the list has already (in any case) is that one. */
@@ -174,9 +181,9 @@ export async function addCallType(name: string): Promise<Res<{ name: string }>> 
   const user = await getCurrentUser()
   if (!user) return { ok: false, error: SIGNED_OUT }
   const v = str(name).replace(/\s+/g, ' ').trim().slice(0, 30)
-  const bad = newTypeProblem(v)
-  if (bad) return { ok: false, error: bad }
   const supabase = await createClient()
+  const bad = newTypeProblem(v, await readNames(supabase).catch(() => ({})))
+  if (bad) return { ok: false, error: bad }
   const cur = await supabase.from('ai_settings').select('value').eq('key', 'call_types').maybeSingle()
   if (cur.error) return { ok: false, error: 'Could not add it: ' + cur.error.message }
   const list = customTypes(cur.data?.value)
@@ -409,3 +416,119 @@ export async function syncCallToHubspot(id: string, input: CrmInput): Promise<Re
   return { ok: false, error: message }
 }
 
+
+// ---------- folders and call types (v144Save) ----------
+
+export type FoldersTypesInput = {
+  /** a folder renamed, with every call filed in it (they all take the new name) */
+  fRen: { from: string; to: string; ids: string[] }[]
+  fDel: string[]
+  fNew: string[]
+  /** the team's own types renamed ([from, to]) or deleted, and added */
+  tRen: [string, string][]
+  tDel: string[]
+  tNew: string[]
+  /** the built-in types' and buttons' names ({key or cat:<button>: name}; '' is the usual name), or null when unchanged */
+  names: Record<string, string> | null
+}
+
+const BAD_NAME = /[<>{}[\]\\]/
+const clean = (t: unknown, max: number) => str(t).replace(/\s+/g, ' ').trim().slice(0, max)
+
+/** An ai_settings value, saved as the current dashboard saves one (v96Set). */
+async function putSetting(supabase: Supa, key: string, value: unknown, by: string) {
+  const { error } = await supabase.from('ai_settings').upsert({ key, value, updated_by: by, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) throw new Error(error.message)
+}
+
+async function readList(supabase: Supa, key: string): Promise<string[]> {
+  const { data, error } = await supabase.from('ai_settings').select('value').eq('key', key).maybeSingle()
+  if (error) throw new Error(error.message)
+  return (Array.isArray(data?.value) ? (data.value as unknown[]) : []).map((x) => str(x))
+}
+
+/**
+ * Folders and types for the whole team (v144Save): the calls in a renamed folder take its new name, a deleted folder
+ * comes off the calls it was set on, the team's own folders (call_folders) follow; the team's own types are renamed or
+ * cleared on every call that has one (call_meta, and the AI's pick on call_outputs for a rename), then call_types; the
+ * built-in types' and buttons' names go in call_type_names.
+ */
+export async function saveFoldersTypes(input: FoldersTypesInput): Promise<Done> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const by = user.email
+  const fRen = (Array.isArray(input?.fRen) ? input.fRen : []).slice(0, 200).map((r) => ({
+    from: clean(r?.from, 120),
+    to: clean(r?.to, 80),
+    ids: (Array.isArray(r?.ids) ? r.ids : []).map(str).filter((x) => CALL_ID.test(x)).slice(0, 2000),
+  }))
+  const fDel = (Array.isArray(input?.fDel) ? input.fDel : []).map((x) => clean(x, 120)).filter(Boolean).slice(0, 200)
+  const fNew = (Array.isArray(input?.fNew) ? input.fNew : []).map((x) => clean(x, 80)).filter(Boolean).slice(0, 200)
+  const tRen = (Array.isArray(input?.tRen) ? input.tRen : []).map((p) => [clean(p?.[0], 30), clean(p?.[1], 30)] as [string, string]).slice(0, 100)
+  const tDel = (Array.isArray(input?.tDel) ? input.tDel : []).map((x) => clean(x, 30)).filter(Boolean).slice(0, 100)
+  const tNew = (Array.isArray(input?.tNew) ? input.tNew : []).map((x) => clean(x, 30)).filter(Boolean).slice(0, 100)
+  if (fRen.some((r) => r.to.length < 2 || BAD_NAME.test(r.to)) || fNew.some((v) => v.length < 2 || BAD_NAME.test(v))) {
+    return { ok: false, error: 'Each folder needs a name of two letters or more, in letters, numbers and spaces.' }
+  }
+  if (tRen.some((p) => !p[0] || p[1].length < 2 || BAD_NAME.test(p[1])) || tNew.some((v) => v.length < 2 || BAD_NAME.test(v))) {
+    return { ok: false, error: 'Each of your types needs a name of two letters or more.' }
+  }
+  let names: Record<string, string> | null = null
+  if (input?.names && typeof input.names === 'object') {
+    names = {}
+    for (const [k, v] of Object.entries(input.names).slice(0, 40)) {
+      if (!/^(cat:)?[a-z]{2,20}$/.test(k)) continue
+      const n = clean(v, 30)
+      if (n && BAD_NAME.test(n)) return { ok: false, error: 'Use letters, numbers and spaces in a type name.' }
+      names[k] = n
+    }
+  }
+  const supabase = await createClient()
+  try {
+    // folders: the calls in a renamed folder take its new name, a deleted folder comes off its calls
+    for (const r of fRen) for (const id of r.ids) await saveMeta(supabase, id, { folder: r.to }, by)
+    for (const f of fDel) {
+      const { error } = await supabase.from('call_meta').update({ folder: null, updated_at: new Date().toISOString(), updated_by: by }).eq('folder', f)
+      if (error) throw new Error(error.message)
+    }
+    if (fRen.length || fDel.length || fNew.length) {
+      let L = await readList(supabase, 'call_folders')
+      for (const r of fRen) {
+        L = L.map((x) => (x === r.from ? r.to : x))
+        if (!L.includes(r.to) && !r.ids.length) L.push(r.to)
+      }
+      L = L.filter((x) => !fDel.includes(x))
+      for (const v of fNew) if (!L.includes(v)) L.push(v)
+      await putSetting(supabase, 'call_folders', [...new Set(L)], by)
+    }
+    // the team's own types: renamed or cleared on every call, then the list
+    if (tRen.length || tDel.length || tNew.length) {
+      for (const [from, to] of tRen) {
+        const { error } = await supabase.from('call_meta').update({ meeting_type: to, updated_at: new Date().toISOString(), updated_by: by }).eq('meeting_type', from)
+        if (error) throw new Error(error.message)
+        await supabase.from('call_outputs').update({ meeting_type: to }).eq('meeting_type', from)
+      }
+      for (const k of tDel) {
+        const { error } = await supabase.from('call_meta').update({ meeting_type: null, updated_at: new Date().toISOString(), updated_by: by }).eq('meeting_type', k)
+        if (error) throw new Error(error.message)
+      }
+      let L = await readList(supabase, 'call_types')
+      for (const [from, to] of tRen) L = L.map((x) => (x === from ? to : x))
+      L = L.filter((x) => !tDel.includes(x))
+      for (const v of tNew) if (!L.some((x) => x.toLowerCase() === v.toLowerCase())) L.push(v)
+      await putSetting(supabase, 'call_types', L, by)
+    }
+    // the built-in names: read fresh and merged (v104SetPatch)
+    if (names) {
+      const { data, error } = await supabase.from('ai_settings').select('value').eq('key', 'call_type_names').maybeSingle()
+      if (error) throw new Error(error.message)
+      const cur = data?.value && typeof data.value === 'object' && !Array.isArray(data.value) ? (data.value as Record<string, unknown>) : {}
+      await putSetting(supabase, 'call_type_names', { ...cur, ...names }, by)
+    }
+  } catch (e) {
+    refresh()
+    return { ok: false, error: 'Could not save everything: ' + msgOf(e) + '. What saved before it stays. Try again in a minute.' }
+  }
+  refresh()
+  return { ok: true }
+}
