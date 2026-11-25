@@ -327,7 +327,8 @@ const candOf = (i: IntelItem): Cand => ({
 /**
  * The posts closest to a point (v96Rank, the organic way): words in common (six at most), six more when a number in
  * the point is the post's engagement, two when the point's tag is one of its themes, three off for a low-value post
- * and one on for a high-value one. At least three, one per link and headline, the best six.
+ * and one on for a high-value one. Two shared words (or a quoted engagement number) before any bonus counts; at least
+ * three in all, one per link and headline, the best six.
  */
 export function rankPosts(it: { text: string; why?: string; tag?: string }, items: IntelItem[]): string[] {
   const q = new Set(tokens(it.text + ' ' + (it.why ?? '')))
@@ -341,7 +342,11 @@ export function rankPosts(it: { text: string; why?: string; tag?: string }, item
       let s = 0
       for (const w of q) if (toks.has(w)) s += 1
       s = Math.min(s, 6)
-      if (nums.length && r.eng !== null && nums.includes(r.eng)) s += 6
+      const numHit = nums.length > 0 && r.eng !== null && nums.includes(r.eng)
+      // a post counts only when it shares 2+ words with the point or its engagement is quoted there: the tag and value
+      // bonuses alone let unrelated posts in (a board appointment under a point about CRMs, Nov 24)
+      if (s < 2 && !numHit) return { r, s: 0 }
+      if (numHit) s += 6
       if (
         tag &&
         r.themes.some((x) => {
