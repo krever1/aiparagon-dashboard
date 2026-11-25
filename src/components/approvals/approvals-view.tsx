@@ -28,6 +28,8 @@ const primary =
 function doneText(done: string[]): string {
   const n = done.length
   if (done.every((k) => k.startsWith('cmt:'))) return n === 1 ? 'Comment resolved' : n + ' comments resolved'
+  // v143: a lead's stage document marked reviewed
+  if (done.every((k) => /^lead:[^:]+:/.test(k))) return n === 1 ? 'Marked reviewed' : n + ' marked reviewed'
   return n === 1 ? 'Approved' : 'Approved ' + n
 }
 
@@ -380,7 +382,9 @@ function Row({
                     ? 'bg-bad-soft text-bad'
                     : 'tone' in t && t.tone === 'warn'
                       ? 'bg-warn-soft text-warn'
-                      : 'bg-sunk text-ink-2'
+                      : 'tone' in t && t.tone === 'good'
+                        ? 'bg-good-soft text-good'
+                        : 'bg-sunk text-ink-2'
                 }`}
               >
                 {'day' in t ? (

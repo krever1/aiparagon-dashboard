@@ -417,22 +417,22 @@ test('approve the ads together; their tab empties and All becomes the choice; un
   expect((await said()).slice(9)).toEqual(ads.map((f) => `low_ticket_content | ad_image_variant | ${f} | reopened | Undone in Approvals | ${TEAM.email}`))
 })
 
-test('leads waiting on their next document open on their page; comments are resolved from the list, and undone', async ({ page }) => {
+test('leads waiting on their stage’s document open on their page; comments are resolved from the list, and undone', async ({ page }) => {
   const c = catalystRows()
   await stubSeed({ ...c, agent_outputs: [...rows.agent_outputs, ...c.agent_outputs] })
   const LEE = leadId({ prospect_name: 'Lee Ready', email: 'lee.ready@example.com' })
   await signIn(page, '/approvals')
-  await expect(tabs(page)).toHaveText(['All 11', 'Briefs 2', 'Replies 6', 'Leads 1', 'Comments 2'])
+  await expect(tabs(page)).toHaveText(['All 12', 'Briefs 2', 'Replies 6', 'Leads 2', 'Comments 2'])
 
-  // a lead: what it needs next, and its page at that document; nothing to approve here. Wes is a weak fit, Dana has
-  // every document from her stage on, and Max's next document is being written.
+  // a lead: what it needs next, and its page at that document; nothing to approve here. Wes is a weak fit, Dana's
+  // stage document is written (so it waits for a read, below), and Max's is being written.
   await tabs(page).nth(3).click()
   await expect(page).toHaveURL(/\/approvals\?tab=leads$/)
-  await expect(list(page)).toHaveCount(1)
+  await expect(list(page)).toHaveCount(2)
   const lead = row(page, 'lead:lee.ready@example.com')
   await expect(lead.locator('b').first()).toHaveText('Lee Ready · Ready Example LLC')
   await expect(lead).toContainText('Next: Assessment report')
-  await expect(lead).toContainText('LeadCatalyst')
+  await expect(lead).toContainText('LeadAssessment')
   await expect(lead.getByRole('checkbox')).toHaveCount(0)
   await expect(lead.getByRole('button', { name: 'Approve' })).toHaveCount(0)
   const open = lead.getByRole('link', { name: 'Open lead' })
@@ -471,10 +471,59 @@ test('leads waiting on their next document open on their page; comments are reso
   await bulk(page).getByRole('button', { name: 'Approve 2' }).click()
   await expect(toast(page, '2 comments resolved')).toBeVisible()
   expect([(await cm(1)).resolved, (await cm(2)).resolved, (await cm(3)).resolved]).toEqual([true, true, true])
-  await expect(tabs(page)).toHaveText(['All 9', 'Briefs 2', 'Replies 6', 'Leads 1'])
+  await expect(tabs(page)).toHaveText(['All 10', 'Briefs 2', 'Replies 6', 'Leads 2'])
   await expect(page).toHaveURL(/\/approvals$/)
   // nothing went to agent_feedback for a comment
   expect(await said()).toEqual([])
+})
+
+test('v143: a lead’s stage document waits for a read: Review opens it, Mark reviewed saves it for the team, Undo reopens it', async ({ page }) => {
+  const c = catalystRows()
+  const DANA = leadId({ prospect_name: 'Dana Done', email: 'dana.done@example.com' })
+  const doc = c.agent_outputs.find((o) => o.run_id === 'dana.done@example.com')!
+  const before = new Date(Date.parse(doc.created_at) - 60e3).toISOString()
+  // a read of an earlier version (before the document) does not count; a change asked is not a read
+  const marks = [
+    { id: 'm1', agent: 'meeting_prep', target_type: 'e1_document', target_id: 'dana.done@example.com:meeting_prep:review', action: 'reviewed', feedback: 'Reviewed in Approvals', author: 'x@aiparagonconsulting.com', created_at: before },
+    { id: 'm2', agent: 'meeting_prep', target_type: 'e1_document', target_id: 'dana.done@example.com:meeting_prep:review', action: 'changes', feedback: 'Shorter please, and the numbers first.', author: 'x@aiparagonconsulting.com', created_at: new Date().toISOString() },
+  ]
+  await stubSeed({ ...c, dashboard_comments: [], agent_outputs: [...rows.agent_outputs, ...c.agent_outputs], agent_feedback: marks })
+  await signIn(page, '/approvals?tab=leads')
+  await expect(list(page)).toHaveCount(2)
+  const dana = row(page, 'lead:dana.done@example.com:review')
+  await expect(dana.locator('b').first()).toHaveText('Dana Done · Done Example Group')
+  await expect(dana).toContainText('Ready for review: Client review brief')
+  await expect(dana).toContainText('Ready for reviewClient review')
+  await expect(dana.getByRole('link', { name: 'Review' })).toHaveAttribute('href', `/lead-pipeline/${DANA}?tab=review`)
+  // the waiting one has no button to approve; the written one is marked reviewed
+  await expect(row(page, 'lead:lee.ready@example.com').getByRole('button', { name: 'Mark reviewed' })).toHaveCount(0)
+
+  await dana.getByRole('button', { name: 'Mark reviewed' }).click()
+  await expect(toast(page, 'Marked reviewed')).toBeVisible()
+  await expect(row(page, 'lead:dana.done@example.com:review')).toHaveCount(0)
+  await expect(tabs(page)).toHaveText(['All 9', 'Briefs 2', 'Replies 6', 'Leads 1'])
+  const mine = async () => (await said()).slice(2)
+  expect(await mine()).toEqual([`meeting_prep | e1_document | dana.done@example.com:meeting_prep:review | reviewed | Reviewed in Approvals | ${TEAM.email}`])
+
+  // Undo: a reopened row, and it waits again
+  await undo(page).click()
+  await expect(toast(page, 'Undone. It is waiting again.')).toBeVisible()
+  await expect(row(page, 'lead:dana.done@example.com:review')).toBeVisible()
+  expect((await mine())[1]).toBe(`meeting_prep | e1_document | dana.done@example.com:meeting_prep:review | reopened | Undone in Approvals | ${TEAM.email}`)
+
+  // Review opens the lead's page at the document
+  await row(page, 'lead:dana.done@example.com:review').getByRole('link', { name: 'Review' }).click()
+  await expect(page).toHaveURL(new RegExp(`/lead-pipeline/${DANA}\\?tab=review$`))
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Dana Done')
+
+  // marked reviewed again, it stays out after a reload; a new version of the document would bring it back
+  await page.goto('/approvals?tab=leads')
+  await row(page, 'lead:dana.done@example.com:review').getByRole('checkbox').check()
+  await bulk(page).getByRole('button', { name: 'Approve 1' }).click()
+  await expect(toast(page, 'Marked reviewed')).toBeVisible()
+  await page.reload()
+  await expect(row(page, 'lead:lee.ready@example.com')).toBeVisible()
+  await expect(row(page, 'lead:dana.done@example.com:review')).toHaveCount(0)
 })
 
 test('a comment approved with something else says Approved', async ({ page }) => {

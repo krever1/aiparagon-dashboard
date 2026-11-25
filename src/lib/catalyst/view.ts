@@ -52,18 +52,15 @@ export function hasDoc(l: Pick<LeadView, 'docs'>, s: StageKey): boolean {
   return l.docs[s] !== undefined
 }
 
-/** The next document a lead needs (apNextStage, by the six stages): its own stage's when that is not written yet, else
- * the first later stage's without one; null once every stage from its own on has its document. */
-export function nextDocOf(l: Pick<LeadView, 'stored' | 'derived' | 'run' | 'docs'>): StageKey | null {
-  const keys = STAGES.map((s) => s.key)
-  for (const k of keys.slice(keys.indexOf(viewStage(l)))) if (!hasDoc(l, k)) return k
-  return null
+/** A lead Approvals lists (v143LdItems): not a weak fit, nothing being written for it, not the anonymizer's placeholder.
+ * It waits on its own stage's document ("Next: …") until that is written, then for a read ("Ready for review: …"). */
+export function inApprovals(l: Pick<LeadView, 'fit' | 'run' | 'email'>): boolean {
+  return !!l.email && !/deltaadvisory\.com$/i.test(l.email) && fitTone(l.fit) !== 'bad' && !l.run
 }
 
-/** A lead waiting on a person (Approvals' Leads, Today's Catalyst line): not a weak fit, its next document not written
- * and nothing being written for it. */
-export function waitsOnNext(l: Pick<LeadView, 'fit' | 'stored' | 'derived' | 'run' | 'docs'>): boolean {
-  return fitTone(l.fit) !== 'bad' && !l.run && nextDocOf(l) !== null
+/** Waiting on its own stage's document (Approvals' "Next: …", Today's Catalyst line). */
+export function waitsOnStage(l: Pick<LeadView, 'fit' | 'run' | 'email' | 'stored' | 'derived' | 'docs'>): boolean {
+  return inApprovals(l) && !hasDoc(l, viewStage(l))
 }
 
 export function countByStage(leads: LeadView[]): Record<StageKey, number> {

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { type LeadCallRow, leadCallsFor } from '@/app/(app)/lead-pipeline/actions'
 import { PageHeader } from '@/components/moving-page'
+import { usePlaceName } from '@/components/shell/back-store'
 import { LocalDate, LocalDateTime, LocalUsDay } from '@/components/ui/local-date'
 import type { E1Doc, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
 import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
@@ -53,6 +54,8 @@ export function LeadView({ data }: { data: Found }) {
   const st = byKey[data.stage]
   const ready = hasDoc(data.lead, data.stage)
   const { lead } = data
+  // the top bar's Back names this page by the lead (v143)
+  usePlaceName(usePathname(), lead.name)
 
   const tabs: TabDef<LeadTab>[] = []
   for (const d of data.docs) {
@@ -170,6 +173,8 @@ export function LeadView({ data }: { data: Found }) {
           setReading={setReading}
           writing={lead.run?.s === doc.key ? byKey[doc.key as StageKey] : null}
           ask={{ leadId: lead.id, name: lead.name, count: data.asks[doc.agent] ?? 0 }}
+          stage={isStageKey(doc.key) ? byKey[doc.key] : null}
+          onRun={() => isStageKey(doc.key) && askFor(doc.key, false)}
         >
           {doc.key === 'proposal' && (data.proposal.view || data.proposal.run || data.docs.some((x) => x.key === 'assessment' && x.done)) ? (
             <ProposalCard lead={lead} data={data.proposal} asks={data.asks.client_proposal ?? 0} />
@@ -224,6 +229,8 @@ function DocPanel({
   setReading,
   writing,
   ask,
+  stage,
+  onRun,
   children,
 }: {
   d: E1Doc
@@ -233,6 +240,10 @@ function DocPanel({
   writing: Stage | null
   /** What should change? on this document: the lead and how many changes were asked */
   ask: { leadId: string; name: string; count: number }
+  /** the stage this document is (none for the follow-up guide, which no stage runs) */
+  stage: Stage | null
+  /** Run, or Run again: the stage question without a move, so only this document runs (v143) */
+  onRun: () => void
   /** under the document: the client proposal, on the Proposal tab */
   children?: React.ReactNode
 }) {
@@ -291,6 +302,7 @@ function DocPanel({
               </a>
             ) : null}
             <ChangeAsk leadId={ask.leadId} agent={d.agent} doc={ASK_DOC[d.agent] ?? 'document'} name={ask.name} count={ask.count} />
+            {stage && !writing ? <RunButton stage={stage} done onRun={onRun} /> : null}
             {d.status ? (
               <span className={chip}>
                 status: <b className="font-semibold text-ink">{d.status}</b>
@@ -301,7 +313,15 @@ function DocPanel({
           {open ? <DocReader md={d.md} docId={d.readDocId} pdfId={d.readPdfId} /> : null}
         </div>
       ) : (
-        <p className="rounded-md bg-sunk px-4 py-5 text-center text-[14.5px] text-ink-2">This stage hasn’t produced output for this lead yet.</p>
+        <p className="rounded-md bg-sunk px-4 py-5 text-center text-[14.5px] text-ink-2">
+          This stage hasn’t produced output for this lead yet.
+          {stage && !writing ? (
+            <>
+              {' '}
+              <RunButton stage={stage} done={false} onRun={onRun} className="ml-1" />
+            </>
+          ) : null}
+        </p>
       )}
       {children}
     </Panel>
@@ -348,39 +368,61 @@ function PrepPanel({
               For the {stage.name.toLowerCase()} meeting · produced <LocalDate iso={prep.at} />
             </small>
           </div>
-          {prep.md ? (
-            <>
-              <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={btnNavy + ' mt-3'}>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {prep.md ? (
+              <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={btnNavy}>
                 {open ? 'Hide ▴' : 'Read inline ▾'}
               </button>
-              {open ? (
-                <div className="mt-3 space-y-3 border-t border-line pt-3" data-testid="prep-text">
-                  {prep.charts.length ? (
-                    placeCharts(mdClean(prep.md), prep.charts).map((p, i) => (
-                      <div key={i}>
-                        {p.text.trim() ? <Md>{p.text}</Md> : null}
-                        {p.charts.map((c, k) => (
-                          <ChartFigure key={k} chart={c} color={INK} ink={TXT} />
-                        ))}
-                      </div>
-                    ))
-                  ) : (
-                    <Md>{mdClean(prep.md)}</Md>
-                  )}
-                </div>
-              ) : null}
-            </>
+            ) : null}
+            <RunButton stage={stage} done onRun={onRun} />
+          </div>
+          {prep.md && open ? (
+            <div className="mt-3 space-y-3 border-t border-line pt-3" data-testid="prep-text">
+              {prep.charts.length ? (
+                placeCharts(mdClean(prep.md), prep.charts).map((p, i) => (
+                  <div key={i}>
+                    {p.text.trim() ? <Md>{p.text}</Md> : null}
+                    {p.charts.map((c, k) => (
+                      <ChartFigure key={k} chart={c} color={INK} ink={TXT} />
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <Md>{mdClean(prep.md)}</Md>
+              )}
+            </div>
           ) : null}
         </div>
       ) : (
         <div className="rounded-md bg-sunk px-4 py-5 text-[14.5px] text-ink-2">
           This lead is in {leadStage.name}, and its prep has not been written yet.{' '}
-          <button type="button" onClick={onRun} className={btn + ' ml-1'}>
-            {runLabel(stage)}
-          </button>
+          <RunButton stage={stage} done={false} onRun={onRun} className="ml-1" />
         </div>
       )}
     </Panel>
+  )
+}
+
+/**
+ * Run on a report (v143RunBtns): "Run prospect brief" before it is written, "Run again" after. Either opens the stage
+ * question without a move, so only this report runs and the lead stays in its stage.
+ */
+function RunButton({ stage, done, onRun, className = '' }: { stage: Stage; done: boolean; onRun: () => void; className?: string }) {
+  const doc = stage.doc.toLowerCase()
+  return (
+    <button
+      type="button"
+      onClick={onRun}
+      data-testid="run-report"
+      title={
+        done
+          ? `Write a new version of the ${doc}. The lead stays in its stage, and the earlier version stays in Files.`
+          : `Write the ${doc} now. The lead stays in its stage.`
+      }
+      className={btn + (className ? ' ' + className : '')}
+    >
+      {done ? 'Run again' : runLabel(stage)}
+    </button>
   )
 }
 

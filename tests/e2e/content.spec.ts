@@ -478,7 +478,7 @@ test('nothing yet: no drafts, no brief, no ideas; New draft leans on the materia
   await expect(page).toHaveURL(/\/content-transformation$/)
 
   await page.getByRole('tab', { name: /Ideas/ }).click()
-  await expect(page.getByText('No organic brief yet', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('ideas-brief').getByText('No organic brief yet', { exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Open the Intel Tracker' })).toHaveAttribute('href', '/intel-tracker')
   await expect(page.getByTestId('ideas-yours')).toContainText('No saved ideas yet.')
   await expect(page.getByTestId('ideas-pieces')).toContainText('None on file yet. Add articles, webinars or transcripts to repurpose later.')

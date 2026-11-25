@@ -3,13 +3,16 @@
 import { refresh } from 'next/cache'
 import { type CurrentUser, getCurrentUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { type Key, parseKey } from '@/lib/touchpoint/approvals'
+import { stageOfKey } from '@/lib/catalyst/stages'
+import { type Key, parseKey, reviewKey } from '@/lib/touchpoint/approvals'
 
 // What Approvals saves, as the signed-in teammate (nwApproveOne, nwUndo, nwReplyAct, apSetDraft, apResolveComment): a
 // brief's decision in agent_feedback (brief_approval), an ad image's decision (ad_image_variant, by its file, which
 // Marketing Generation and Landing pages count), a reply's status in engagement_drafts with its row in agent_feedback
 // (engagement_draft), which AI settings lists and the Intel Tracker learns from once a reason is a rule, and a
-// comment resolved (dashboard_comments, with who resolved it).
+// comment resolved (dashboard_comments, with who resolved it), and a lead's stage document marked reviewed (v143:
+// agent_feedback e1_document, action reviewed, "Reviewed in Approvals", which AI settings leaves out of From your
+// feedback and the lead page's What should change? count leaves out too).
 
 const SIGNED_OUT = 'You are signed out. Sign in again.'
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -40,9 +43,20 @@ async function setComment(supabase: Supa, id: string, resolved: boolean, by: str
   if (!data?.length) throw new Error('that comment is gone')
 }
 
+/** A lead's stage document, read (reviewed) or back to waiting (reopened), as v143 saves it. */
+const reviewRow = (k: Extract<Key, { kind: 'lead' }>, action: 'reviewed' | 'reopened', by: string) => ({
+  agent: stageOfKey(k.stage).agent,
+  target_type: 'e1_document',
+  target_id: reviewKey(k.email, k.stage),
+  action,
+  feedback: action === 'reviewed' ? 'Reviewed in Approvals' : 'Undone in Approvals',
+  author: by,
+})
+
 async function approveOne(supabase: Supa, k: Key, user: CurrentUser) {
   const by = user.email
   if (k.kind === 'comment') return setComment(supabase, k.id, true, user.name || by)
+  if (k.kind === 'lead') return feedback(supabase, reviewRow(k, 'reviewed', by))
   if (k.kind === 'brief') {
     await feedback(supabase, { agent: k.agent, target_type: 'brief_approval', target_id: k.runId, action: 'approved', feedback: 'Approved in Approvals', author: by })
     return
@@ -96,6 +110,8 @@ export async function undoItems(keys: string[]): Promise<Done> {
         await feedback(supabase, { agent: 'low_ticket_content', target_type: 'ad_image_variant', target_id: k.file, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })
       } else if (k.kind === 'comment') {
         await setComment(supabase, k.id, false, '')
+      } else if (k.kind === 'lead') {
+        await feedback(supabase, reviewRow(k, 'reopened', user.email))
       } else {
         await setReply(supabase, k.id, 'pending')
         await feedback(supabase, { agent: 'intel_tracker', target_type: 'engagement_draft', target_id: k.id, action: 'reopened', feedback: 'Undone in Approvals', author: user.email })

@@ -1,10 +1,10 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronRight, Folder } from 'lucide-react'
-import { setCallType, tickTask } from '@/app/(app)/calls/actions'
+import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react'
+import { removeTask, restoreTask, setCallType, tickTask } from '@/app/(app)/calls/actions'
 import { EditDetails, NewTypeDialog, TypeOptions } from '@/components/calls/call-dialogs'
 import { ErrorNotice } from '@/components/catalyst/bits'
 import { LocalUsDate, dueText } from '@/components/ui/local-date'
@@ -15,7 +15,60 @@ import type { TasksData } from '@/lib/catalyst/tasks-load'
 
 // Tasks' post-call to-dos (apTkHtml as v121 redefined it): the next steps written after each recorded call, filed by
 // client. Tick them off, set each call's type, change its people and client, or open the call on Calls. The type button
-// picked is the address's (?type=), as on Calls.
+// picked is the address's (?type=), as on Calls. Since v143 each call folds up (kept in this browser) and each task has ×,
+// which takes it off the call's list for the whole team, with Undo.
+
+// ---------- which calls are folded up, in this browser (localStorage `ap.tk.shut`, {call id: 1}, as v143 keeps it) ----------
+
+const SHUT_KEY = 'ap.tk.shut'
+const NONE: Record<string, number> = {}
+const shutListeners = new Set<() => void>()
+let shutCache: { raw: string | null; val: Record<string, number> } = { raw: null, val: NONE }
+let shutMem: Record<string, number> = {}
+
+function readShut(): Record<string, number> {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(SHUT_KEY)
+  } catch {
+    return shutMem
+  }
+  if (raw === shutCache.raw) return shutCache.val
+  let val: Record<string, number> = {}
+  try {
+    const p = JSON.parse(raw || '{}')
+    if (p && typeof p === 'object' && !Array.isArray(p)) val = p
+  } catch {
+    // a broken entry folds nothing
+  }
+  shutCache = { raw, val }
+  return val
+}
+
+function setShut(id: string, shut: boolean) {
+  const next = { ...readShut() }
+  if (shut) next[id] = 1
+  else delete next[id]
+  shutMem = next
+  try {
+    localStorage.setItem(SHUT_KEY, JSON.stringify(next))
+  } catch {
+    // kept for this page only
+  }
+  for (const l of shutListeners) l()
+}
+
+function subscribeShut(l: () => void) {
+  shutListeners.add(l)
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === SHUT_KEY) l()
+  }
+  window.addEventListener('storage', onStorage)
+  return () => {
+    shutListeners.delete(l)
+    window.removeEventListener('storage', onStorage)
+  }
+}
 
 const ghost = 'inline-flex items-center gap-1.5 rounded-sm border border-line bg-panel px-3 py-1.5 text-[13.5px] font-semibold text-ink hover:border-line-2'
 
@@ -32,7 +85,11 @@ export function TasksView({ data }: { data: TasksData }) {
   const sp = useSearchParams()
   const picked = shownCat(data.cards, sp.get('type') ?? '')
   const [ticks, setTicks] = useState<Record<string, boolean>>({})
-  const [shut, setShut] = useState<Record<string, boolean>>({})
+  const [shut, setFolderShut] = useState<Record<string, boolean>>({})
+  const callShut = useSyncExternalStore(subscribeShut, readShut, () => NONE)
+  // tasks removed here, hidden until the page's data comes back without them (a new read clears the list)
+  const [removed, setRemoved] = useState<{ data: TasksData; keys: string[] }>({ data, keys: [] })
+  const gone = removed.data === data ? removed.keys : []
   const [editing, setEditing] = useState<string | null>(null)
   const [newTypeFor, setNewTypeFor] = useState<string | null>(null)
   const [typeBusy, setTypeBusy] = useState<string | null>(null)
@@ -44,7 +101,32 @@ export function TasksView({ data }: { data: TasksData }) {
     window.history.replaceState(null, '', u.pathname + u.search)
   }, [])
 
-  const tasksOf = (c: TaskCard): Task[] => c.out.tasks.map((t) => (`${c.out.id}:${t.id}` in ticks ? { ...t, done: ticks[`${c.out.id}:${t.id}`] } : t))
+  const tasksOf = (c: TaskCard): Task[] =>
+    c.out.tasks
+      .filter((t) => !gone.includes(`${c.out.id}:${t.id}`))
+      .map((t) => (`${c.out.id}:${t.id}` in ticks ? { ...t, done: ticks[`${c.out.id}:${t.id}`] } : t))
+
+  // a removed task leaves the call's list for the whole team; Undo puts it back where it was (v143TkDel)
+  const remove = async (c: TaskCard, t: Task) => {
+    const k = `${c.out.id}:${t.id}`
+    setRemoved((x) => ({ data, keys: [...(x.data === data ? x.keys : []), k] }))
+    const r = await removeTask(c.out.id, t.id).catch(() => ({ ok: false as const, error: 'Could not remove that task: the dashboard could not be reached.' }))
+    if (!r.ok) {
+      setRemoved((x) => ({ ...x, keys: x.keys.filter((y) => y !== k) }))
+      toast(r.error, 'warn')
+      return
+    }
+    toast('Task removed: ' + t.text.slice(0, 60), 'ok', {
+      label: 'Undo',
+      run: () => {
+        void restoreTask(c.out.id, r.task, r.at)
+          .catch(() => ({ ok: false as const, error: 'Could not put it back: the dashboard could not be reached.' }))
+          .then((u) => {
+            if (!u.ok) toast(u.error, 'warn')
+          })
+      },
+    })
+  }
 
   const tick = async (c: TaskCard, t: Task, done: boolean) => {
     const k = `${c.out.id}:${t.id}`
@@ -101,7 +183,7 @@ export function TasksView({ data }: { data: TasksData }) {
               <button
                 type="button"
                 aria-expanded={!isShut}
-                onClick={() => setShut((x) => ({ ...x, [f.folder]: !isShut }))}
+                onClick={() => setFolderShut((x) => ({ ...x, [f.folder]: !isShut }))}
                 className="flex w-full items-center gap-2 rounded-md px-3.5 py-2.5 text-left hover:bg-sunk/60"
               >
                 <Folder size={16} aria-hidden="true" className="shrink-0 text-ink-3" />
@@ -127,6 +209,9 @@ export function TasksView({ data }: { data: TasksData }) {
                       onType={(v) => (v === '__new' ? setNewTypeFor(c.id) : saveType(c.id, v))}
                       onEdit={() => setEditing(c.id)}
                       onTick={(t, done) => tick(c, t, done)}
+                      onRemove={(t) => void remove(c, t)}
+                      shut={!!callShut[c.id]}
+                      onFold={() => setShut(c.id, !callShut[c.id])}
                     />
                   ))}
                 </div>
@@ -206,6 +291,9 @@ function TaskCallCard({
   onType,
   onEdit,
   onTick,
+  onRemove,
+  shut,
+  onFold,
 }: {
   card: TaskCard
   tasks: Task[]
@@ -214,6 +302,10 @@ function TaskCallCard({
   onType: (v: string) => void
   onEdit: () => void
   onTick: (t: Task, done: boolean) => void
+  onRemove: (t: Task) => void
+  /** its task list folded up (v143) */
+  shut: boolean
+  onFold: () => void
 }) {
   const set = card.meta?.meeting_type ?? ''
   const people = card.people
@@ -222,7 +314,17 @@ function TaskCallCard({
   return (
     <article className="rounded-md border border-line bg-panel p-3.5" aria-label={card.title} data-testid="task-card" data-id={card.id}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h3 className="min-w-0 text-[15.5px] font-semibold text-ink">
+        <h3 className="flex min-w-0 flex-wrap items-center gap-x-1 text-[15.5px] font-semibold text-ink">
+          <button
+            type="button"
+            aria-expanded={!shut}
+            aria-controls={'tk-' + card.id}
+            aria-label={(shut ? 'Show' : 'Hide') + ' this call’s tasks'}
+            onClick={onFold}
+            className="-ml-1 mr-0.5 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[7px] text-ink-3 hover:bg-sunk hover:text-ink"
+          >
+            <ChevronDown size={16} strokeWidth={2} aria-hidden="true" className={'transition-transform ' + (shut ? '-rotate-90' : '')} />
+          </button>
           {card.title}{' '}
           <small className="text-[13px] font-normal text-ink-3">
             {openOf(tasks)} of {tasks.length} open
@@ -267,9 +369,9 @@ function TaskCallCard({
         </button>
       </div>
 
-      <ul className="mt-2.5 space-y-2">
+      <ul id={'tk-' + card.id} hidden={shut} className="mt-2.5 space-y-2">
         {tasks.map((t) => (
-          <li key={t.id}>
+          <li key={t.id} className="group relative pr-8" data-testid="task">
             <label className="flex gap-2.5 text-[14px] text-ink">
               <input type="checkbox" checked={t.done} onChange={(e) => onTick(t, e.target.checked)} className="mt-1" />
               <span className="min-w-0">
@@ -279,6 +381,15 @@ function TaskCallCard({
                 ) : null}
               </span>
             </label>
+            <button
+              type="button"
+              title="Remove this task"
+              aria-label={'Remove “' + (t.text || 'this task') + '”'}
+              onClick={() => onRemove(t)}
+              className="absolute right-0 top-0 grid h-7 w-7 place-items-center rounded-[7px] text-ink-3 opacity-0 transition-opacity hover:bg-bad-soft hover:text-bad focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
           </li>
         ))}
       </ul>
