@@ -80,6 +80,22 @@ test('the five things: the brief’s TL;DR when there is no snapshot, each with 
   expect(rankPosts({ text: 'nothing in common at all here' }, items)).toEqual([])
 })
 
+test('a post shares two words with the point before the tag and value count (the board appointment under a point about CRMs)', () => {
+  const base = items[0]
+  const post = (id: string, headline: string, summary: string, themes: string[], val: IntelItem['val'], eng: number | null) =>
+    ({ ...base, id, url: 'https://example.com/' + id, head: headline, headline, summary, working: '', signal: '', shiftNote: '', themes, val, eng }) as IntelItem
+  const crm = { text: 'AI interface layer replacing CRM as primary workspace', why: 'HubSpot embedded CRM actions inside ChatGPT sidebar, top engagement post', tag: 'Adoption' }
+  const posts = [
+    post('a', 'HubSpot CRM now embedded in ChatGPT sidebar', 'Users approve updates without leaving ChatGPT.', ['ai-adoption'], 'high', 979),
+    post('b', 'HubSpot bundles AI access into CRM at no extra cost', 'Everyday AI access with scalable credits.', ['ai-adoption'], 'medium', 557),
+    post('c', 'Wealth management leader joins AI firm board', 'A board advisor to guide growth and AI adoption.', ['ai-adoption', 'financial-services'], 'high', 96),
+  ]
+  // the third shares no word with the point: the Adoption tag and its high value used to be enough (3 points)
+  expect(rankPosts(crm, posts)).toEqual(['a', 'b'])
+  // a quoted engagement number still counts on its own
+  expect(rankPosts({ text: 'A board post drew 96 reactions', tag: 'Adoption' }, posts)).toContain('c')
+})
+
 test('which brief a post went into, and why, in one line and in full', () => {
   const B = briefSets(briefA as never)
   const ranks = ranksOf(items)
