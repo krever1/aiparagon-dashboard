@@ -156,7 +156,8 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('hubspot_contacts').select('*').in('email', emails).limit(1),
-    supabase.from('agent_feedback').select('target_id').eq('target_type', 'e1_document').in('target_id', askIds).limit(2000),
+    // only the changes asked: a document marked reviewed in Approvals (action reviewed or reopened) is not one (v143)
+    supabase.from('agent_feedback').select('target_id').eq('target_type', 'e1_document').eq('action', 'changes').in('target_id', askIds).limit(2000),
     loadProposal(supabase, lead).catch(() => ({ view: null, template: null, run: null }) as ProposalData),
   ])
   const asks: Record<string, number> = {}

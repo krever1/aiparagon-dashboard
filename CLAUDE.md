@@ -1,6 +1,6 @@
 # AI Paragon internal dashboard (Next.js)
 
-Brief for Claude sessions in this repo. Last reviewed 2026-11-12.
+Brief for Claude sessions in this repo. Last reviewed 2026-11-25.
 
 ## What this is
 The AI Paragon Consulting Group team workspace: Touchpoint (home and tasks), Catalyst (clients and meetings),
@@ -12,7 +12,7 @@ until every page has moved; then aiparagon.vercel.app/dashboard forwards here.
 One repo per project (Kser, Nov 9): this repo is the internal dashboard only. The other projects (care portal, voice
 agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon until they get their own repos.
 
-## Where it stands (as of 2026-11-12)
+## Where it stands (as of 2026-11-25)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
   every current page address. A page not ported yet opens a card that links to it in the current dashboard.
 - Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
@@ -64,6 +64,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   testing 2a: the briefs page's link to the Intel Tracker's Following tab landed on the tab the tracker had before.
 - Password reset (Nov 17, branch `fix/password-reset`): Set a new password at /auth/reset, and Forgot your password?
   asks for a link back to it. Kser could not reset a password: the link opened http://localhost:3000. See Gotchas.
+- Erica's notes of Nov 24, round 1 (Nov 25, branch `nx/feedback-r1`; the current dashboard's v143): Back in the top bar,
+  Tasks' fold a call and remove a task, Approvals' "Ready for review" on a lead's stage document, and Run (or Run
+  again) on every report of a lead's page. Select, Send to Asana and Send to Notion stay in the current dashboard. See
+  Touchpoint and Catalyst below.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -82,10 +86,14 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 |---|---|---|
 | Touchpoint | Today, with Take the tour | here (Touchpoint part 3 and the finishing PR, not released) |
 | Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests, leads, comments | here (Touchpoint part 2 and the finishing PR, not released) |
+| Touchpoint | Approvals: a lead's stage document Ready for review, Mark reviewed | here (feedback round 1, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
+| Touchpoint | Tasks: fold a call, remove a task with Undo (Select, Send to Asana and Notion stay in the current dashboard) | here (feedback round 1, not released) |
+| Shell | Back in the top bar | here (feedback round 1, not released) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
 | Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
+| Catalyst | Run, or Run again, on every report of a lead's page | here (feedback round 1, not released) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
@@ -163,7 +171,15 @@ signed-in teammate's token, as the current dashboard's do.
   (`#error=...`) says so; opened with no link, the page says where links come from, or shows the form to a teammate
   already signed in. `src/components/auth-layout.tsx` is the sign-in pages' frame.
 - `src/components/shell`: the sidebar (one product open at a time; the page's product opens on arrival), the top bar
-  (product, then page) and the user card. Below 900px wide the sidebar is a drawer.
+  (Back, product, then page) and the user card. Below 900px wide the sidebar is a drawer.
+- Back (v143, `back-store.ts`, `Back` in `app-shell.tsx`): the pages visited in this browser tab, a lead's own page
+  included, in sessionStorage `ap.next.back.v1` (30 at most; this app is on another address, so the current dashboard's
+  `ap.back.v1` is not shared). A place is a path; the address it was last at (its tab, its filters) is kept with it, so
+  Back opens it the way it was left. `Back` records where each page settles on every path or search change (React
+  Activity keeps pages alive, so a page coming back does not mount again); Back takes the place off the list before it
+  goes (`takeBack`), so arriving adds nothing. Hidden on the first page; its tooltip and name are "Back to <page>" (the
+  page's title from `nav.ts`; a lead's page names itself by the lead with `usePlaceName`); on a phone only the arrow.
+  Sign out (`sign-out.tsx`) clears the list.
 - Styling: Tailwind with the current dashboard's tokens in `src/app/globals.css` (`@theme`: colors, Newsreader for
   headings, Instrument Sans for text, IBM Plex Mono). Use the theme names (`bg-panel`, `text-ink-2`, `bg-action`,
   `text-accent-text`, `rounded-lg`, `shadow-card`), not raw hex.
@@ -260,7 +276,8 @@ signed-in teammate's token, as the current dashboard's do.
 - What should change? (part 4, `change-ask.tsx`, `askChange`, v125): on each finished document card (the five older
   documents) and on the client proposal. A reason of at least 12 characters goes to `agent_feedback` (target_type
   e1_document, target_id `<lead email, lowercase>:<agent>`, action changes, author the teammate's email); the card counts
-  the asks on its document (`lead-page.ts` `asks`) and the count opens AI settings in the current dashboard. Not on the
+  the asks on its document (`lead-page.ts` `asks`, action changes only: Approvals' review marks share the target_type
+  and target_id, v143) and the count opens AI settings in the current dashboard. Not on the
   onboarding plan or the client review brief, as before.
 - The client proposal (part 4, `proposal.ts` pure rules, `proposal-run.ts`, `proposal-card.tsx`, `proposal-doc.tsx`,
   `doc-actions.ts`; v132 and v138): on the Proposal tab once the assessment is done (or a proposal or a run exists).
@@ -298,6 +315,16 @@ signed-in teammate's token, as the current dashboard's do.
   one said they land in the shared knowledge base, which lead uploads never did); the stage picker has no "✎ Type your
   own…".
 
+- Run on every report (v143RunBtns, `RunButton` in `lead-view.tsx`): each report tab of a lead's page (the prospect
+  brief, the consultation guide, the assessment, the proposal, and the onboarding plan and client review brief when
+  their tabs show) has Run ("Run assessment", the card's words) before it is written and Run again after, with the
+  current dashboard's tooltips. Either opens the stage question without a move (`askFor(stage, false)`, v136Ask with
+  move false): only that report runs, the stage saved for the lead does not change, and the tab says Catalyst is
+  writing it until it lands (while it runs the lead shows in that report's stage, as on the board, `viewStage`). A
+  lead with a run under way takes no other run (`stillWriting`). The follow-up guide has none: no stage runs it.
+- Changed on purpose in feedback round 1 (reported to Kser): a report not written yet has its Run inside the box that
+  says so (the old page added a second line, "Not written yet." with the button, above it).
+
 ## Touchpoint
 - Tasks (part 1, `tasks.ts` pure rules, `tasks-load.ts`, `src/components/tasks/tasks-view.tsx`, `src/app/(app)/tasks`;
   apTkHtml as v121 redefined it): the post-call to-dos.
@@ -316,6 +343,13 @@ signed-in teammate's token, as the current dashboard's do.
     built from its post-call actions, as apCxEdit does.
   - The Asana panel (a personal token saved in the current dashboard's browser storage) and Send to Asana stay in the
     current dashboard, behind a card that links to it. No call had ever been sent to Asana (`call_outputs.asana`, Nov 11).
+  - Fold and remove (v143): each call has a caret before its title that folds its tasks up, kept in this browser
+    (localStorage `ap.tk.shut`, {call id: 1}, the current dashboard's key and shape). Each task has × ("Remove this
+    task"; shown on hover, always on a touch screen): `removeTask` reads the row fresh, takes the task out of
+    `call_outputs.tasks` for the team (v143TkDel) and gives it back with its place; the message "Task removed: <task>"
+    has Undo, which puts it back at that place (`restoreTask`, read fresh too; nothing when it is back already). The
+    page hides a removed task until its data comes back without it. Select, the pick bar, Send to Asana and Send to
+    Notion (v143, v144) stay in the current dashboard.
 - Changed on purpose on Tasks (reported to Kser): Asana stays in the current dashboard (above); the heading line reads
   "Touchpoint · Home and tasks" like every ported page (the old page said "Touchpoint"); the heading's tooltip leaves
   out Send to Asana; a failed read of the post-call actions says so (the old page said "None yet"); the open count is
@@ -340,12 +374,18 @@ signed-in teammate's token, as the current dashboard's do.
       with action ready), with Check and approve to Content Transformation's Drafts here, at that draft (since 4a;
       one made from the briefs on Marketing Generation, in the current dashboard);
     - the Intel Tracker's pending replies (engagement_drafts), newest first;
-    - the board's leads waiting on a person (`leadWaits`, `waitsOnNext` in `catalyst/view.ts`): not a weak fit
-      (`fitTone` bad: weak or disqualified), nothing being written for them, and a next document not written yet
-      (`nextDocOf`: the lead's own stage's document, else the first later stage's without one; none once every stage
-      from its own on has its document), newest first: "Lee Ready · Ready Example LLC", "Next: Assessment report",
-      Open lead to the lead's page at that document's tab. Nothing to approve. Only from a whole read of the leads and
-      their documents (without the documents every lead would look as if it had none);
+    - the board's leads waiting on a person (`leadWaits`, v143LdItems; `inApprovals` in `catalyst/view.ts`): not a weak
+      fit (`fitTone` bad: weak or disqualified), nothing being written for them, not the anonymizer's placeholder, by
+      their own stage only, newest first. Its document not written yet: "Lee Ready · Ready Example LLC", "Next:
+      Assessment report", tags Lead and the stage's name, Open lead to the lead's page at that tab, nothing to approve.
+      Its document written (a row of its own, not only a link on the lead) and not reviewed since: "Ready for review:
+      Assessment report", tags Ready for review and the stage's name, Review to the lead's page at that tab and Mark
+      reviewed. Reviewed (`isReviewed`, v143Reviewed) is the newest agent_feedback row with target_type e1_document,
+      target_id `reviewKey` (`<lowercase email>:<agent>`, plus `:<stage>` for meeting_prep) on any of the lead's
+      emails, action reviewed or reopened, counting only when it says reviewed and was made at or after the document.
+      Mark reviewed writes that row (the stage's agent, action reviewed, "Reviewed in Approvals", author the teammate's
+      email; key `lead:<email>:<stage>`), Undo one with action reopened ("Undone in Approvals"); the message says
+      "Marked reviewed" / "2 marked reviewed". Only from a whole read of the leads, their documents and the marks;
     - open comments (dashboard_comments where resolved is not true, the newest 40): "Comment from <author>" (an email's
       part before the @), the comment, Resolve, and Open where it was left, by its target_key: `e1:<email>:<agent>` a
       lead's page here at that document's tab (the lead found by any of its emails; the board when none has it),
@@ -389,7 +429,7 @@ signed-in teammate's token, as the current dashboard's do.
     into a post (New draft here on its Upload tab, `/content-transformation?src=upload`, since 4b) and Put a landing
     page live (the picker on Landing pages).
   - Your workspace: the five products with their pages and a line each: things waiting (with this browser's skips),
-    leads and how many wait on a next stage (the leads Approvals lists, `waitsOnNext`), Canvas's and Atlas's fixed
+    leads and how many wait on a next stage (the leads Approvals lists as "Next: …", `waitsOnStage`), Canvas's and Atlas's fixed
     lines, briefs to review (all undecided, skipped or not, as before) and live landing pages.
   - Recent runs (`runs`, the four newest by start, a run with no start last), Latest sign-ups (`lp_signups`, the four
     newest, "5 minutes ago", the page's title on hover). The page reads its data again every 10 minutes while open
@@ -421,6 +461,10 @@ signed-in teammate's token, as the current dashboard's do.
   of counting documents (that count comes with the Deliverables port). Between 641 and 1080 px wide every card takes
   the whole width. A read that fails says so in its card. The Catalyst card's items past four open with Show N more
   (the old page sent them to the bell, which this app does not have yet).
+- Changed on purpose in feedback round 1 (reported to Kser): Approvals' leads follow v143 (their own stage only), so a
+  lead whose stage document is written now waits for a read instead of showing the next stage's document, and Today's
+  Catalyst line counts the "Next: …" ones. The lead page's What should change? count leaves out review marks (it counted
+  every e1_document row on the document, so a mark would have counted as a change asked).
 - Changed on purpose on Approvals (reported to Kser): a reply's approval or rejection is credited to the teammate's
   email (the old page credited the company profile's contact name, whoever clicked); one message per approval (the old
   page also said "Draft approved"); a failed read says so (the old page showed nothing waiting); Undo says "Undone" only
@@ -1120,7 +1164,8 @@ signed-in teammate's token, as the current dashboard's do.
   chart and client proposal rules; `catalyst.spec.ts` and `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts`
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
-  `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks, on the rows in `tasks-fixtures.ts`;
+  `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks (folding a call and removing a task too), on the
+  rows in `tasks-fixtures.ts`; `back.spec.ts` the top bar's Back;
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
   `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day; `approvalRows` empties
   e1_leads and dashboard_comments, so the stand-in's own leads do not wait there, and `catalystRows` seeds leads and

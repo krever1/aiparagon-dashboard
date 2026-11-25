@@ -149,7 +149,7 @@ test('Edit people and client: a client company names the folder; a folder folds 
   await expect.poll(async () => (await metaOf('9001'))?.client).toBe('Sample Peak LLC')
   await expect(folderNames(page)).toHaveText(['Sample Peak LLC', 'Acme Wealth', 'Example Ridge Advisors', 'Partners', 'AI Paragon (internal)'])
 
-  const partners = page.getByTestId('task-folder').filter({ has: page.locator('b', { hasText: /^Partners$/ }) }).locator('button[aria-expanded]')
+  const partners = page.getByTestId('task-folder').filter({ has: page.locator('b', { hasText: /^Partners$/ }) }).locator(':scope > button[aria-expanded]')
   await partners.click()
   await expect(partners).toHaveAttribute('aria-expanded', 'false')
   await expect(card(page, '7001')).toHaveCount(0)
@@ -191,4 +191,69 @@ test('no to-dos yet, and nothing runs off the side on a phone', async ({ page })
   await page.reload()
   await expect(page.getByTestId('task-card')).toHaveCount(6)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+// ---------- v143: fold a call, remove a task ----------
+
+test('a call folds up, and stays folded in this browser', async ({ page }) => {
+  await signIn(page, '/tasks')
+  const robin = card(page, '9001')
+  const fold = robin.getByRole('button', { name: 'Hide this call’s tasks' })
+  await expect(fold).toHaveAttribute('aria-expanded', 'true')
+  await fold.click()
+  const show = robin.getByRole('button', { name: 'Show this call’s tasks' })
+  await expect(show).toHaveAttribute('aria-expanded', 'false')
+  await expect(robin.getByRole('checkbox')).toHaveCount(0)
+  // the call's heading and its count stay; the other calls are as they were
+  await expect(robin.getByRole('heading', { level: 3 })).toHaveText('Discovery consultation with Robin 1 of 2 open')
+  await expect(card(page, '9003').getByRole('checkbox')).toHaveCount(2)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ap.tk.shut') || '{}'))).toEqual({ '9001': 1 })
+
+  await page.reload()
+  await expect(card(page, '9001').getByRole('button', { name: 'Show this call’s tasks' })).toBeVisible()
+  await expect(card(page, '9001').getByRole('checkbox')).toHaveCount(0)
+  await card(page, '9001').getByRole('button', { name: 'Show this call’s tasks' }).click()
+  await expect(card(page, '9001').getByRole('checkbox')).toHaveCount(2)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ap.tk.shut') || '{}'))).toEqual({})
+})
+
+test('× takes a task off the call for the team; Undo puts it back where it was', async ({ page }) => {
+  await signIn(page, '/tasks')
+  const robin = card(page, '9001')
+  const tasksOf = async () =>
+    (await stubRows<{ call_id: string; tasks: { id: string; done: boolean }[] }>('call_outputs')).find((r) => r.call_id === '9001')!.tasks.map((t) => `${t.id}:${t.done}`).join(',')
+
+  const x = robin.getByRole('button', { name: 'Remove “Send the onboarding checklist”' })
+  await expect(x).toHaveAttribute('title', 'Remove this task')
+  await x.click()
+  await expect(toasts(page)).toContainText('Task removed: Send the onboarding checklist')
+  await expect(robin.getByRole('checkbox', { name: 'Send the onboarding checklist' })).toHaveCount(0)
+  await expect(robin.getByRole('heading', { level: 3 })).toHaveText('Discovery consultation with Robin 0 of 1 open')
+  await expect(page.getByTestId('open-count')).toHaveText('5 open')
+  await expect.poll(tasksOf).toBe('t2:true')
+  // the rest of the task's details are kept for Undo
+  await toasts(page).getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(tasksOf).toBe('t1:false,t2:true')
+  await expect(robin.getByRole('checkbox', { name: 'Send the onboarding checklist' })).toBeVisible()
+  await expect(robin.getByText('QA Teammate · due Nov 12, 2026 · They asked for it')).toBeVisible()
+  expect(await page.locator('[data-id="9001"] [data-testid="task"]').allInnerTexts()).toEqual([
+    expect.stringContaining('Send the onboarding checklist'),
+    expect.stringContaining('Book the assessment'),
+  ])
+})
+
+test('removing a task reads the list fresh, so a teammate’s tick made meanwhile stays', async ({ page }) => {
+  await signIn(page, '/tasks')
+  // a teammate unticks "Book the assessment" after this page was drawn
+  await stubSeed({
+    call_outputs: TASK_OUTPUTS.map((o) =>
+      o.call_id === '9001' ? { ...o, tasks: o.tasks.map((t) => (t.id === 't2' ? { ...t, done: false } : t)) } : o,
+    ),
+  })
+  await card(page, '9001').getByRole('button', { name: 'Remove “Send the onboarding checklist”' }).click()
+  await expect(toasts(page)).toContainText('Task removed: Send the onboarding checklist')
+  const row = async () => (await stubRows<{ call_id: string; tasks: { id: string; done: boolean }[] }>('call_outputs')).find((r) => r.call_id === '9001')!.tasks
+  await expect.poll(async () => (await row()).map((t) => `${t.id}:${t.done}`).join(',')).toBe('t2:false')
+  // the page now shows what the team has
+  await expect(card(page, '9001').getByRole('checkbox', { name: 'Book the assessment' })).not.toBeChecked()
 })

@@ -2,7 +2,7 @@ import 'server-only'
 import { type InboxData, loadInbox } from '@/lib/catalyst/inbox-load'
 import { loadPipeline } from '@/lib/catalyst/load'
 import type { StageNames } from '@/lib/catalyst/stages'
-import { waitsOnNext } from '@/lib/catalyst/view'
+import { waitsOnStage } from '@/lib/catalyst/view'
 import { createClient } from '@/lib/supabase/server'
 import { type ApprovalsData, loadApprovals } from './approvals-load'
 import type { RunRow } from './today'
@@ -14,7 +14,7 @@ export type Signup = { id: string; who: string; page: string; at: string }
 
 export type TodayData = {
   approvals: ApprovalsData
-  /** leads, and those waiting on their next document (Approvals' Leads); null when they could not be read */
+  /** leads, and those waiting on their stage's document (Approvals' "Next: …" leads); null when they could not be read */
   leads: { count: number; next: number } | null
   /** live landing pages; null when they could not be read */
   live: number | null
@@ -48,7 +48,7 @@ export async function loadToday(): Promise<TodayData> {
   const inbox: InboxData = pipeline && !pipeline.error ? await loadInbox(pipeline.leads, now).catch(() => ({ items: [], leads: [] })) : { items: [], leads: [] }
 
   // only from a whole read: without the documents every lead would look as if it had none
-  const leads = pipeline && !pipeline.error ? { count: pipeline.leads.length, next: pipeline.leads.filter(waitsOnNext).length } : null
+  const leads = pipeline && !pipeline.error ? { count: pipeline.leads.length, next: pipeline.leads.filter(waitsOnStage).length } : null
 
   // the sign-ups' pages, for the name shown when a row is pointed at
   const rows = (su.data ?? []) as Record<string, unknown>[]

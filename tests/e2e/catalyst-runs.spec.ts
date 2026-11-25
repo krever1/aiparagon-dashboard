@@ -359,3 +359,78 @@ test('Esc and Cancel close the question and write nothing', async ({ page }) => 
   const writes = (await stubCalls()).filter((c) => (c.path.startsWith('/rest/v1/') && c.method !== 'GET') || (c.path.startsWith('/webhook/') && !['fathom-proxy', 'catalyst-emails'].some((x) => c.path.endsWith(x))))
   expect(writes).toEqual([])
 })
+
+// ---------- v143: Run on every report of a lead's page ----------
+
+const ROBIN = leadId({ prospect_name: 'Robin Sample', email: 'robin.sample@example.com' })
+const LEE_C = leadId({ prospect_name: 'Lee Client', email: 'lee.client@example.com' })
+
+test('v143: Run again on a written report asks first, runs only that report, and the lead stays in its stage', async ({ page }) => {
+  await signIn(page, `/lead-pipeline/${PAT}?tab=research`)
+  const again = page.getByTestId('doc-card').getByRole('button', { name: 'Run again' })
+  await expect(again).toHaveAttribute('title', 'Write a new version of the pre-meeting prospect brief. The lead stays in its stage, and the earlier version stays in Files.')
+  await again.click()
+  const dlg = page.getByRole('dialog', { name: 'Run the pre-meeting prospect brief for Pat Example?' })
+  await expect(dlg).toBeVisible()
+  await expect(dlg.getByText(/^Pre-meeting prospect brief was written on /)).toBeVisible()
+  // no move: only the run, and nothing before an answer
+  await expect(dlg.getByRole('button', { name: 'Just move it' })).toHaveCount(0)
+  await expect(dlg.getByRole('button', { name: 'Move and run it' })).toHaveCount(0)
+  expect(await posts(FULL)).toHaveLength(0)
+  await dlg.getByRole('button', { name: 'Run it again' }).click()
+  await expect(dlg).toBeHidden()
+  const sent = await posts(FULL)
+  expect(sent).toHaveLength(1)
+  expect(sent[0].body).toMatchObject({ email: 'pat.example@example.com', only: true, stage: 'research' })
+  expect(await posts(CUSTOM)).toHaveLength(0)
+  expect((await lead('pat.example@example.com'))?.stage ?? null).toBeNull()
+  expect((await runs())['pat.example@example.com']).toMatchObject({ s: 'research', by: TEAM.email })
+
+  // the report's tab says Catalyst is writing it, with no Run. While it runs the lead shows in that report's stage, as on
+  // the board; the stage saved for it is not changed (above)
+  await expect(page.getByRole('status').filter({ hasText: 'Catalyst is writing' })).toHaveText(
+    'Catalyst is writing the pre-meeting prospect brief. It shows here when it is done.',
+  )
+  await expect(page.getByTestId('run-report')).toHaveCount(0)
+  await expect(page.getByLabel('Move this lead to another stage')).toHaveValue('research')
+  // another report's Run waits for this one
+  await page.getByRole('tab', { name: '✓ Assessment' }).click()
+  await page.getByTestId('doc-card').getByRole('button', { name: 'Run again' }).click()
+  await expect(toasts(page)).toContainText('Catalyst is still writing for Pat Example. It shows on the card when it is done.')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('v143: a report not written yet has Run; the follow-up guide has none; the prep tabs have Run again once written', async ({ page }) => {
+  await signIn(page, `/lead-pipeline/${ROBIN}?tab=assessment`)
+  // Robin is in the consultation stage: the assessment is not written, and runs on its own without moving her
+  const run = page.getByRole('button', { name: 'Run assessment' })
+  await expect(run).toHaveAttribute('title', 'Write the assessment report now. The lead stays in its stage.')
+  await expect(page.getByText('This stage hasn’t produced output for this lead yet.')).toBeVisible()
+  await run.click()
+  const dlg = page.getByRole('dialog', { name: 'Run the assessment report for Robin Sample?' })
+  await expect(dlg).toBeVisible()
+  await expect(dlg.getByRole('button', { name: 'Just move it' })).toHaveCount(0)
+  await dlg.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dlg).toHaveCount(0)
+  expect(await posts(CUSTOM)).toHaveLength(0)
+
+  // a document only linked on the lead is written too: Run again
+  await page.getByRole('tab', { name: '✓ Prospect brief' }).click()
+  await expect(page.getByTestId('doc-card').getByRole('button', { name: 'Run again' })).toBeVisible()
+  // every report tab has one; the proposal too
+  await page.getByRole('tab', { name: 'Proposal' }).click()
+  await expect(page.getByRole('button', { name: 'Run proposal' })).toBeVisible()
+
+  // the follow-up guide: no stage runs it, so no button (Pat has one)
+  await page.goto(`/lead-pipeline/${PAT}?tab=followup`)
+  await expect(page.getByTestId('doc-card')).toBeVisible()
+  await expect(page.getByTestId('run-report')).toHaveCount(0)
+
+  // the onboarding plan once written: Run again, through the same question
+  await page.goto(`/lead-pipeline/${LEE_C}?tab=onboarding`)
+  const prep = page.getByTestId('prep-card')
+  await expect(prep.getByRole('button', { name: 'Read inline ▾' })).toBeVisible()
+  await prep.getByRole('button', { name: 'Run again' }).click()
+  await expect(page.getByRole('dialog', { name: 'Run the onboarding plan for Lee Client?' })).toBeVisible()
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Run it again' })).toBeVisible()
+})

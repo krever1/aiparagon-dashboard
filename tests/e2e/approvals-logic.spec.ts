@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { type LeadView, nextDocOf, waitsOnNext } from '../../src/lib/catalyst/view'
+import { type LeadView, waitsOnStage } from '../../src/lib/catalyst/view'
 import {
-  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, briefHref, clip, commentReview, draftTitle, hookText, kindLabel, leadWaits, parseKey, safeUrl,
+  type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, briefHref, clip, commentReview, draftTitle, hookText, isReviewed, kindLabel, leadWaits, parseKey, reviewKey, safeUrl,
   snapItems, tabFromWord, tldr, undecided, viewOf, waitingChips, whyText, wordOf,
 } from '../../src/lib/touchpoint/approvals'
 import { DR, IMG, INTEL_MD, RID, RQ, RUN1, RUN2, RUN4, approvalRows, campaignRows, file, reply } from './approvals-fixtures'
@@ -308,45 +308,77 @@ const lead = (over: Partial<LeadView> = {}): LeadView => ({
   ids: { research: false, interview: false, anonymized: false }, run: null, anonEmail: '', anonCompany: '', search: '', ...over,
 })
 
-test('part C: the next document a lead needs, and which leads wait on a person', () => {
-  // nothing yet: the prospect brief
-  expect(nextDocOf(lead())).toBe('research')
-  // moved to Assessment with the two documents before it: the assessment report
-  expect(nextDocOf(lead({ stored: 'assessment', docs: { research: 1, consultation: 2 } }))).toBe('assessment')
-  // its own stage's document is there, and the proposal too: the onboarding plan
-  expect(nextDocOf(lead({ stored: 'assessment', derived: 'proposal', docs: { assessment: 1, proposal: 2 } }))).toBe('onboarding')
-  // a document before its stage that is missing does not count: only its stage on
-  expect(nextDocOf(lead({ stored: 'proposal', docs: { proposal: 1 } }))).toBe('onboarding')
-  // the client review brief is there: nothing next
-  expect(nextDocOf(lead({ stored: 'review', docs: { review: 1 } }))).toBeNull()
-  // a run in progress sits in its stage: that is the next document, being written
-  expect(nextDocOf(lead({ run: { s: 'consultation', t0: '2026-11-11T11:00:00Z' }, docs: { research: 1 } }))).toBe('consultation')
+test('part C (v143): which leads wait on a person, and for what', () => {
+  // nothing yet: waiting on the prospect brief
+  expect(waitsOnStage(lead())).toBe(true)
+  expect(waitsOnStage(lead({ fit: 'Moderate' }))).toBe(true)
+  expect(waitsOnStage(lead({ fit: '' }))).toBe(true)
+  expect(waitsOnStage(lead({ fit: 'Weak' }))).toBe(false)
+  expect(waitsOnStage(lead({ fit: 'weak fit' }))).toBe(false)
+  expect(waitsOnStage(lead({ fit: 'Disqualified' }))).toBe(false)
+  expect(waitsOnStage(lead({ run: { s: 'research', t0: '2026-11-11T11:00:00Z' } }))).toBe(false)
+  // its own stage's document is written: it waits on a read now, not a run
+  expect(waitsOnStage(lead({ stored: 'review', docs: { review: 1 } }))).toBe(false)
+  expect(waitsOnStage(lead({ email: 'contact@deltaadvisory.com', emails: ['contact@deltaadvisory.com'] }))).toBe(false)
 
-  expect(waitsOnNext(lead())).toBe(true)
-  expect(waitsOnNext(lead({ fit: 'Moderate' }))).toBe(true)
-  expect(waitsOnNext(lead({ fit: '' }))).toBe(true)
-  expect(waitsOnNext(lead({ fit: 'Weak' }))).toBe(false)
-  expect(waitsOnNext(lead({ fit: 'weak fit' }))).toBe(false)
-  expect(waitsOnNext(lead({ fit: 'Disqualified' }))).toBe(false)
-  expect(waitsOnNext(lead({ run: { s: 'research', t0: '2026-11-11T11:00:00Z' } }))).toBe(false)
-  expect(waitsOnNext(lead({ stored: 'review', docs: { review: 1 } }))).toBe(false)
-
-  // newest first, with what each needs next
+  const at = Date.parse('2026-11-09T10:00:00Z')
   const waits = leadWaits([
-    lead({ id: 'old-1111111111', name: 'Old Lead', email: 'old@example.com', updatedAt: '2026-11-01T10:00:00Z', stored: 'consultation', docs: { research: 1 } }),
+    // a stage document written and not reviewed: ready for review, dated by the document
+    lead({ id: 'read-1111111111', name: 'Rae Read', email: 'rae@example.com', emails: ['rae@example.com'], stored: 'assessment', docs: { research: 1, assessment: at } }),
+    // the documents of later stages do not count: only its own (it would have been "Next: …" a later stage before v143)
     lead({ fit: 'Weak', id: 'weak-2222222222' }),
     lead(),
-    lead({ id: 'none-3333333333', name: 'No Date', email: 'none@example.com', updatedAt: null }),
+    lead({ id: 'none-3333333333', name: 'No Date', email: 'none@example.com', emails: ['none@example.com'], updatedAt: null }),
+    // a document only linked on the lead (no row of its own) waits on neither
+    lead({ id: 'link-4444444444', email: 'link@example.com', emails: ['link@example.com'], stored: 'research', docs: { research: 0 } }),
+    // being written for: not listed
+    lead({ id: 'busy-5555555555', email: 'busy@example.com', run: { s: 'research', t0: '2026-11-11T11:00:00Z' } }),
   ])
   expect(waits).toEqual([
-    { id: 'lee-ready-0123456789', email: 'Lee.Ready@example.com', name: 'Lee Ready', company: 'Ready Example LLC', next: 'research', updatedAt: '2026-11-10T10:00:00Z' },
-    { id: 'old-1111111111', email: 'old@example.com', name: 'Old Lead', company: 'Ready Example LLC', next: 'consultation', updatedAt: '2026-11-01T10:00:00Z' },
-    { id: 'none-3333333333', email: 'none@example.com', name: 'No Date', company: 'Ready Example LLC', next: 'research', updatedAt: '' },
+    { id: 'lee-ready-0123456789', email: 'Lee.Ready@example.com', name: 'Lee Ready', company: 'Ready Example LLC', stage: 'research', ready: false, when: '2026-11-10T10:00:00Z' },
+    { id: 'read-1111111111', email: 'rae@example.com', name: 'Rae Read', company: 'Ready Example LLC', stage: 'assessment', ready: true, when: '2026-11-09T10:00:00.000Z' },
+    { id: 'none-3333333333', email: 'none@example.com', name: 'No Date', company: 'Ready Example LLC', stage: 'research', ready: false, when: '' },
   ])
 })
 
+test('part C (v143): a stage document counts as reviewed by its newest mark, made after the document', () => {
+  // the review key: the email in lower case, the agent, and the stage for the meeting prep
+  expect(reviewKey('Lee.Ready@Example.com', 'research')).toBe('lee.ready@example.com:lead_research')
+  expect(reviewKey('lee@example.com', 'consultation')).toBe('lee@example.com:interview_script')
+  expect(reviewKey('lee@example.com', 'assessment')).toBe('lee@example.com:anonymizer')
+  expect(reviewKey('lee@example.com', 'proposal')).toBe('lee@example.com:growth_plan')
+  expect(reviewKey('lee@example.com', 'onboarding')).toBe('lee@example.com:meeting_prep:onboarding')
+  expect(reviewKey('lee@example.com', 'review')).toBe('lee@example.com:meeting_prep:review')
+
+  const doc = Date.parse('2026-11-09T10:00:00Z')
+  const m = (target: string, action: string, at: string) => ({ target, action, at })
+  const emails = ['Lee@example.com', 'lee.work@example.com']
+  expect(isReviewed(emails, 'assessment', doc, [])).toBe(false)
+  expect(isReviewed(emails, 'assessment', doc, [m('lee@example.com:anonymizer', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(true)
+  // any of the lead's emails, in any case
+  expect(isReviewed(emails, 'assessment', doc, [m('LEE.WORK@example.com:anonymizer', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(true)
+  // a mark made at the document's time counts; one before it (an earlier version) does not
+  expect(isReviewed(emails, 'assessment', doc, [m('lee@example.com:anonymizer', 'reviewed', '2026-11-09T10:00:00Z')])).toBe(true)
+  expect(isReviewed(emails, 'assessment', doc, [m('lee@example.com:anonymizer', 'reviewed', '2026-11-08T10:00:00Z')])).toBe(false)
+  // the newest mark wins: undone is waiting again, reviewed again is read
+  const undone = [m('lee@example.com:anonymizer', 'reviewed', '2026-11-10T10:00:00Z'), m('lee@example.com:anonymizer', 'reopened', '2026-11-10T11:00:00Z')]
+  expect(isReviewed(emails, 'assessment', doc, undone)).toBe(false)
+  expect(isReviewed(emails, 'assessment', doc, [...undone, m('lee@example.com:anonymizer', 'reviewed', '2026-11-10T12:00:00Z')])).toBe(true)
+  // a change asked is not a read; another stage's or another lead's mark does not count
+  expect(isReviewed(emails, 'assessment', doc, [m('lee@example.com:anonymizer', 'changes', '2026-11-10T10:00:00Z')])).toBe(false)
+  expect(isReviewed(emails, 'assessment', doc, [m('lee@example.com:lead_research', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(false)
+  expect(isReviewed(emails, 'assessment', doc, [m('other@example.com:anonymizer', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(false)
+  // the meeting prep by its stage: the onboarding plan's read is not the client review brief's
+  expect(isReviewed(emails, 'review', doc, [m('lee@example.com:meeting_prep:onboarding', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(false)
+  expect(isReviewed(emails, 'review', doc, [m('lee@example.com:meeting_prep:review', 'reviewed', '2026-11-10T10:00:00Z')])).toBe(true)
+  expect(leadWaits([lead({ stored: 'review', docs: { review: doc } })], [m('lee.ready@example.com:meeting_prep:review', 'reviewed', '2026-11-10T10:00:00Z')])).toEqual([])
+})
+
 test('part C: leads after the replies, then comments, each with what it says and where it opens', () => {
-  const leads = leadWaits([lead({ stored: 'assessment', docs: { research: 1, consultation: 2 } }), lead({ id: 'solo-4444444444', name: 'Solo', email: 'solo@example.com', company: '', updatedAt: '2026-11-09T10:00:00Z' })])
+  const leads = leadWaits([
+    lead({ stored: 'assessment', docs: { research: 1, consultation: 2 } }),
+    lead({ id: 'solo-4444444444', name: 'Solo', email: 'solo@example.com', emails: ['solo@example.com'], company: '', updatedAt: '2026-11-09T10:00:00Z' }),
+  ])
   const comments = [
     { id: 'c1', target: 'e1:LEE.READY@example.com:interview_script', author: 'Erin Example', body: 'Ask about the custodian move.', createdAt: '2026-11-11T10:00:00Z' },
     { id: 'c2', target: 'brief:agent1_2026-11-08_0700', author: 'robin@example.com', body: 'Drop the fee posts?', createdAt: '2026-11-10T10:00:00Z' },
@@ -358,7 +390,7 @@ test('part C: leads after the replies, then comments, each with what it says and
 
   const [lee, solo, c1, c2, c3] = items.slice(-5)
   expect(lee).toMatchObject({
-    kind: 'lead', icon: 'users', title: 'Lee Ready · Ready Example LLC', text: 'Next: Assessment report', tags: [{ text: 'Lead' }, { text: 'Catalyst' }],
+    kind: 'lead', icon: 'users', title: 'Lee Ready · Ready Example LLC', text: 'Next: Assessment report', tags: [{ text: 'Lead' }, { text: 'Assessment' }],
     approve: false, review: { kind: 'link', href: '/lead-pipeline/lee-ready-0123456789?tab=assessment', label: 'Open lead' }, when: '2026-11-10T10:00:00Z',
   })
   expect(lee.review).not.toHaveProperty('out')
@@ -415,6 +447,31 @@ test('part C: the key a comment’s Resolve takes; leads are never written', () 
   const id = '73000000-0000-4000-8000-000000000001'
   expect(parseKey('cmt:' + id)).toEqual({ kind: 'comment', id })
   for (const k of ['cmt:', 'cmt:42', 'cmt:' + id + ':x', 'cmt:' + id + "'", 'lead:lee.ready@example.com', 'lead:' + id]) expect(parseKey(k)).toBeNull()
+  // v143: a lead's stage document marked reviewed takes its email (lower case) and stage; a lead waiting on a run is
+  // never written
+  expect(parseKey('lead:Lee.Ready@example.com:assessment')).toEqual({ kind: 'lead', email: 'lee.ready@example.com', stage: 'assessment' })
+  expect(parseKey('lead:lee@example.com:review')).toEqual({ kind: 'lead', email: 'lee@example.com', stage: 'review' })
+  for (const k of ['lead:lee@example.com:followup', 'lead:lee@example.com:', 'lead:notanemail:research', 'lead:lee@example.com:research:x', "lead:l'ee@example.com:research"]) {
+    expect(parseKey(k)).toBeNull()
+  }
+})
+
+test('part C (v143): a stage document ready for review is marked reviewed from the list, or read on the lead’s page', () => {
+  const at = Date.parse('2026-11-10T09:00:00Z')
+  const leads = leadWaits([
+    lead({ stored: 'assessment', docs: { assessment: at } }),
+    lead({ id: 'dana-6666666666', name: 'Dana Done', email: 'Dana@example.com', emails: ['Dana@example.com'], company: '', stored: 'review', docs: { review: at - D } }),
+  ])
+  const items = approvalItems(input({ leads, names: { review: 'Check-in' } }))
+  const [lee, dana] = items.filter((x) => x.kind === 'lead')
+  expect(lee).toMatchObject({
+    key: 'lead:lee.ready@example.com:assessment', title: 'Lee Ready · Ready Example LLC', text: 'Ready for review: Assessment report',
+    tags: [{ text: 'Ready for review', tone: 'good' }, { text: 'Assessment' }], approve: true, approveLabel: 'Mark reviewed',
+    review: { kind: 'link', href: '/lead-pipeline/lee-ready-0123456789?tab=assessment', label: 'Review' }, when: '2026-11-10T09:00:00.000Z',
+  })
+  // the team's stage names
+  expect(dana).toMatchObject({ key: 'lead:dana@example.com:review', title: 'Dana Done', text: 'Ready for review: Client review brief', tags: [{ text: 'Ready for review', tone: 'good' }, { text: 'Check-in' }] })
+  expect(parseKey(lee.key)).toEqual({ kind: 'lead', email: 'lee.ready@example.com', stage: 'assessment' })
 })
 
 test('a draft or a failed request made from the briefs opens on Marketing Generation; one from your own material here', () => {

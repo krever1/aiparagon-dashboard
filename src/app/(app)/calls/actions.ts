@@ -284,6 +284,43 @@ export async function tickTask(outputId: string, taskId: string, done: boolean):
   return { ok: true }
 }
 
+export type Removed = { ok: true; task: Record<string, unknown>; at: number } | { ok: false; error: string }
+
+/** A task taken off a call's list for the whole team (v143TkDel): read fresh, so a teammate's tick is never lost. It
+ * comes back with where it was, for Undo. */
+export async function removeTask(outputId: string, taskId: string): Promise<Removed> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('call_outputs').select('tasks').eq('id', str(outputId)).maybeSingle()
+  if (error || !data) return { ok: false, error: 'Could not remove that task: ' + (error?.message || 'the actions are gone') }
+  const tasks = Array.isArray(data.tasks) ? (data.tasks as Record<string, unknown>[]) : []
+  const at = tasks.findIndex((t, i) => (str(t?.id) || String(i)) === str(taskId))
+  if (at < 0) return { ok: false, error: 'Could not remove that task: it is not on the list any more.' }
+  const next = tasks.filter((_, i) => i !== at)
+  const up = await supabase.from('call_outputs').update({ tasks: next, updated_at: new Date().toISOString() }).eq('id', str(outputId))
+  if (up.error) return { ok: false, error: 'Could not remove that task: ' + up.error.message }
+  refresh()
+  return { ok: true, task: tasks[at], at }
+}
+
+/** Undo: the task goes back where it was (or at the end when the list is shorter now); nothing when it is back already. */
+export async function restoreTask(outputId: string, task: Record<string, unknown>, at: number): Promise<Done> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
+  const t = task && typeof task === 'object' && !Array.isArray(task) ? task : null
+  if (!t || JSON.stringify(t).length > 20_000) return { ok: false, error: 'Could not put it back: that is not a task.' }
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('call_outputs').select('tasks').eq('id', str(outputId)).maybeSingle()
+  if (error || !data) return { ok: false, error: 'Could not put it back: ' + (error?.message || 'the actions are gone') }
+  const tasks = Array.isArray(data.tasks) ? (data.tasks as Record<string, unknown>[]) : []
+  if (str(t.id) && tasks.some((x) => str(x?.id) === str(t.id))) return { ok: true }
+  const next = tasks.slice()
+  next.splice(Math.max(0, Math.min(Number(at) || 0, next.length)), 0, t)
+  const up = await supabase.from('call_outputs').update({ tasks: next, updated_at: new Date().toISOString() }).eq('id', str(outputId))
+  if (up.error) return { ok: false, error: 'Could not put it back: ' + up.error.message }
+  refresh()
+  return { ok: true }
+}
+
 // ---------- Slack ----------
 
 export type SlackChannel = { id: string; name: string; member: boolean }
