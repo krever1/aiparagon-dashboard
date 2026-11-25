@@ -479,6 +479,9 @@ signed-in teammate's token, as the current dashboard's do.
     cascade}]}).
   - Write a post on this opens Marketing Generation in the current dashboard, where the current dashboard writes posts
     from the briefs (v97Start('brief')); Open the brief opens the briefs page here.
+- Brief sources (Nov 25, branch `fix/brief-sources`): a post counts as a source of a five-things point only when it
+  shares two words with the point, or its engagement is quoted there; before, the tag and high-value bonuses alone (3
+  points) let unrelated posts in. The current dashboard's v143 does the same.
 - Changed on purpose on the Intel Tracker (reported to Kser): a run started is kept for the team (the old page kept it
   in one browser); the run picker lists the tracker's own runs (the old page took the 40 newest runs of every agent,
   so a busy week hid older tracker runs); the address keeps the run, the tab and the filters, and a bare address always
