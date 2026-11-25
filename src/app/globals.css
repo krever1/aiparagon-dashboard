@@ -818,3 +818,16 @@ body {
     font-size: 17.5px;
   }
 }
+
+/* feedback mode (v144): the spot under the pointer is outlined, and the page takes notes, not clicks */
+body.fb-on #main {
+  cursor: crosshair;
+}
+body.fb-on [data-fb-hl] {
+  outline: 2px dashed #c9a227 !important;
+  outline-offset: 2px;
+}
+/* the feedback bar sits at the bottom, so the messages show above it */
+body.fb-on [data-testid='toasts'] {
+  bottom: 84px;
+}

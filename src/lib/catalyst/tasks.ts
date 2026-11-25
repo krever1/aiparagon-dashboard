@@ -2,7 +2,7 @@
 // steps, open ones first, then the newest, 40 at most; the type buttons over them; and the calls filed in client
 // folders, newest folder first. Pure: the page and the tests both use it.
 
-import { type CallMeta, type CallOutput, type FtCall, type Guest, CAT_MAIN, catButtonsOf, catOf, folderOf, leadOf, peopleOf, typeOf } from './calls'
+import { type CallMeta, type CallOutput, type FilingCtx, type FtCall, type Guest, type TypeNames, CAT_MAIN, NO_FILING, catButtonsOf, catOf, filedFolder, leadOf, peopleOf, typeOf } from './calls'
 
 export const TASK_CARDS_MAX = 40
 
@@ -31,6 +31,7 @@ export function taskCards(
   meta: Record<string, CallMeta>,
   calls: FtCall[],
   leads: { emails: string[]; company: string }[],
+  ctx: FilingCtx = NO_FILING,
 ): TaskCard[] {
   const byId = new Map(calls.map((c) => [c.id, c]))
   const when = (o: CallOutput) => o.call_start || o.created_at
@@ -58,14 +59,14 @@ export function taskCards(
         when: when(o),
         type,
         cat: catOf(type),
-        folder: folderOf(c, m, o, lead?.company ?? ''),
+        folder: filedFolder(c, m, o, ctx, lead?.company ?? ''),
         people: peopleOf(c, m),
       }
     })
 }
 
 /** The type buttons over the to-dos. */
-export const taskButtons = (cards: TaskCard[]) => catButtonsOf(cards.map((c) => c.cat))
+export const taskButtons = (cards: TaskCard[], names: TypeNames = {}) => catButtonsOf(cards.map((c) => c.cat), names)
 
 /** The kind of call shown: a picked kind with nothing in it shows everything again, unless it is one of Erica's three. */
 export function shownCat(cards: TaskCard[], picked: string): string {

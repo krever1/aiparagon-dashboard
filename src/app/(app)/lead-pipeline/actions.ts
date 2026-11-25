@@ -374,3 +374,28 @@ export async function answerCall(input: { leadId: string; callId: string; action
   refresh()
   return { ok: true, toast: `Started. ${st.doc} shows on the Lead pipeline when it is done.` }
 }
+
+// ---------- a lead's HubSpot tab, read live (v144HsLoad) ----------
+
+export type HubspotLiveResult = { ok: true; found: boolean; id: string; contact: Record<string, string>; at: string } | { ok: false; error: string }
+
+/**
+ * What HubSpot has for the lead right now, through Dashboard · HubSpot Contact Proxy (team sign-in only, reads only):
+ * `{ok, found, id, contact, at}`, or why it could not be read.
+ */
+export async function hubspotLive(email: string): Promise<HubspotLiveResult> {
+  if (!(await getCurrentUser())) return { ok: false, error: 'You are signed out. Sign in again.' }
+  const e = String(email ?? '').trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || e === 'contact@deltaadvisory.com') return { ok: false, error: 'That is not a lead’s email.' }
+  let j: Record<string, unknown>
+  try {
+    j = await callN8n('catalyst-hubspot-contact', { email: e }, { what: 'HubSpot Contact', workflow: 'Dashboard · HubSpot Contact Proxy' })
+  } catch (x) {
+    return { ok: false, error: (x instanceof Error && x.message) || 'HubSpot could not be reached.' }
+  }
+  if (!j || j.ok === false) return { ok: false, error: String(j?.message || '') || 'HubSpot did not answer.' }
+  const c = j.contact && typeof j.contact === 'object' ? (j.contact as Record<string, unknown>) : {}
+  const contact: Record<string, string> = {}
+  for (const [k, v] of Object.entries(c)) if (v !== null && v !== undefined && typeof v !== 'object') contact[k] = String(v)
+  return { ok: true, found: !!j.found, id: String(j.id ?? ''), contact, at: String(j.at || '') || new Date().toISOString() }
+}

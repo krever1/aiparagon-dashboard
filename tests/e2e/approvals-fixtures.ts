@@ -72,7 +72,7 @@ export function approvalRows(now = Date.now()) {
 }
 
 /** Where the made-up ad images live: the stand-in's address, which the browser tests answer with a tiny picture. */
-export const IMG = 'http://127.0.0.1:54399/storage/v1/object/public/creatives/'
+export const IMG = 'http://127.0.0.1:' + (process.env.STUB_PORT || '54399') + '/storage/v1/object/public/creatives/'
 export const RUN1 = 'agent3_2026-11-08_1000'
 export const RUN2 = 'agent3_2026-11-05_0900'
 export const RUN3 = 'agent3_2026-11-02_0800'

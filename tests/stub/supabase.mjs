@@ -18,10 +18,12 @@
 // for the lead-files bucket; it answers the browser's CORS checks. catalyst-proposal answers started;
 // file-ingest reads a stored file and saves its text on the row as Lead File Text Ingest does (a file named "scan..."
 // has none); hubspot-file-sync answers synced. e3-autofill fills New draft from what it is sent (Engine 3 · Auto-fill).
+// notion-proxy (databases, add) answers from the databases it shares and keeps what it added (GET/POST /__notion);
+// catalyst-hubspot-contact answers what HubSpot has for a contact (hubspotLive in fixtures.mjs).
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
-import { fixtures, docs as docFixtures, fathomCalls, fathomOlderCalls, fathomTranscripts, hubspotEmails } from './fixtures.mjs'
+import { fixtures, docs as docFixtures, fathomCalls, fathomOlderCalls, fathomTranscripts, hubspotEmails, hubspotLive } from './fixtures.mjs'
 
 /** The text Engine 3 · Read a Link answers with (made up). */
 const READ_TEXT =
@@ -47,6 +49,17 @@ let hooks = {}
 // the team's Fathom key, as Dashboard · Fathom Proxy keeps it
 const FATHOM = () => ({ connected: true, hint: 'ab12', updated_by: 'qa.teammate@aiparagonconsulting.com', updated_at: '2026-11-01T10:00:00Z' })
 let fathom = FATHOM()
+// Dashboard · Notion Proxy: the databases shared with the n8n connection, the entries added, and a stop after so many
+// entries (once, so Send the rest goes on)
+const NOTION = () => ({
+  dbs: [
+    { object: 'database', id: 'db-clients', title: [{ plain_text: 'Clients' }] },
+    { object: 'database', id: 'db-tasks', title: [{ plain_text: 'Team tasks' }] },
+  ],
+  added: [],
+  stopAfter: null,
+})
+let notion = NOTION()
 const refresh = new Map() // refresh token -> email
 // Storage: path -> {type, body (Buffer)}, lead-files in `store`, the ads' pictures (creatives) in `creatives`; signed
 // upload tokens -> bucket and path
@@ -180,6 +193,7 @@ http
         docs = docFixtures()
         hooks = {}
         fathom = FATHOM()
+        notion = NOTION()
         store = new Map()
         signed = new Map()
         creatives = new Map()
@@ -201,6 +215,10 @@ http
       if (url.pathname === '/__recovery') return send(res, 200, session(String(body.email || '').toLowerCase()))
       if (url.pathname === '/__as') { actAs = body.email || null; return send(res, 200, { ok: true }) }
       if (url.pathname === '/__fathom') { fathom = { ...body }; return send(res, 200, { ok: true }) }
+      if (url.pathname === '/__notion') {
+        if (req.method === 'POST') { notion = { ...notion, ...body }; return send(res, 200, { ok: true }) }
+        return send(res, 200, notion)
+      }
       if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
 
@@ -269,7 +287,7 @@ http
           }
           if (!fathom.connected) return send(res, 200, off)
           if (body.action === 'list') {
-            if (body.cursor === 'page2') return send(res, 200, { ok: true, items: fathomOlderCalls(), next_cursor: null })
+            if (body.cursor === 'page2') return send(res, 200, { ok: true, items: fathom.older ?? fathomOlderCalls(), next_cursor: null })
             // a test can give its own first page ({connected: true, items}), dated from now
             return send(res, 200, { ok: true, items: fathom.items ?? fathomCalls(), next_cursor: 'page2' })
           }
@@ -283,6 +301,27 @@ http
             return send(res, 200, { ok: true, access })
           }
           return send(res, 200, { ok: false, code: 'bad_action', message: 'stub: unknown action' })
+        }
+        // Dashboard · Notion Proxy: the databases shared with the connection, and an entry added by its title
+        if (name === 'notion-proxy') {
+          if (body.action === 'databases') return send(res, 200, { results: notion.dbs })
+          if (body.action === 'add') {
+            if (notion.stopAfter !== null && notion.added.length >= notion.stopAfter) {
+              notion.stopAfter = null
+              return send(res, 200, { object: 'error', message: 'Notion is busy right now.' })
+            }
+            if (!notion.dbs.some((d) => d.id === body.id)) return send(res, 200, { object: 'error', message: 'That database is not shared.' })
+            notion.added.push({ db: body.id, title: body.title })
+            return send(res, 200, { results: [{ object: 'page', id: 'page-' + notion.added.length }] })
+          }
+          return send(res, 200, { object: 'error', message: 'stub: unknown action' })
+        }
+        // Dashboard · HubSpot Contact Proxy: the contact HubSpot has with that email right now (a test gives other answers
+        // with stubHook)
+        if (name === 'catalyst-hubspot-contact') {
+          const e = String(body.email || '').trim().toLowerCase()
+          const c = hubspotLive()[e]
+          return send(res, 200, c ? { ok: true, found: true, id: c.id, contact: c.contact, at: new Date().toISOString() } : { ok: true, found: false, at: new Date().toISOString() })
         }
         // Meetings · Post-call Actions answers that it started; the test writes the row the workflow would save
         if (name === 'call-actions') return send(res, 200, { ok: true, started: true })

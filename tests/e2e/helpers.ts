@@ -1,6 +1,7 @@
 import { type Page, expect } from '@playwright/test'
 
-export const STUB = 'http://127.0.0.1:54399'
+// the stand-in's address (STUB_PORT moves it, for a second copy of the suite running beside this one)
+export const STUB = 'http://127.0.0.1:' + (process.env.STUB_PORT || '54399')
 export const TEAM = { email: 'qa.teammate@aiparagonconsulting.com', name: 'QA Teammate' }
 export const OUTSIDER = 'outsider@example.org'
 export const PASSWORD = 'correct horse battery'
