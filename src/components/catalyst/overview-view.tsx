@@ -1,13 +1,14 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowRight } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { LocalDate } from '@/components/ui/local-date'
-import { stagesNamed } from '@/lib/catalyst/stages'
+import type { MeetingType } from '@/lib/catalyst/setup'
 import { type OverviewTab, type PipelineData, hasDoc, leadHref, overviewTab, stripCounts, viewStage } from '@/lib/catalyst/view'
 import { Banner, ErrorNotice, FitPill, StripTile, Tabs, initials, plural } from './bits'
+import { TypeSetup } from './setup-dialogs'
 
 /**
  * Catalyst's Overview: the six meetings a client goes through and the prep for each, the newest leads, and how many
@@ -15,9 +16,17 @@ import { Banner, ErrorNotice, FitPill, StripTile, Tabs, initials, plural } from 
  */
 export function OverviewView({ data }: { data: PipelineData }) {
   const tab = overviewTab(useSearchParams().get('tab'))
-  const stages = useMemo(() => stagesNamed(data.names), [data.names])
-  const c = useMemo(() => stripCounts(data.leads), [data.leads])
+  const stages = data.stages
+  const c = useMemo(() => stripCounts(data.leads, stages), [data.leads, stages])
   const byKey = Object.fromEntries(stages.map((s) => [s.key, s]))
+  const [typeOpen, setTypeOpen] = useState<MeetingType | 'new' | null>(null)
+  // the stages a meeting type runs in: the stage whose type it is, or that lists it among its other types (v145)
+  const inStages = (t: MeetingType) =>
+    stages.filter((s) => s.mt === t.key || (data.recs.find((r) => r.key === s.key)?.also ?? []).includes(t.key)).map((s) => s.name)
+  const leadsIn = (t: MeetingType) => {
+    const s = stages.filter((x) => x.mt === t.key)
+    return s.length ? plural(s.reduce((a, x) => a + (c.by[x.key] ?? 0), 0), 'lead') + ' in this stage' : 'Not run by a client stage yet'
+  }
 
   const go = (t: OverviewTab) => {
     const u = new URL(window.location.href)
@@ -30,7 +39,7 @@ export function OverviewView({ data }: { data: PipelineData }) {
     { n: c.leads, label: 'Leads', tip: 'in the pipeline', to: 'leads' },
     { n: c.strong, label: 'Strong fit', tip: 'rated before the call', to: 'leads' },
     { n: c.clients, label: 'Clients', tip: 'onboarding and client review', to: 'leads' },
-    { n: stages.length, label: 'Stages', tip: 'a document for each', to: 'stages' },
+    { n: data.types.filter((t) => !t.hidden).length, label: 'Meeting types', tip: 'a document for each', to: 'stages' },
   ]
   const lit = tiles.findIndex((t) => t.to === tab)
   const recent = data.leads.slice(0, 6)
@@ -63,7 +72,7 @@ export function OverviewView({ data }: { data: PipelineData }) {
         active={tab}
         onPick={go}
         tabs={[
-          { key: 'stages', label: 'Stages' },
+          { key: 'stages', label: 'Meeting Types' },
           { key: 'leads', label: 'Recent leads', count: c.leads || '' },
           { key: 'documents', label: 'Documents' },
         ]}
@@ -73,45 +82,65 @@ export function OverviewView({ data }: { data: PipelineData }) {
       {tab === 'stages' ? (
         <section aria-labelledby="ov-stages" className="overflow-hidden rounded-lg border border-line bg-panel shadow-card">
           <div className="border-b border-line bg-[#fbf8f0] px-6 py-5">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-accent-text">Stages</p>
+            <p className="text-[11.5px] font-semibold uppercase tracking-[0.14em] text-accent-text">Meeting Types</p>
             <h2 id="ov-stages" className="mt-2 font-display text-[23px] font-semibold text-ink">
-              Six meetings, prep for each
+              Meeting types, prep for each
             </h2>
           </div>
           <div className="@container p-5 sm:p-6">
-            <ol className="grid grid-cols-1 gap-5 @min-[700px]:grid-cols-3">
-              {stages.map((s, i) => (
-                <li
-                  key={s.key}
-                  data-s={s.key}
-                  title={`${s.role} Works from ${s.from}.`}
-                  className="relative rounded-md border border-t-[3px] border-line border-t-accent bg-panel p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-sm bg-action text-[13px] font-semibold text-action-ink">
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-text">{s.name}</p>
-                      <b className="block font-display text-[18.5px] font-semibold leading-snug text-ink">{s.doc}</b>
-                    </div>
-                  </div>
-                  <p className="mt-3 border-t border-line pt-3 text-[13px] text-ink-2">
-                    {plural(c.by[s.key], 'lead')} in this stage
-                  </p>
-                  {i % 3 !== 2 ? (
-                    <span
-                      aria-hidden="true"
-                      className="absolute -right-[19px] top-[30px] z-10 hidden h-6 w-6 place-items-center rounded-full bg-action text-action-ink @min-[700px]:grid"
+            <ol className="grid grid-cols-1 gap-5 @min-[700px]:grid-cols-3" data-testid="meeting-types">
+              {data.types.map((t, i) => {
+                const st = inStages(t)
+                return (
+                  <li key={t.key} data-mt={t.key} className={t.hidden ? 'opacity-60' : ''}>
+                    <button
+                      type="button"
+                      onClick={() => setTypeOpen(t)}
+                      aria-label={'Set up ' + t.name}
+                      className="block h-full w-full rounded-md border border-t-[3px] border-line border-t-accent bg-panel p-4 text-left hover:shadow-pop"
                     >
-                      <ArrowRight size={13} />
-                    </span>
-                  ) : null}
-                </li>
-              ))}
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-sm bg-action text-[13px] font-semibold text-action-ink">{i + 1}</span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-text [overflow-wrap:anywhere]">
+                            {t.name}
+                            {t.custom ? ' · yours' : ''}
+                            {t.hidden ? ' · hidden' : ''}
+                          </p>
+                          <b data-testid="type-doc" className="block font-display text-[18.5px] font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{t.doc}</b>
+                        </div>
+                      </div>
+                      {t.desc ? <p className="mt-2 text-[13.5px] text-ink-2 [overflow-wrap:anywhere]">{t.desc}</p> : null}
+                      <p className="mt-2 text-[13px] text-ink-2">
+                        <b className="text-ink">In</b> {st.length ? st.join(', ') : 'no client stage yet'}
+                      </p>
+                      <p className="mt-3 border-t border-line pt-3 text-[13px] text-ink-2">{leadsIn(t)}</p>
+                    </button>
+                  </li>
+                )
+              })}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setTypeOpen('new')}
+                  className="flex h-full w-full flex-col justify-center gap-1.5 rounded-md border border-dashed border-line-2 bg-panel p-4 text-left hover:border-action"
+                >
+                  <b className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">
+                    <Plus size={16} aria-hidden="true" /> New meeting type
+                  </b>
+                  <p className="text-[13.5px] text-ink-2">A meeting of your own: what it writes, its sections, what it reads.</p>
+                </button>
+              </li>
             </ol>
           </div>
         </section>
+      ) : null}
+      {typeOpen ? (
+        <TypeSetup
+          type={typeOpen === 'new' ? null : typeOpen}
+          usedBy={typeOpen === 'new' ? [] : data.recs.filter((r) => r.custom && r.type === typeOpen.key).map((r) => r.name)}
+          onClose={() => setTypeOpen(null)}
+        />
       ) : null}
 
       {tab === 'leads' ? (
@@ -137,7 +166,7 @@ export function OverviewView({ data }: { data: PipelineData }) {
                         {[l.name, l.company].filter(Boolean).join(' · ')}
                       </b>
                       <small className="block truncate text-[12.5px] text-ink-3">
-                        {l.email} · {byKey[viewStage(l)].name} · updated <LocalDate iso={l.updatedAt} />
+                        {l.email} · {(byKey[viewStage(l)] ?? stages[0]).name} · updated <LocalDate iso={l.updatedAt} />
                       </small>
                     </span>
                     <FitPill fit={l.fit} />
@@ -159,7 +188,7 @@ export function OverviewView({ data }: { data: PipelineData }) {
             </h2>
           </div>
           <ul className="space-y-3.5 px-5 py-5">
-            {stages.map((s) => {
+            {stages.filter((s) => !s.norun).map((s) => {
               const done = data.leads.filter((l) => hasDoc(l, s.key)).length
               const total = data.leads.length
               const pct = total ? Math.max(2, (done / total) * 100) : 2

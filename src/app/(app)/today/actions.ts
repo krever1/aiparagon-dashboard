@@ -49,7 +49,7 @@ export async function crmReads(email: string, raw = ''): Promise<ReadsResult> {
   const supabase = await createClient()
   const c = await contactOf(supabase, e, str(raw).trim())
   if (!c) return { ok: false, error: GONE }
-  const g = await gather(supabase, asLead(c), 'research', false)
+  const g = await gather(supabase, asLead(c), stageOfKey('research'), false)
   return { ok: true, rows: readRows(g), found: { calls: 0, emails: 0 } }
 }
 
@@ -130,7 +130,7 @@ export async function answerCrm(input: { email: string; raw?: string; action: 's
       return { ok: false, error: `Added to ${st.name}, but it could not start: ${msgOf(e)}. Run it from the Lead pipeline.` }
     }
     try {
-      await recordRun(supabase, lead, outs, 'research', user.email)
+      await recordRun(supabase, lead, outs, st, user.email)
     } catch {
       // the run is under way; only its "Writing" line on the board is missing
     }

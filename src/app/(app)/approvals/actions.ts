@@ -3,8 +3,7 @@
 import { refresh } from 'next/cache'
 import { type CurrentUser, getCurrentUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { stageOfKey } from '@/lib/catalyst/stages'
-import { type Key, parseKey, reviewKey } from '@/lib/touchpoint/approvals'
+import { type Key, parseKey, reviewAgent, reviewKey } from '@/lib/touchpoint/approvals'
 
 // What Approvals saves, as the signed-in teammate (nwApproveOne, nwUndo, nwReplyAct, apSetDraft, apResolveComment): a
 // brief's decision in agent_feedback (brief_approval), an ad image's decision (ad_image_variant, by its file, which
@@ -45,7 +44,7 @@ async function setComment(supabase: Supa, id: string, resolved: boolean, by: str
 
 /** A lead's stage document, read (reviewed) or back to waiting (reopened), as v143 saves it. */
 const reviewRow = (k: Extract<Key, { kind: 'lead' }>, action: 'reviewed' | 'reopened', by: string) => ({
-  agent: stageOfKey(k.stage).agent,
+  agent: reviewAgent(k.stage),
   target_type: 'e1_document',
   target_id: reviewKey(k.email, k.stage),
   action,

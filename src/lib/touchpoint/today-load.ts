@@ -1,7 +1,7 @@
 import 'server-only'
 import { type InboxData, loadInbox } from '@/lib/catalyst/inbox-load'
 import { loadPipeline } from '@/lib/catalyst/load'
-import type { StageNames } from '@/lib/catalyst/stages'
+import { STAGES, type Stage, type StageNames } from '@/lib/catalyst/stages'
 import { waitsOnStage } from '@/lib/catalyst/view'
 import { createClient } from '@/lib/supabase/server'
 import { type ApprovalsData, loadApprovals } from './approvals-load'
@@ -25,6 +25,8 @@ export type TodayData = {
   /** Catalyst's new clients from HubSpot and new transcripts, and the stages' names for their questions */
   inbox: InboxData
   names: StageNames
+  /** the board's stages (v145) */
+  stages: Stage[]
   /** when the server read it: the greeting and the date until the page is in the browser */
   now: number
 }
@@ -45,7 +47,7 @@ export async function loadToday(): Promise<TodayData> {
 
   // new clients and transcripts are checked against the leads, so they wait for a good read of them
   const now = Date.now()
-  const inbox: InboxData = pipeline && !pipeline.error ? await loadInbox(pipeline.leads, now).catch(() => ({ items: [], leads: [] })) : { items: [], leads: [] }
+  const inbox: InboxData = pipeline && !pipeline.error ? await loadInbox(pipeline.leads, now, pipeline.stages).catch(() => ({ items: [], leads: [] })) : { items: [], leads: [] }
 
   // only from a whole read: without the documents every lead would look as if it had none
   const leads = pipeline && !pipeline.error ? { count: pipeline.leads.length, next: pipeline.leads.filter(waitsOnStage).length } : null
@@ -73,6 +75,7 @@ export async function loadToday(): Promise<TodayData> {
     signupsError: su.error?.message ?? null,
     inbox,
     names: pipeline?.names ?? {},
+    stages: pipeline?.stages ?? [...STAGES],
     now,
   }
 }

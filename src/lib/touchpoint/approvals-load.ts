@@ -174,7 +174,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
   const leadIds: Record<string, string> = {}
   for (const l of pipeline?.leads ?? []) for (const e of l.emails) leadIds[e.trim().toLowerCase()] ??= l.id
   const marks: ReviewMark[] = rowsOf(rv).map((r) => ({ target: str(r.target_id), action: str(r.action), at: str(r.created_at) }))
-  const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks) : []
+  const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks, pipeline.stages) : []
   const comments: CommentRow[] = rowsOf(cm).map((c) => ({
     id: str(c.id),
     target: str(c.target_key),
@@ -207,7 +207,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
       hooks,
       adDecisions,
       leads: waits,
-      names: pipeline?.names ?? {},
+      stages: pipeline?.stages,
       comments,
       leadIds,
       legacy: LEGACY_DASHBOARD_URL,

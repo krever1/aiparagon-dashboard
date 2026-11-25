@@ -50,7 +50,7 @@ export function Dialog({
       <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
         <div className="min-w-0">
           {kicker ? <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-accent-text">{kicker}</p> : null}
-          <h2 id="dialog-title" className="mt-0.5 font-display text-[24px] font-semibold leading-tight">
+          <h2 id="dialog-title" className="mt-0.5 font-display text-[24px] font-semibold leading-tight [overflow-wrap:anywhere]">
             {title}
           </h2>
         </div>

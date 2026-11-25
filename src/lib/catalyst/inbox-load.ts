@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { type CallMeta, normMeta } from './calls'
 import { ftList } from './fathom'
 import { type InboxContact, type InboxItem, INBOX_DAYS, callItems, crmItems, inboxItems } from './inbox'
+import type { Stage } from './stages'
 import type { LeadView } from './view'
 
 // Catalyst's new clients and transcripts, read as the signed-in teammate (v137Load): the HubSpot contacts first seen
@@ -17,7 +18,7 @@ export type InboxData = {
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 
-export async function loadInbox(leads: LeadView[], now: number): Promise<InboxData> {
+export async function loadInbox(leads: LeadView[], now: number, stages?: readonly Stage[]): Promise<InboxData> {
   const supabase = await createClient()
   const since = new Date(now - INBOX_DAYS * 864e5).toISOString()
   const [hs, inbox, ft] = await Promise.all([
@@ -40,7 +41,7 @@ export async function loadInbox(leads: LeadView[], now: number): Promise<InboxDa
     const { data } = await supabase.from('call_meta').select('*').in('call_id', ft.items.map((c) => c.id))
     for (const r of (data ?? []) as Record<string, unknown>[]) metas[str(r.call_id)] = normMeta(r)
   }
-  const calls = callItems(ft.items, metas, leads, now)
+  const calls = callItems(ft.items, metas, leads, now, stages)
   const ids = new Set(calls.map((c) => c.leadId))
   return { items: inboxItems(crm, calls), leads: leads.filter((l) => ids.has(l.id)) }
 }

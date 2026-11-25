@@ -5,8 +5,10 @@ import {
   type LeadRow, type OutRow, buildLeads, docCount, docIds, docOf, derivedStage, mergeLeads, relink, stageOf,
 } from '../../src/lib/catalyst/leads'
 import {
-  STAGES, cleanName, firmSizeLabel, firmTypeLabel, fitTone, labelCase, namesFromSetting, runLabel, stagesNamed,
+  STAGES, cleanName, firmSizeLabel, firmTypeLabel, fitTone, labelCase, namesFromSetting, runLabel, stageOfKey, stagesNamed,
 } from '../../src/lib/catalyst/stages'
+
+const S = Object.fromEntries(STAGES.map((s) => [s.key, s])) as Record<(typeof STAGES)[number]['key'], (typeof STAGES)[number]>
 import { jsonStruct, mdClean, mdStruct, parseDocText, parseSaved, pdfToMd } from '../../src/lib/catalyst/doc-format'
 import { followFields, followedText, metaPageIdFrom } from '../../src/lib/catalyst/follow'
 import {
@@ -130,7 +132,7 @@ test('the stages: team names, run buttons, firm words and the fit colour', () =>
   expect(namesFromSetting(JSON.stringify({ assessment: { name: 'Deep dive' } }))).toEqual({ assessment: 'Deep dive' })
   expect(namesFromSetting('not json')).toEqual({})
   expect(stagesNamed(names).map((s) => s.name)).toEqual(['Prospect research', 'Kickoff call', 'Assessment', 'Proposal', 'Onboarding', 'Client review'])
-  expect(cleanName('x'.repeat(60))).toHaveLength(40)
+  expect(cleanName('x'.repeat(80))).toHaveLength(60)
   expect(firmTypeLabel('ria')).toBe('RIA')
   expect(firmTypeLabel('family_office')).toBe('Family office')
   expect(firmTypeLabel('other_company')).toBe('Other company')
@@ -207,21 +209,21 @@ test('what each stage reads by default, and the team’s choices over it', () =>
 
 test('what a stage needs: the proposal works from the assessment, the others ask for notes', () => {
   const none = { docs: {}, ids: { research: false, interview: false, anonymized: false } }
-  expect(planFor(none, 'research')).toEqual({ doneAt: null, blocked: '', need: '', notes: false })
-  expect(planFor(none, 'consultation').need).toBe('prospect brief')
-  expect(planFor(none, 'assessment').need).toBe('consultation guide')
-  expect(planFor({ ...none, ids: { research: false, interview: true, anonymized: false } }, 'assessment').need).toBe('prospect brief')
-  expect(planFor(none, 'proposal').blocked).toBe('The proposal works from the assessment report, and this lead has none yet. Run the assessment first.')
-  expect(planFor(none, 'onboarding').need).toBe('documents')
-  expect(planFor({ docs: { research: 5 }, ids: none.ids }, 'review').need).toBe('')
+  expect(planFor(none, S.research)).toEqual({ doneAt: null, blocked: '', need: '', notes: false })
+  expect(planFor(none, S.consultation).need).toBe('prospect brief')
+  expect(planFor(none, S.assessment).need).toBe('consultation guide')
+  expect(planFor({ ...none, ids: { research: false, interview: true, anonymized: false } }, S.assessment).need).toBe('prospect brief')
+  expect(planFor(none, S.proposal).blocked).toBe('The proposal works from the assessment report, and this lead has none yet. Run the assessment first.')
+  expect(planFor(none, S.onboarding).need).toBe('documents')
+  expect(planFor({ docs: { research: 5 }, ids: none.ids }, S.review).need).toBe('')
   const all = { docs: { research: 0, proposal: 1700000000000 }, ids: { research: true, interview: true, anonymized: true } }
-  expect(planFor(all, 'proposal')).toEqual({ doneAt: 1700000000000, blocked: '', need: '', notes: true })
-  expect(planFor(all, 'research').doneAt).toBe(0)
+  expect(planFor(all, S.proposal)).toEqual({ doneAt: 1700000000000, blocked: '', need: '', notes: true })
+  expect(planFor(all, S.research).doneAt).toBe(0)
 })
 
 test('the notes a run sends: the team’s notes, the CRM record, the emails, then the calls, within 44,000 characters', () => {
-  const names = { assessment: 'Deep dive' }
-  expect(composeNote({ typed: '  just this  ', crm: null, calls: [], emails: [], names })).toBe('just this')
+  const names = stagesNamed({ assessment: 'Deep dive' })
+  expect(composeNote({ typed: '  just this  ', crm: null, calls: [], emails: [], stages: names })).toBe('just this')
   const crm = { email: 'r@example.com', first_name: 'Robin', last_name: 'Sample', company: 'Sample Peak', lifecycle_stage: 'lead', website: 'example.com' }
   expect(crmLine(crm)).toBe('Robin Sample · Sample Peak · lifecycle stage: lead · website: example.com')
   const note = composeNote({
@@ -233,7 +235,7 @@ test('the notes a run sends: the team’s notes, the CRM record, the emails, the
       { id: '3', start: '2026-10-01T17:00:00Z', title: 'No text', stage: '', text: '' },
     ],
     emails: [{ at: '2026-11-05T15:00:00Z', incoming: true, subject: 'Notes', from: 'r@example.com', to: ['us@example.com'], text: 'Thanks.' }],
-    names,
+    stages: names,
   })
   expect(note).toBe(
     'NOTES FROM THE TEAM\nWe met.\n\nTHE CRM RECORD (HubSpot)\nRobin Sample · Sample Peak · lifecycle stage: lead · website: example.com\n\n' +
@@ -241,7 +243,7 @@ test('the notes a run sends: the team’s notes, the CRM record, the emails, the
       'WHAT WAS SAID IN THE MEETINGS (call transcripts, newest first)\n\nCall on Nov 4, 2026: Kickoff (filed under Deep dive)\nA: hello\n\nCall on Nov 1, 2026: untitled\nB: hi',
   )
   // a long transcript is cut so the whole stays within the budget, and says so
-  const long = composeNote({ typed: 'x', crm: null, calls: [{ id: '1', start: '2026-11-04T17:00:00Z', title: 'Long', stage: '', text: 'y'.repeat(60_000) }], emails: [], names })
+  const long = composeNote({ typed: 'x', crm: null, calls: [{ id: '1', start: '2026-11-04T17:00:00Z', title: 'Long', stage: '', text: 'y'.repeat(60_000) }], emails: [], stages: names })
   expect(long.length).toBeLessThanOrEqual(44_000)
   expect(long.endsWith('\n[the rest of this call is left out]')).toBe(true)
   // an email is cut at 3,000 characters, and all the emails stay within 8,000
@@ -266,7 +268,7 @@ test('the requests: the prospect brief, the custom run’s three stages and Meet
   expect(customBody(l, 'consultation', 'notes', ids)).toMatchObject({ entry: 'interview_script', transcript: 'notes', extraDoc: '', from: 'board', only: true, stage: 'consultation', ...ids })
   expect(customBody(l, 'assessment', '', ids).entry).toBe('anonymizer')
   expect(customBody(l, 'proposal', '', ids).entry).toBe('growth_plan')
-  expect(prepBody(l, ['pat@example.com', 'old@example.com'], 'review', { review: 'Quarterly review' }, 'n')).toEqual({
+  expect(prepBody(l, ['pat@example.com', 'old@example.com'], stageOfKey('review', { review: 'Quarterly review' }), 'n')).toEqual({
     leadEmail: 'pat@example.com', email: 'pat@example.com', emails: ['pat@example.com', 'old@example.com'], prospectName: 'Pat  Van Example',
     prospectTitle: 'Partner', companyName: 'Ridge', firmType: 'ria', firmSize: '10m-50m', stage: 'review', stageName: 'Quarterly review',
     docName: 'Client review brief', transcript: 'n', from: 'board',
