@@ -66,8 +66,12 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   asks for a link back to it. Kser could not reset a password: the link opened http://localhost:3000. See Gotchas.
 - Erica's notes of Nov 24, round 1 (Nov 25, branch `nx/feedback-r1`; the current dashboard's v143): Back in the top bar,
   Tasks' fold a call and remove a task, Approvals' "Ready for review" on a lead's stage document, and Run (or Run
-  again) on every report of a lead's page. Select, Send to Asana and Send to Notion stay in the current dashboard. See
-  Touchpoint and Catalyst below.
+  again) on every report of a lead's page. Send to Asana stays in the current dashboard. See Touchpoint and Catalyst
+  below. Merged into `dev` (PR #33).
+- Erica's notes of Nov 24, round 2 (Nov 25, branch `nx/feedback-r2`; the current dashboard's v144): folders and call
+  types the team can change (Tasks and Calls), Calls' Calendar tab, calls filed by their people, a new contact on a call
+  on Today with its question, a lead's HubSpot tab read live, feedback pins (the top bar's Feedback, Approvals), and
+  Tasks' Select and Send to Notion. Send to Asana stays in the current dashboard. See Shell, Catalyst and Touchpoint.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -88,8 +92,12 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests, leads, comments | here (Touchpoint part 2 and the finishing PR, not released) |
 | Touchpoint | Approvals: a lead's stage document Ready for review, Mark reviewed | here (feedback round 1, not released) |
 | Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
-| Touchpoint | Tasks: fold a call, remove a task with Undo (Select, Send to Asana and Notion stay in the current dashboard) | here (feedback round 1, not released) |
+| Touchpoint | Tasks: fold a call, remove a task with Undo | here (feedback round 1, not released) |
+| Touchpoint | Tasks: Select and Send to Notion, Folders and types (Send to Asana stays in the current dashboard) | here (feedback round 2, not released) |
+| Touchpoint | Today: a new contact on a call; Approvals: feedback notes | here (feedback round 2, not released) |
 | Shell | Back in the top bar | here (feedback round 1, not released) |
+| Shell | Feedback pins (the top bar's Feedback, All feedback) | here (feedback round 2, not released) |
+| Catalyst | Calls: the Calendar tab, Folders and types, filing by people; a lead's HubSpot tab read live | here (feedback round 2, not released) |
 | Catalyst | Overview, Lead pipeline (board, list, a lead's page), New run | here (in production) |
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
 | Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
@@ -180,6 +188,23 @@ signed-in teammate's token, as the current dashboard's do.
   goes (`takeBack`), so arriving adds nothing. Hidden on the first page; its tooltip and name are "Back to <page>" (the
   page's title from `nav.ts`; a lead's page names itself by the lead with `usePlaceName`); on a phone only the arrow.
   Sign out (`sign-out.tsx`) clears the list.
+- Feedback pins (v144Fb*; `src/lib/touchpoint/feedback.ts` pure rules, `feedback-load.ts`, `src/components/shell/feedback.tsx`
+  and `feedback-store.ts`, `src/app/(app)/feedback/actions.ts`, `src/app/api/feedback/route.ts`): Feedback in the top bar
+  (a count of open notes) turns on feedback mode: a click on anything in the page (not the top bar, a window or the
+  messages) opens a note box on that spot instead of running it (a capture-phase listener), and the spot under the
+  pointer is outlined. A note (3 to 1500 characters, Save or Ctrl+Enter, Esc closes) goes to `dashboard_comments`:
+  target_key `fb:<view>` or `fb:<view>:<lead email>` on a lead's page (the lead page says whose it is with
+  `useFeedbackLead`), author the teammate's email, anchor_text JSON {sel, label, x, y} (a path from the nearest unique id,
+  what the element says, where in it). Open notes on the page show as numbered pins (oldest first, numbered among all the
+  page's open notes, as v144FbPins does; a note whose spot is not found has no pin but keeps its number). A pin is found
+  by its path when the element there still says the same, else by what it says (the first 40 characters), so a pin left
+  in the current dashboard finds its spot here when the words match. The bar at the bottom: "Feedback mode", how many
+  are open here, All feedback (N) and Done; Esc leaves the mode. All feedback lists the open notes by page (newest page
+  first), with Go to it (`/<page>?fb=<id>`: the mode turns on there, the note's spot is scrolled to and its note opens;
+  a page not moved yet opens in the current dashboard) and Resolve (resolved_by the teammate's name, as Approvals), and
+  the last 20 resolved under Resolved. The view is the current dashboard's name for the page (`VIEW_OF`, its ROUTE_SLUG
+  read backwards: e3intel, e1pipeline, e3create, learning…), so a pin left in either app is on the same page in both.
+  The notes are read through GET /api/feedback, not a server action (see Gotchas), and kept 30 seconds.
 - Styling: Tailwind with the current dashboard's tokens in `src/app/globals.css` (`@theme`: colors, Newsreader for
   headings, Instrument Sans for text, IBM Plex Mono). Use the theme names (`bg-panel`, `text-ink-2`, `bg-action`,
   `text-accent-text`, `rounded-lg`, `shadow-card`), not raw hex.
@@ -265,6 +290,43 @@ signed-in teammate's token, as the current dashboard's do.
   or not; File it opens the new-transcript question (`call-question.tsx`, `answerCall`, v137AskCall): Not about this
   client (filed as none), Just file it (under the lead's stage), Move and run it (filed, the lead moved to the next
   stage, that stage run with the call; in Client review, the review again).
+- Folders and call types (v144Manage, v144Save; `folders-types.tsx`, `saveFoldersTypes` in the calls actions, `names.tsx`):
+  a window from Tasks' header and Calls' filter row, for the whole team. Client folders (the folder filter's list: every
+  call's folder, every folder set on a call and the team's own, `call_folders`), each with its count of calls (every call
+  the page knows: Fathom's list, the saved details, the post-call actions, `callsByFolder`); AI Paragon (internal) and No
+  client yet are "Set on its own". Renaming a folder sets the new name on every call in it (`call_meta.folder`, with
+  updated_by); deleting one takes it off the calls it was set on (they are filed by their people again, and the message
+  says how many stay under it that way, `keptAfterDelete`); Add folder keeps it in `call_folders` (a list of names,
+  saved as the current dashboard saves a setting). Call types: each button and its built-in types, renamed in
+  `call_type_names` ({key or cat:<button>: name}, '' for the usual name, merged into the row read fresh); the team's own
+  types renamed on every call (`call_meta.meeting_type`, and the AI's pick on `call_outputs`), added, or deleted from
+  their calls (`call_meta` only, so the AI's pick shows again), then `call_types`. Use the usual names; a name already
+  there, or under two letters, is refused in the current dashboard's words. The team's names reach every label and picker
+  under Calls and Tasks (`TypeNamesProvider`; `typeLabel`, `typeShort`, `catLabel`, `catButtons`, `newTypeProblem`, the
+  Slack and HubSpot texts and the set-type message take them).
+- Filing a call by its people (v144Match and the v121Folder wrapper; `matchCall`, `filedFolder` in `calls.ts`): a call
+  with no folder or client set is filed by a lead with a guest's email (its company, else its name), then a lead at a
+  guest's work domain, then a HubSpot contact's company (`hubspot_contacts`, `filingContacts`), then a folder the team has
+  with the guest's company name (`knownFolders`: set on a call or in `call_folders`); free mail and the team's own domain
+  never count, nor the anonymizer's placeholder. Else folderOf as before, with a company that matches a folder the team
+  has taking that folder's name (`normName` drops Inc, LLC, Group, The…). Calls and Tasks read the same (`FilingCtx`).
+- Calls' Calendar tab (v144Cal; `calls-calendar.tsx`, `?tab=cal`): a month from Monday, drawn once the page is in the
+  browser (the viewer's days), today marked, each day with its first two calls ("10:00 AM <title>", client calls gold)
+  and "+N more" (a dot on a phone), how many calls the month has, Previous and Next month (not past this one) and Today.
+  The day picked is today when it has calls, else the month's last day with calls; its recordings list beside the month
+  (time, minutes, folder, people); one opens on All (`?call=`). Older calls are still in Fathom: Load older calls reads
+  older pages (six at most) until they reach the month on screen; they join the All tab too.
+- A lead's HubSpot tab, read live (v144HsLoad; `hubspot-live.tsx`, `hubspotLive` in the lead-pipeline actions): Dashboard
+  · HubSpot Contact Proxy (`catalyst-hubspot-contact`, the teammate's token as `auth`) answers what HubSpot has for the
+  lead's email right now; the box "Live from HubSpot" (read <minutes> ago, Refresh) shows name, email, company, title,
+  phone, mobile, website, location, lifecycle, lead status, source, notes, deals, last contacted, next activity, last
+  email sent, last reply, in HubSpot since and changed in HubSpot, above the synced copy. HubSpot not answering says why
+  ("… The details below are the last copy the sync made."); a contact HubSpot does not have says so. A read is kept a
+  minute; never for the anonymizer's placeholder.
+- Changed on purpose in feedback round 2 (reported to Kser): the Folders and types window is the same on Tasks and
+  Calls; File it on a call with no lead opens the client question in the current dashboard, but here File it is only on
+  a lead's own Calls tab, where the lead is known, so that case does not come up (the question opens from Today's card);
+  a call's live HubSpot read is the tab's own box above the synced copy (the old one was added into the section).
 - Changed on purpose in part 3 (reported to Kser): no Integrations switcher above HubSpot contacts and Calls (the
   sidebar has them under Catalyst); Send to Asana is not here yet (Tasks' Asana is still in the current dashboard; the
   team-wide Asana Proxy was never published), and Use as content source came with Pipeline 4c; Refresh from Fathom and
@@ -348,8 +410,20 @@ signed-in teammate's token, as the current dashboard's do.
     task"; shown on hover, always on a touch screen): `removeTask` reads the row fresh, takes the task out of
     `call_outputs.tasks` for the team (v143TkDel) and gives it back with its place; the message "Task removed: <task>"
     has Undo, which puts it back at that place (`restoreTask`, read fresh too; nothing when it is back already). The
-    page hides a removed task until its data comes back without it. Select, the pick bar, Send to Asana and Send to
-    Notion (v143, v144) stay in the current dashboard.
+    page hides a removed task until its data comes back without it.
+  - Select (v143) and Send to Notion (v144Notion, v144NotionSend, v144NtMark; `notion-send.tsx`, `src/app/(app)/tasks/actions.ts`):
+    Select on a call opens it (when folded) and puts a box before each task, with the pick bar under them ("2 picked",
+    else "Pick the tasks to send"; All, None, Send to Notion, Done). Send to Notion reads the databases shared with the
+    n8n Notion connection (Dashboard · Notion Proxy, `notion-proxy`, action databases), the database used last
+    (`notion_tasks_db`, {id, name, by, at}) and what this call sent before (`notion_sent`, {call id: {db, name, n, at,
+    by}}): "Already sent N to “…” on <day> by <who>. Sending again adds new entries." The database picked is the one used
+    last, else one with "task" in its name; the picked tasks are ticked (else the open ones), and a follow-up entry
+    ("Follow-up: <call> (<day>)") is ticked too. Each becomes an entry (action add, its title "<task> · <call>", 300
+    characters at most), one at a time; a stop halfway says how many went, unticks those, keeps the count, and Send the
+    rest sends only the others; then "N sent to Notion · <database>". No database shared shows the three steps to share
+    one and Check again; the proxy switched off says so. Send to Asana stays in the current dashboard (the pick bar has no
+    Asana button).
+  - Folders and types (v144) by the heading: see Catalyst.
 - Changed on purpose on Tasks (reported to Kser): Asana stays in the current dashboard (above); the heading line reads
   "Touchpoint · Home and tasks" like every ported page (the old page said "Touchpoint"); the heading's tooltip leaves
   out Send to Asana; a failed read of the post-call actions says so (the old page said "None yet"); the open count is
@@ -461,6 +535,19 @@ signed-in teammate's token, as the current dashboard's do.
   of counting documents (that count comes with the Deliverables port). Between 641 and 1080 px wide every card takes
   the whole width. A read that fails says so in its card. The Catalyst card's items past four open with Show N more
   (the old page sent them to the bell, which this app does not have yet).
+- A new contact on a call (v144NewCalls, v144AskClient, v144ClientGo; `clientItems` in `inbox.ts`, `client-question.tsx`,
+  `answerClient` in the today actions): a recorded call from the last 14 days with someone from outside the team who is
+  not a new HubSpot client already, not filed, with no folder or client set, not set aside (`catalyst_inbox.calls`) and
+  matched by nothing (`matchCall`) shows on the Catalyst card: "New contact on a call: Nora New, Example on Nov 24",
+  "Create a client record for them?", Create client. Its question: who (when there are several), name, email, company
+  and client folder (it follows the company until changed), and Write the pre-meeting prospect brief now. Create client
+  record: an e1_leads row (lead_source Call, stage research; a row there already only gets the stage when it has none),
+  the call filed (`call_meta` folder, lead_email, lead_stage research), the folder in `call_folders`, and if ticked the
+  full run with `only: true` (hearAboutUs HubSpot, as v137Start's intake sends it) kept in `catalyst_runs`. Just file the
+  call: its folder only. Not a client: set aside for the team.
+- Approvals' feedback notes (v144's nwApprovalAll wrapper): an open comment whose target_key starts fb: reads "Feedback
+  from <name>", tags Feedback and the page (a lead's page by the lead's name), Resolve, and Go to it to the page at the
+  note (`goHref`; a page not moved yet in the current dashboard).
 - Changed on purpose in feedback round 1 (reported to Kser): Approvals' leads follow v143 (their own stage only), so a
   lead whose stage document is written now waits for a read instead of showing the next stage's document, and Today's
   Catalyst line counts the "Next: …" ones. The lead page's What should change? count leaves out review marks (it counted
@@ -1165,7 +1252,11 @@ signed-in teammate's token, as the current dashboard's do.
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks (folding a call and removing a task too), on the
-  rows in `tasks-fixtures.ts`; `back.spec.ts` the top bar's Back;
+  rows in `tasks-fixtures.ts`; `back.spec.ts` the top bar's Back; `r2-logic.spec.ts` (without a browser) the team's
+  names, filing a call by its people, new contacts on calls, feedback keys and Approvals' feedback rows;
+  `folders-types.spec.ts` Folders and types; `calls-calendar.spec.ts` the Calendar tab (calls dated from now);
+  `today-client.spec.ts` a new contact on a call; `hubspot-live.spec.ts` a lead's HubSpot tab read live;
+  `feedback.spec.ts` feedback pins; `notion.spec.ts` Select and Send to Notion;
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
   `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day; `approvalRows` empties
   e1_leads and dashboard_comments, so the stand-in's own leads do not wait there, and `catalystRows` seeds leads and
@@ -1251,6 +1342,13 @@ signed-in teammate's token, as the current dashboard's do.
   pages (`fathomCalls()`, then `fathomOlderCalls()` for cursor `page2`), answers `access` with 'team' for a share token
   containing TeamOnly, and takes connect (a key starting "bad" is turned away) and disconnect. Slack, HubSpot sync
   and post-call actions answer as their workflows do; a test writes the `call_outputs` row the workflow would save.
+  A test can give its own older page too (`stubFathom({connected: true, items, older})`).
+- The Notion stand-in (`notion-proxy`) shares two databases (Clients, Team tasks) and keeps the entries added;
+  `/__notion` (GET what it keeps, POST `{dbs, stopAfter}`: other databases, or a stop after so many entries, once, so
+  Send the rest goes on). Dashboard · HubSpot Contact Proxy's stand-in (`catalyst-hubspot-contact`) answers what HubSpot
+  has for Pat Example (`hubspotLive()` in `fixtures.mjs`) and found false for anyone else. dashboard_comments rows get a
+  uuid and resolved false, as in the project. `STUB_PORT` moves the stand-in (the helpers read it too), so a second copy
+  of the suite can run beside another (build with NEXT_PUBLIC_SUPABASE_URL on that port).
 - Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
   `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
   no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
@@ -1258,6 +1356,16 @@ signed-in teammate's token, as the current dashboard's do.
   mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
+- A server action started as a page loads (on mount) holds up the page's own navigations until it answers: with the
+  top bar's Feedback reading its notes by a server action, a run picked on the Intel Tracker or a version on the briefs
+  right after a page load kept its old address. Reads that every page makes on load go through a Route Handler
+  (GET /api/feedback) with fetch instead.
+- Feedback mode takes every click on the page in the capture phase. Its own parts carry `data-fb-ui`, the top bar
+  `data-topbar` (page headers are `<header>` too, so the rule cannot be the tag), and windows (`dialog`) and the
+  messages are left alone; anything new that should stay clickable in the mode needs one of those.
+- The team's names for the call types and buttons (call_type_names) reach labels through `TypeNamesProvider` (Calls and
+  Tasks wrap their pages in it) and the pure functions' `names` argument; a new place that prints a type or a button
+  name takes them, or a renamed type shows its usual name there.
 - pdf.js runs on the page: `content-read.ts` imports `pdfjs-dist/legacy/build/pdf.worker.mjs` with the library, which
   sets `globalThis.pdfjsWorker`, so pdf.js works without a worker of its own (no worker file to serve, no
   `workerSrc`); `src/types/pdfjs-worker.d.ts` types the import. pdfjs-dist 6 takes no `isEvalSupported`. Its optional

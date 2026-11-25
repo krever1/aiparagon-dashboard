@@ -7,6 +7,7 @@ import { Icon } from '@/components/icon'
 import { Toaster } from '@/components/ui/toast'
 import { pageForPath, productOf } from '@/lib/nav'
 import { previousPlace, recordPlace, subscribePlaces, takeBack } from './back-store'
+import { FeedbackButton, FeedbackLayer } from './feedback'
 import { Sidebar } from './sidebar'
 
 /**
@@ -46,7 +47,7 @@ export function AppShell({ userCard, children }: { userCard: ReactNode; children
       ) : null}
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:px-6">
+        <header data-topbar="" className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:px-6">
           <button
             type="button"
             aria-label="Open the menu"
@@ -62,11 +63,15 @@ export function AppShell({ userCard, children }: { userCard: ReactNode; children
           <Suspense fallback={null}>
             <Crumb />
           </Suspense>
+          <FeedbackButton />
         </header>
         <main id="main" className="w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-8">
           {children}
         </main>
         <Toaster />
+        <Suspense fallback={null}>
+          <FeedbackLayer />
+        </Suspense>
       </div>
     </div>
   )

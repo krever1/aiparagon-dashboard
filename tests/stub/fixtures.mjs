@@ -235,6 +235,22 @@ export function hubspotEmails() {
   }
 }
 
+/** What HubSpot has right now for a contact (Dashboard · HubSpot Contact Proxy), by email, made up. */
+export function hubspotLive() {
+  return {
+    [PAT]: {
+      id: '1001',
+      contact: {
+        firstname: 'Pat', lastname: 'Example', email: PAT, company: 'Example Ridge Advisors', jobtitle: 'Managing Partner', phone: '555-0100',
+        mobilephone: '555-0199', website: 'example.com', city: 'Springfield', state: 'OR', country: 'United States', lifecyclestage: 'salesqualifiedlead',
+        hs_lead_status: 'IN_PROGRESS', hs_analytics_source: 'ORGANIC_SEARCH', num_notes: '3', num_associated_deals: '1',
+        notes_last_contacted: '2026-11-03T15:00:00Z', notes_next_activity_date: '2026-12-02T15:00:00Z', hs_email_last_send_date: '2026-11-03T15:00:00Z',
+        hs_email_last_reply_date: '2026-11-04T15:00:00Z', createdate: '2026-10-01T09:00:00Z', lastmodifieddate: '2026-11-05T09:00:00Z',
+      },
+    },
+  }
+}
+
 /** Documents the Doc Reader stand-in can read, by Google Doc or Drive file id. */
 export function docs() {
   return {

@@ -7,6 +7,7 @@ import { Ago, dueText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { type CallRow, type Task, deliverableOf, guestsOf, tasksText, typeLabel } from '@/lib/catalyst/calls'
 import { SlackShare, TypeOptions } from './call-dialogs'
+import { useTypeNames } from './names'
 import { MiniMd } from './mini-md'
 
 // A call's post-call actions (apCxPostPaint): a summary, next steps, the deliverable its call type calls for and a
@@ -61,6 +62,7 @@ export function PostCall({
   slackText: string
   onRunAssessment: () => Promise<void>
 }) {
+  const names = useTypeNames()
   const o = row.out
   const saved = row.meta?.meeting_type ?? ''
   const [type, setType] = useState(saved)
@@ -157,7 +159,7 @@ export function PostCall({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {row.type ? <span className="rounded-full bg-accent-soft px-2.5 py-1 text-[12.5px] font-semibold text-accent-text">{typeLabel(row.type)}</span> : null}
+            {row.type ? <span className="rounded-full bg-accent-soft px-2.5 py-1 text-[12.5px] font-semibold text-accent-text">{typeLabel(row.type, names)}</span> : null}
             <span className="text-[13.5px] text-ink-2">
               Written <Ago iso={o.created_at} />
               {o.source === 'auto' ? ' automatically' : o.created_by ? ' by ' + o.created_by.split('@')[0] : ''}

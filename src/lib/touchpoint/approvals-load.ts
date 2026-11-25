@@ -172,7 +172,13 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
   // documents every lead would look as if it had none, and without the marks every document as if nobody had read it),
   // and every lead's page by its emails (a comment on a lead's document opens there)
   const leadIds: Record<string, string> = {}
-  for (const l of pipeline?.leads ?? []) for (const e of l.emails) leadIds[e.trim().toLowerCase()] ??= l.id
+  const leadNames: Record<string, string> = {}
+  for (const l of pipeline?.leads ?? []) {
+    for (const e of l.emails) {
+      leadIds[e.trim().toLowerCase()] ??= l.id
+      leadNames[e.trim().toLowerCase()] ??= l.name
+    }
+  }
   const marks: ReviewMark[] = rowsOf(rv).map((r) => ({ target: str(r.target_id), action: str(r.action), at: str(r.created_at) }))
   const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks) : []
   const comments: CommentRow[] = rowsOf(cm).map((c) => ({
@@ -210,6 +216,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
       names: pipeline?.names ?? {},
       comments,
       leadIds,
+      leadNames,
       legacy: LEGACY_DASHBOARD_URL,
       now: Date.now(),
     }),
