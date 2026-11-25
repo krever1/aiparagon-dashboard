@@ -1,8 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { fixtures } from '../stub/fixtures.mjs'
 import { leadId } from '../../src/lib/catalyst/lead-id'
-import { STAGES } from '../../src/lib/catalyst/stages'
-import { TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
+import { serveLogo, signIn, stubCalls, stubHook, stubReset, stubSeed } from './helpers'
 
 // Catalyst: the Lead pipeline (board and list), the Overview and a lead's page, on the stand-in's made-up leads
 // (tests/stub/fixtures.mjs: Pat Example in Proposal, Robin Sample moved to "Kickoff call", Lee Client in Onboarding,

@@ -72,6 +72,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   types the team can change (Tasks and Calls), Calls' Calendar tab, calls filed by their people, a new contact on a call
   on Today with its question, a lead's HubSpot tab read live, feedback pins (the top bar's Feedback, Approvals), and
   Tasks' Select and Send to Notion. Send to Asana stays in the current dashboard. See Shell, Catalyst and Touchpoint.
+- Erica's notes of Nov 24, round 3 (Nov 25, branch `nx/feedback-r3`; the current dashboard's v145, with v146's fixes):
+  Meeting Types and Client Stages (the board's columns are the team's stages, each with a setup; the Overview's
+  Meeting Types, the team's own included; a lead's stage checklist), the client workspace on a lead's Files tab, and
+  the Intel Tracker's replies (who each account is, Draft replies, Why this post, Import LinkedIn connections). Sending
+  workspace items to Asana or Notion (v151) is not in it. See Catalyst and Pipeline below.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -102,8 +107,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | HubSpot contacts, Calls, a lead's Calls tab | here (in production) |
 | Catalyst | A lead's client proposal, What should change?, meeting prep charts, file uploads | here (in production) |
 | Catalyst | Run, or Run again, on every report of a lead's page | here (feedback round 1, not released) |
+| Catalyst | Meeting Types and Client Stages (Edit stages, each stage's and meeting type's setup, the team's own, a lead's stage checklist) | here (feedback round 3, not released) |
+| Catalyst | A lead's Files tab as the client workspace (folders, star, move, edit, delete, a file or a pasted transcript as a run's source) | here (feedback round 3, not released) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
+| Pipeline | Intel Tracker replies: who each account is, Draft replies, Why this post, Import LinkedIn connections | here (feedback round 3, not released) |
 | Pipeline | Overview, Market Intelligence Briefs | here (Pipeline part 1b, not released) |
 | Pipeline | Ad Strategist | here (Pipeline part 2a, not released) |
 | Pipeline | Runs & uploads; the upload, build-a-brief and ad copy windows; Read this ad | here (Pipeline part 2b, not released) |
@@ -222,8 +230,47 @@ signed-in teammate's token, as the current dashboard's do.
   browser's, by the minute (React's lint refuses `Date.now()` while drawing).
 
 ## Catalyst
-- `src/lib/catalyst/stages.ts`: the six meeting stages (V136_STAGES): key, name (the team's, from `ai_settings`
-  `catalyst_stages`; only the name can change), short, doc, what, agent, link column, colour, from, role.
+- `src/lib/catalyst/stages.ts`: the six built-in meeting stages (V136_STAGES): key, name (the team's, from
+  `ai_settings` `catalyst_stages`), short, doc, what, agent, link column, colour, from, role, plus `base`, `custom`,
+  `mt` and `norun` (v145). `StageKey` is a built-in key; a board stage's key is any string (a built-in one or `cs-…`).
+  The board's columns come from `teamStages` in `setup.ts` (below), read with the leads (`readCatalyst`), and everything
+  that lists stages (the board, the tabs, the question, the Overview, a lead's page, Today, Approvals) takes that list.
+- Meeting Types and Client Stages (v145, v146; `setup.ts` pure rules, `setup-actions.ts`, `setup-dialogs.tsx`):
+  - The settings, in the current dashboard's shapes: `catalyst_meeting_types` ({order, items: {key: {name, doc, desc,
+    sections, kb, kbFiles, hidden, deleted, by, at}}}; built-in keys hold only desc, kb, kbFiles and hidden; the team's
+    own are `mt-…`), `catalyst_client_stages` ({order, items: {key: {name (the team's own only), desc, inputs, before,
+    after, template, deliverables, tasks, type, also, c, deleted, by, at}}, removed (built-in keys), by, at}), and
+    `catalyst_stage_ticks` ({lead email as stored: {stage: {`d:<n>` or `t:<n>`: true}}}). A built-in stage's or
+    meeting type's name is `catalyst_stages`, so a built-in type is always named as its stage. Every save reads the
+    row fresh and merges its top-level keys (`patchSetting` in `settings.ts`, v104SetPatch).
+  - `stageRecs` (v145StageRecs): the team's order, then any stage missing from it; removed built-in ones out unless
+    asked for, and Prospect research never removed (v146: an older save that removed it is ignored). `teamStages`
+    (v145Apply): a built-in stage keeps its agent; one of the team's own runs its meeting type (`mt-…`) through
+    Catalyst · Meeting Prep, or nothing (`norun`). `meetingTypes`: the six, then the team's own, hidden ones on ask.
+  - The board's tab is Client Stages; a column's name opens its setup (`StageSetup`: name, description, the meeting type
+    it runs (fixed for a built-in stage), other meeting types in it, inputs required, before, after, the output template
+    (meeting prep stages and the team's own), deliverables and workflow tasks, one per line). Edit stages (`StagesEdit`)
+    renames, moves, adds (with the type it runs) and deletes; Delete (`deleteStage`) moves the stage's leads to the stage
+    picked (every row of each, then any other row saved in it), a built-in stage goes to Removed stages and Bring back
+    (`bringBackStage`) puts it before the next built-in stage still there (v146); Delete and Bring back with changes not
+    saved say to save first (v146); Use the usual names.
+  - The Overview's first tab is Meeting Types: a card per type (its name, yours or hidden, what it writes, what it is
+    for, the stages it runs in, the leads in them) and New meeting type. `TypeSetup`: name, what it writes (the team's
+    own only), description, the output template (the team's own; a built-in one lists its sections), what it reads
+    (calls, the CRM record, emails, saved in `catalyst_stage_setup` under the type's key), knowledge base context and
+    up to six knowledge base files (`kbFiles`, the newest 60 of guide_files in the knowledge base; a file not among them
+    stays, v146); Hide it or Show it again (built in), Delete (the team's own, asks first; stages that ran it run
+    nothing). A built-in type renamed onto another stage's name is refused (v146).
+  - A stage that runs nothing has no Run on its cards, and a move there is just a move with no question (`moveOnly`).
+    The question adds what to have ready, before this stage, deliverables and tasks (`StageNeeds`). A Meeting Prep run
+    sends the stage's own output template, else its type's sections (two or more), and what the meeting is for (the
+    stage's description, and a type of the team's own's) as `sections` and `purpose` (`prepExtras`), and every run puts
+    the type's knowledge base context after the team's notes (`kbText`: the note, then the files' text, 6,000 characters
+    in all, 3,000 each). A stage of the team's own follows its type's setup (`setupKeyOf`) and its reads say "Template:
+    the meeting type’s sections (N)".
+  - A lead's page: the prep tab of every meeting prep stage on the board (the team's own too), and above the tabs This
+    stage (`StageChecklist`, when its stage has a description, inputs, before, after, deliverables or tasks), with ticks
+    saved for the team (`tickStage`) and Stage setup.
 - `src/lib/catalyst/leads.ts`: leads worked out as the current dashboard does: `relink` (discovery and growth plan rows
   saved under the anonymizer's placeholder email go back to the lead of the same name), `synthesize` (a lead for
   documents with no e1_leads row), `mergeLeads` (rows of the same person, real rows first), `docOf` (a stage's
@@ -241,7 +288,7 @@ signed-in teammate's token, as the current dashboard's do.
   Doc Reader (`readDocument`, a Server Action), else the PDF in Drive when the Doc is empty; Structured (title, key
   facts, a part per heading; JSON documents as cards) or Full text, remembered in this browser. Markdown goes through
   react-markdown with raw HTML left out and unsafe links as plain text (the current dashboard passed raw HTML through).
-- Rename stages (`saveStageNames`): reads the row fresh, merges, stores '' for a usual name and `by`/`at` per stage.
+- Rename stages is Edit stages since v145 (above): a built-in stage's name is stored '' when it is the usual one.
 - Runs (part 2): a card's Run, a drop on another column, a lead page's Stage picker or a prep tab's Run opens the
   question (`stage-question.tsx`, v136Ask): what the stage writes and works from, what the run reads (`stageReads`:
   the template, the lead's Fathom calls, its HubSpot emails, the CRM record, the discovery questions), the meeting
@@ -363,12 +410,38 @@ signed-in teammate's token, as the current dashboard's do.
   screen readers that stands in for the drawing on a phone. A brand color draws the marks only when it stands out on
   white (`inkOf`). In the proposal a chart goes under the section it names (`chartsBySection`), in the onboarding plan and
   client review brief at the end of the ## section it names (`placeCharts`), else at the end.
-- Files (part 4, `files-panel.tsx`, `file-actions.ts`, `files.ts`): Upload sends the file from the browser straight to
-  Storage (bucket lead-files, under the lead's email) at an address signed as the teammate (`startUpload`; a Vercel
-  request takes 4.5 MB at most, a file up to 25 MB), then `finishUpload` saves the row and sends a copy to HubSpot
-  after answering (Lead File → HubSpot Sync, `after()`), and `indexFile` reads the text for the Ask bot: a Word file on
-  the server (mammoth), anything else through Lead File Text Ingest (`file-ingest`). Index and Re-index read it again;
-  ✕ asks first, then deletes the row and its stored file. The server fetches only files kept in lead-files.
+- Files (part 4, `file-actions.ts`, `files.ts`): an upload goes from the browser straight to Storage (bucket
+  lead-files, under the lead's email as stored) at an address signed as the teammate (`startUpload`; a Vercel request
+  takes 4.5 MB at most, a file up to 25 MB), then `finishUpload` saves the row and sends a copy to HubSpot after
+  answering (Lead File → HubSpot Sync, `after()`), and `indexFile` reads the text for the Ask bot: a Word file on the
+  server (mammoth), anything else through Lead File Text Ingest (`file-ingest`). The server fetches only files kept in
+  lead-files. Since v145 the tab is the client workspace (below), which has no Index or Re-index, as in the current
+  dashboard.
+- The client workspace (v145, v146; `workspace.ts` pure rules, `workspace.tsx`, `ws-actions.ts`): a lead's Files tab.
+  - Files and Calls; folders on the left (All content, Starred, To organize, a folder per board stage, then the team's
+    own), the stage folder cards (the lead's own marked Current), search, a file type, a sort and a grid. Files: the
+    older agents' documents (their PDF, Google Doc and slide notes as one row, in the stage folder of their agent), the
+    meeting prep (Read opens its tab) and the uploads. Calls: the lead's Fathom calls (in the folder of the stage they
+    are filed under) and the uploaded transcripts (Uploaded); "N calls need a folder".
+  - Kept for the team in ai_settings `catalyst_ws` ({lead email in lower case: {folders: [{id `wf-…`, name}], items:
+    {key: {name, folder, desc, star, source, stage}}}}, keys `a:<agent>`, `p:<stage>`, `f:<lead_files id>`,
+    `c:<call id>`), the current dashboard's shape. Star, the folder picker on an item with none, Edit (name, folder,
+    description; an upload also Use it as a source, and Delete) and New folder save at once (`wsStar`, `wsMove`,
+    `wsEdit`, `wsNewFolder`) and answer with the lead's workspace, which the page keeps.
+  - A call moved to a stage folder is filed under that stage (`fileCall`); a move keeps where the call is filed then
+    (`stage`), and holds while it is still filed there (v146), with the name and description given in Edit. An item
+    whose folder is gone (a stage removed, a folder deleted) is under To organize (`folded`, v146).
+  - Upload file (`UploadItem`): a file, or a call transcript pasted in (40 characters at least, kept to 120,000, saved
+    as a .txt with its text, category transcript, so nothing reads it again), with a name, a folder (the folder open,
+    else the lead's stage), a description and Use it as a source (on by default). The row's stage is the folder's
+    built-in stage's agent, else manual; the note is the description; the lead's email as stored (v146).
+  - Delete (`wsDelete`, uploads only, asks first): the row, then its stored file, then its entry (v146); a row the
+    database keeps says so.
+  - What a run reads (`wsSources`, v145WsSources): the lead's uploads with text, under any of its emails as stored or
+    in lower case (v146), that are a source (ticked, or a transcript nobody unticked), newest first, 20 characters of
+    text at least. Every stage run's notes end with "FILES AND TRANSCRIPTS ADDED TO THE CLIENT WORKSPACE" (8,000
+    characters, 3,000 each, `withWorkspace`), the reads list "From the client workspace: …", and they count as
+    something to work from. Write the client proposal sends them too.
 - Changed on purpose in part 4 (reported to Kser): deleting a file asks first (the Files page always did); an upload
   whose row cannot be saved takes its stored file back out; Word files are read on the server, not in the browser; an
   upload whose text could not be read says so (the old page said nothing); the question before writing the proposal
@@ -386,6 +459,12 @@ signed-in teammate's token, as the current dashboard's do.
   lead with a run under way takes no other run (`stillWriting`). The follow-up guide has none: no stage runs it.
 - Changed on purpose in feedback round 1 (reported to Kser): a report not written yet has its Run inside the box that
   says so (the old page added a second line, "Not written yet." with the button, above it).
+- Changed on purpose in feedback round 3 (reported to Kser): a stage of the team's own picks only the team's own
+  meeting types, as its window offers (a saved built-in key reads as none); the Overview's Documents tab leaves out a
+  stage that runs nothing; Prospect research can't be taken out in Edit stages either (the server refuses a list
+  without it); a lead's Files tab count is the workspace's items (it counted every PDF and Google Doc link); an upload
+  from a stage folder whose stage is meeting prep is saved with stage manual (the Files page groups by the older
+  agents); the windows' long names wrap on a phone, and so do the tabs' (a long unbroken stage name widened the page).
 
 ## Touchpoint
 - Tasks (part 1, `tasks.ts` pure rules, `tasks-load.ts`, `src/components/tasks/tasks-view.tsx`, `src/app/(app)/tasks`;
@@ -610,6 +689,26 @@ signed-in teammate's token, as the current dashboard's do.
     cascade}]}).
   - Write a post on this opens Marketing Generation in the current dashboard, where the current dashboard writes posts
     from the briefs (v97Start('brief')); Open the brief opens the briefs page here.
+- The Intel Tracker's replies (feedback round 3, v145 with v146's fixes; `src/lib/pipeline/intel-replies.ts` pure
+  rules, `intel-import.tsx`, `followReplies`, `whyPost` and `importConnections` in the Intel Tracker's actions):
+  - Following: each account not stopped has who it is to the firm (`competitors.relation`: competitor, connection,
+    prospect, client, partner, peer; empty reads as competitor) and Draft replies (`competitors.draft_replies`), saved
+    at once ("Replies on for X." / "No more replies drafted to X."). The Intel Tracker reads both (n8n, since v145).
+  - A reply's window (Approvals and the Intel Tracker) has Why this post (`whyLines`): how it was found (from an
+    account you follow and who it is to you, or a LinkedIn, web or other search), its value, its engagement ("among the
+    run’s most engaged" only when the draft's `why.top` says so, v146), the post's own score line, and how replies are
+    picked. It reads `engagement_drafts.why`, the post (by `intel_item_id`, else its link) and its account (by the post,
+    else for an older draft by the name on it, v146).
+  - Import LinkedIn connections (People on Following): LinkedIn's Connections.csv read in the browser (8 MB at most;
+    the export's notes lines skipped; linkedin.com/in/ links only, each in one shape, `liUrl`, so a person is listed
+    once), with search, 300 shown, those followed already marked (the same profile whatever shape its link was saved
+    in, `liKey`, or the same name) and not pickable, 50 picked at most, Draft replies per person. Follow N people saves
+    each as a person, posts only, approved, source linkedin_import, relation connection, the handle as
+    `https://www.linkedin.com/in/<name>`, notes "<position> at <company>", added_by the teammate's email.
+- Changed on purpose in the Intel Tracker's replies (reported to Kser): someone followed already is found by the
+  profile whatever shape either link is in (the old page compared the export's link with the saved handle, so
+  `in/<name>` handles never matched); the server leaves out anyone followed meanwhile, and says so when that is
+  everyone picked.
 - Brief sources (Nov 25, branch `fix/brief-sources`): a post counts as a source of a five-things point only when it
   shares two words with the point, or its engagement is quoted there; before, the tag and high-value bonuses alone (3
   points) let unrelated posts in. The current dashboard's v143 does the same.
@@ -1250,7 +1349,11 @@ signed-in teammate's token, as the current dashboard's do.
 - `catalyst-logic.spec.ts` checks the lead, call and follow rules without a browser, `proposal-logic.spec.ts` the
   chart and client proposal rules; `catalyst.spec.ts` and `catalyst-runs.spec.ts` the Catalyst pages; `hubspot.spec.ts`
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
-  `lead-docs.spec.ts` What should change? and the meeting prep charts; `files.spec.ts` a lead's files;
+  `lead-docs.spec.ts` What should change? and the meeting prep charts; `workspace.spec.ts` a lead's Files tab as the
+  client workspace (an upload, a pasted transcript read by a run, star, folders, move, edit, a call filed by a move,
+  delete, a lead whose email has capitals); `setup-logic.spec.ts` (without a browser) and `stages.spec.ts` Meeting Types
+  and Client Stages (made-up `catalyst_meeting_types` and `catalyst_client_stages` rows and two knowledge base files);
+  `intel-replies.spec.ts` the Intel Tracker's replies (a made-up Connections.csv);
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks (folding a call and removing a task too), on the
   rows in `tasks-fixtures.ts`; `back.spec.ts` the top bar's Back; `r2-logic.spec.ts` (without a browser) the team's
   names, filing a call by its people, new contacts on calls, feedback keys and Approvals' feedback rows;
@@ -1479,3 +1582,12 @@ signed-in teammate's token, as the current dashboard's do.
 - A label that wraps a select holds the select's options in its text, so a test that filters labels by their text
   matches every column whose select lists that header: find the select by its place, or by the label's own span
   (`testing-import.spec.ts`). Playwright names such a select by the label's words and its chosen option together.
+- The board's stages are the team's (v145): never loop over `STAGES` for something a lead sits in or a run writes;
+  take the list `readCatalyst` builds (`read.stages`, `PipelineData.stages`, `LeadPageData.stages`), and look a stage
+  up by key (`stageIn`). `STAGES` and `stageOfKey` are for what only a built-in stage has (its agent's setup, the custom
+  run's entry, the client proposal's documents).
+- A label that wraps a textarea can take the textarea's text into its name once it is typed in, so a test finds it by
+  role and exact name (`getByRole('textbox', { name, exact: true })`), not `getByLabel` (`workspace.spec.ts`).
+- A controlled checkbox or select whose value comes from the server snaps back until the page's data comes again, and
+  Playwright's check() then says the click changed nothing: keep the value in the row's own state and save it
+  (`FollowReplies` in `intel-following.tsx`).
