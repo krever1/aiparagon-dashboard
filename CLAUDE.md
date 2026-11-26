@@ -1613,6 +1613,10 @@ signed-in teammate's token, as the current dashboard's do.
 - The briefs page draws one `BriefsView` for every tab and brief (no key), so a brief being edited stays open while
   another tab is looked at, as in the old page. State that belongs to one brief goes in `OrgBrief` or `AdsBrief`,
   which are keyed by run; the view only resets Brief or Structure when the tab changes.
+- A test that acts at once on a page it just opened with `page.goto` can act before React has hydrated it: a select's
+  change then reaches no handler and is lost (the Intel Tracker's run picker failed about one run in ten on Nov 26).
+  Wait first with `untilHydrated(locator)` in `helpers.ts` (React's `__reactProps$` key on the node); `signIn` and
+  anything already waiting on a client-drawn result need nothing.
 - A label that wraps a select holds the select's options in its text, so a test that filters labels by their text
   matches every column whose select lists that header: find the select by its place, or by the label's own span
   (`testing-import.spec.ts`). Playwright names such a select by the label's words and its chosen option together.
