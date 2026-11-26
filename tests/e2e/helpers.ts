@@ -1,4 +1,4 @@
-import { type Page, expect } from '@playwright/test'
+import { type Locator, type Page, expect } from '@playwright/test'
 
 // the stand-in's address (STUB_PORT moves it, for a second copy of the suite running beside this one)
 export const STUB = 'http://127.0.0.1:' + (process.env.STUB_PORT || '54399')
@@ -55,4 +55,10 @@ export async function stubHook(path: string, status: number, body: unknown) {
 /** The team's Fathom key as the Fathom proxy stand-in keeps it ({connected: false} disconnects it). */
 export async function stubFathom(state: Record<string, unknown>) {
   await fetch(STUB + '/__fathom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(state) })
+}
+
+// React marks an element it has hydrated (a __reactProps$ key on the node). A change made before that, such as picking
+// an option right after page.goto, reaches no handler and is lost, so a test that acts at once on a fresh page waits.
+export async function untilHydrated(el: Locator) {
+  await expect.poll(() => el.evaluate((n) => Object.keys(n).some((k) => k.startsWith('__reactProps$')))).toBe(true)
 }
