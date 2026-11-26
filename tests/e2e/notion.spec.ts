@@ -5,7 +5,7 @@ import { TASK_METAS, TASK_OUTPUTS } from './tasks-fixtures'
 
 // Tasks' Select and Send to Notion (the current dashboard's v143 and v144): pick a call's tasks, then send them to a
 // Notion database through Dashboard · Notion Proxy, an entry each named "<task> · <call>" plus a follow-up; the database
-// used last and what went where per call are kept for the team. Send to Asana stays in the current dashboard.
+// used last and what went where per call are kept for the team. Send to Asana is in asana.spec.ts.
 
 test.use({ timezoneId: 'UTC' })
 
@@ -31,12 +31,11 @@ async function pick(page: Page) {
   return robin
 }
 
-test('Select picks a call’s tasks: All, None, one by one; Done puts the boxes away; there is no Send to Asana here', async ({ page }) => {
+test('Select picks a call’s tasks: All, None, one by one; Done puts the boxes away', async ({ page }) => {
   const robin = await pick(page)
   const bar = robin.getByTestId('pick-bar')
   await expect(bar.locator('b')).toHaveText('Pick the tasks to send')
-  await expect(bar.getByRole('button')).toHaveText(['All', 'None', 'Send to Notion', 'Done'])
-  await expect(page.getByRole('button', { name: 'Send to Asana' })).toHaveCount(0)
+  await expect(bar.getByRole('button')).toHaveText(['All', 'None', 'Send to Asana', 'Send to Notion', 'Done'])
   await bar.getByRole('button', { name: 'All' }).click()
   await expect(bar.locator('b')).toHaveText('2 picked')
   await bar.getByRole('button', { name: 'None' }).click()

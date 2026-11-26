@@ -60,6 +60,8 @@ export type WsItem = {
   src?: string
   sum?: string
   filed?: boolean
+  /** a call's Fathom link, for Send to Asana's Open it */
+  link?: string
   /** where it was sent (v151): the Asana project, the Notion database, each with when */
   sent: WsSent[]
 }
@@ -85,6 +87,27 @@ export function kindWord(i: Pick<WsItem, 'kind'>): string {
 export function sendTitle(name: string, client: string): string {
   const s = str(name).trim() + ' · ' + client
   return s.length > 300 ? s.slice(0, 299) + '…' : s
+}
+
+/** A link that opens the item (v151Link): a call's Fathom link, else its first web link (the file, the Google Doc). */
+export function itemLink(i: Pick<WsItem, 'kind' | 'fm' | 'link'>): string {
+  if (i.kind === 'call') return i.link && /^https:\/\//i.test(i.link) ? i.link : ''
+  return i.fm.find((f) => f.u && /^https?:\/\//i.test(f.u))?.u ?? ''
+}
+
+/**
+ * An Asana task's description for an item (v151Notes): its kind, the client, the folder and the day, what it is about
+ * (its description, else a call's summary), and the link that opens it.
+ */
+export function asanaNotes(i: Pick<WsItem, 'kind' | 'fm' | 'link' | 'desc' | 'sum'>, client: string, folder: string, day: string): string {
+  const link = itemLink(i)
+  return [
+    kindWord(i) + ' from ' + client + '’s workspace' + (folder ? ' · ' + folder : '') + (day ? ' · ' + day : ''),
+    i.desc ? 'About it: ' + i.desc : i.sum ? 'Summary: ' + i.sum : '',
+    link ? 'Open it: ' + link : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** The picked items, once each (a transcript is in both views), in the order they show (v151Picked). */
@@ -181,7 +204,7 @@ export function wsFiles({
   return folded(list, wsFolders(stages, meta))
 }
 
-export type WsCall = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string }
+export type WsCall = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string; link?: string }
 
 /**
  * Everything in the Calls view (v145WsCalls, v146): the lead's recorded calls and the transcripts uploaded to the
@@ -197,7 +220,7 @@ export function wsCalls({ calls, files, stages, meta }: { calls: WsCall[]; files
     const folder = m.folder != null && (m.stage ?? '') === (x.stage ?? '') ? m.folder : filed || m.folder || ''
     return {
       key, kind: 'call', id: x.id, name: m.name || x.title || 'Call', fm: [], folder, at: x.start, by: '', desc: m.desc || '', star: !!m.star,
-      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage, sent: sentOf(m),
+      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage, link: x.link || '', sent: sentOf(m),
     }
   })
   for (const i of files) if (i.kind === 'transcript') out.push({ ...i, src: 'Uploaded' })

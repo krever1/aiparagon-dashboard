@@ -56,8 +56,9 @@ test('the to-dos by client folder, with the type buttons, the people and the ope
   ])
   await expect(pick.locator('option').last()).toHaveText('+ New type…')
 
-  // Asana stays in the current dashboard
-  await expect(page.getByTestId('asana').getByRole('link', { name: 'Open Asana in the current dashboard' })).toHaveAttribute('href', LEGACY + '/tasks')
+  // the Asana card: connect this browser, and the open Asana tasks still in the current dashboard
+  await expect(page.getByTestId('asana').getByRole('button', { name: 'Connect Asana' })).toBeVisible()
+  await expect(page.getByTestId('asana').getByRole('link', { name: 'Your open Asana tasks are still in the current dashboard' })).toHaveAttribute('href', LEGACY + '/tasks')
 })
 
 test('a call’s type is saved for the team, and the buttons and the address follow', async ({ page }) => {

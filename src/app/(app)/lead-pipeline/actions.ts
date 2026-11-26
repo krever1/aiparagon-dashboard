@@ -239,7 +239,7 @@ export async function callText(id: string): Promise<{ ok: true; text: string } |
 
 // ---------- a lead's calls, and filing one (v137LeadCalls, v137AskCall, v137CallGo) ----------
 
-export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string }
+export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string; link?: string }
 
 /** The lead's Calls tab: every recorded call with it, and the stage each is filed under. */
 export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: LeadCallRow[]; error: string } | { ok: false; error: string }> {
@@ -266,7 +266,7 @@ export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: L
   }
   return {
     ok: true,
-    calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage, who: c.who, summary: sums[c.id] ?? '' })),
+    calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage, who: c.who, summary: sums[c.id] ?? '', link: c.link })),
     error: r.err,
   }
 }
