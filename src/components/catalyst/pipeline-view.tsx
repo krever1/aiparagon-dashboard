@@ -4,19 +4,15 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, PenLine, Search } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
 import { LocalDate, LocalDay } from '@/components/ui/local-date'
-import { toast } from '@/components/ui/toast'
-import { saveStageNames } from '@/app/(app)/lead-pipeline/actions'
-import {
-  STAGES, STAGE_NAME_MAX, type Stage, type StageKey, cleanName, firmTypeLabel, runLabel, stagesNamed,
-} from '@/lib/catalyst/stages'
+import { type Stage, firmTypeLabel, runLabel } from '@/lib/catalyst/stages'
 import {
   type LeadView, type PipelineData, type PipelineTab, hasDoc, leadHref, matchesSearch, pipelineTab, stripCounts, viewStage,
 } from '@/lib/catalyst/view'
 import { Banner, ErrorNotice, FitPill, StageDot, StripTile, Tabs, plural } from './bits'
 import { useCheckBack } from './check-back'
-import { type Ask, StageQuestion, stillWriting } from './stage-question'
+import { StageSetup, StagesEdit } from './setup-dialogs'
+import { type Ask, StageQuestion, moveOnly, stillWriting } from './stage-question'
 
 /**
  * Lead pipeline: every prospect and client, by meeting stage. The Board tab shows a column per stage; All and the
@@ -24,16 +20,21 @@ import { type Ask, StageQuestion, stillWriting } from './stage-question'
  * Lead pipeline goes back to the board.
  */
 export function PipelineView({ data }: { data: PipelineData }) {
-  const tab = pipelineTab(useSearchParams().get('tab'))
+  const stages = data.stages
+  const tab = pipelineTab(useSearchParams().get('tab'), stages)
   const [listQ, setListQ] = useState('')
-  const [renaming, setRenaming] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [setup, setSetup] = useState<string | null>(null)
   const [ask, setAsk] = useState<Ask | null>(null)
-  const stages = useMemo(() => stagesNamed(data.names), [data.names])
-  const c = useMemo(() => stripCounts(data.leads), [data.leads])
+  const c = useMemo(() => stripCounts(data.leads, stages), [data.leads, stages])
   useCheckBack(data.leads.some((l) => l.run))
-  const onAsk = (lead: LeadView, stage: StageKey, move: boolean) => {
-    if (!stillWriting(lead)) setAsk({ lead, stage, move })
+  const onAsk = (lead: LeadView, stage: string, move: boolean) => {
+    if (stillWriting(lead) || moveOnly(lead, stages.find((s) => s.key === stage), move)) return
+    setAsk({ lead, stage, move })
   }
+  const setupRec = setup ? data.recs.find((r) => r.key === setup) : null
+  // Edit stages draws afresh when the stages change (a stage brought back or deleted)
+  const recsKey = data.recs.map((r) => r.key + (r.removed ? '-' : '+')).join(',')
 
   const go = (t: PipelineTab) => {
     const u = new URL(window.location.href)
@@ -42,7 +43,7 @@ export function PipelineView({ data }: { data: PipelineData }) {
     window.history.replaceState(null, '', u.pathname + u.search)
   }
 
-  const clientTab: StageKey = c.by.onboarding > 0 || c.by.review === 0 ? 'onboarding' : 'review'
+  const clientTab: PipelineTab = (c.by.onboarding ?? 0) > 0 || !c.by.review ? (c.by.onboarding !== undefined ? 'onboarding' : 'all') : 'review'
   const tiles: { n: number; label: string; tip: string; to: PipelineTab }[] = [
     { n: c.leads, label: 'Leads', tip: 'all prospects and clients', to: 'all' },
     { n: c.sales, label: 'In the sales stages', tip: 'research to proposal', to: 'board' },
@@ -64,19 +65,22 @@ export function PipelineView({ data }: { data: PipelineData }) {
         active={tab}
         onPick={go}
         tabs={[
-          { key: 'board', label: 'Board' },
+          { key: 'board', label: 'Client Stages' },
           { key: 'all', label: 'All', count: c.leads },
-          ...stages.map((s) => ({ key: s.key as PipelineTab, label: s.name, count: c.by[s.key] })),
+          ...stages.map((s) => ({ key: s.key as PipelineTab, label: s.name, count: c.by[s.key] ?? 0 })),
         ]}
       />
       {data.error ? <ErrorNotice>{data.error}</ErrorNotice> : null}
       {tab === 'board' ? (
-        <Board leads={data.leads} stages={stages} onRename={() => setRenaming(true)} onAsk={onAsk} />
+        <Board leads={data.leads} stages={stages} onEdit={() => setEditing(true)} onSetup={setSetup} onAsk={onAsk} />
       ) : (
         <LeadList leads={data.leads} stages={stages} tab={tab} q={listQ} setQ={setListQ} />
       )}
-      {renaming ? <RenameStages stages={stages} onClose={() => setRenaming(false)} /> : null}
-      {ask ? <StageQuestion key={ask.lead.id + ask.stage} ask={ask} stages={stages} onClose={() => setAsk(null)} /> : null}
+      {editing ? <StagesEdit key={recsKey} recs={data.recs} types={data.types} leads={data.leads} onClose={() => setEditing(false)} /> : null}
+      {setupRec ? <StageSetup rec={setupRec} types={data.types} onClose={() => setSetup(null)} /> : null}
+      {ask ? (
+        <StageQuestion key={ask.lead.id + ask.stage} ask={ask} stages={stages} rec={data.recs.find((r) => r.key === ask.stage)} onClose={() => setAsk(null)} />
+      ) : null}
     </>
   )
 }
@@ -100,26 +104,28 @@ function SearchBox({ value, onChange, label }: { value: string; onChange: (v: st
 function Board({
   leads,
   stages,
-  onRename,
+  onEdit,
+  onSetup,
   onAsk,
 }: {
   leads: LeadView[]
   stages: Stage[]
-  onRename: () => void
-  onAsk: (lead: LeadView, stage: StageKey, move: boolean) => void
+  onEdit: () => void
+  onSetup: (key: string) => void
+  onAsk: (lead: LeadView, stage: string, move: boolean) => void
 }) {
   const router = useRouter()
   const [q, setQ] = useState('')
   const [drag, setDrag] = useState<LeadView | null>(null)
-  const [over, setOver] = useState<StageKey | null>(null)
+  const [over, setOver] = useState<string | null>(null)
   const shown = leads.filter((l) => matchesSearch(l, q))
   const open = (l: LeadView) => router.push(leadHref(l.id))
   // a lead can go to any other stage; its own column takes no drop, and a lead being written takes no move
-  const canDrop = (l: LeadView | null, s: StageKey) => !!l && !l.run && viewStage(l) !== s
+  const canDrop = (l: LeadView | null, s: string) => !!l && !l.run && viewStage(l) !== s
   return (
     <section aria-label="Board">
       <p className="mb-3 text-[14.5px] text-ink-2">
-        Move a lead to the stage it is in. Catalyst writes that stage’s prep, and asks before it runs anything.
+        Move a lead to the stage it is in. Catalyst writes that stage’s prep, and asks before it runs anything. Click a stage’s name to set it up.
       </p>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchBox value={q} onChange={setQ} label="Search leads" />
@@ -128,15 +134,18 @@ function Board({
         </span>
         <button
           type="button"
-          onClick={onRename}
+          onClick={onEdit}
           className="ml-auto inline-flex items-center gap-2 rounded-sm border border-line bg-panel px-3 py-2 text-[13.5px] font-semibold text-ink hover:border-line-2"
         >
           <PenLine size={15} aria-hidden="true" />
-          Rename stages
+          Edit stages
         </button>
       </div>
       <div className="@container">
-        <div className="grid grid-cols-1 gap-3 @min-[600px]:grid-cols-3 @min-[940px]:grid-cols-6">
+        <div
+          className="grid grid-cols-1 gap-3 @min-[600px]:grid-cols-3 @min-[940px]:grid-cols-[repeat(var(--cols),minmax(0,1fr))]"
+          style={{ '--cols': Math.min(stages.length, 8) } as React.CSSProperties}
+        >
           {stages.map((s) => {
             const col = shown.filter((l) => viewStage(l) === s.key)
             const no = !!drag && !canDrop(drag, s.key)
@@ -170,7 +179,15 @@ function Board({
               >
                 <div className="flex items-start gap-2 px-1 pt-1">
                   <StageDot color={s.color} className="mt-[7px]" />
-                  <b className="min-w-0 flex-1 text-[14.5px] font-semibold leading-snug text-ink">{s.name}</b>
+                  <button
+                    type="button"
+                    onClick={() => onSetup(s.key)}
+                    title={'Set up ' + s.name}
+                    aria-label={'Set up the ' + s.name + ' stage'}
+                    className="min-w-0 flex-1 rounded-sm text-left text-[14.5px] font-semibold leading-snug text-ink [overflow-wrap:anywhere] hover:underline hover:underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    {s.name}
+                  </button>
                   <span className="rounded-full bg-panel px-2 py-0.5 text-[11.5px] font-semibold text-ink-2">{col.length}</span>
                 </div>
                 {col.length ? (
@@ -271,7 +288,7 @@ function Card({
             <Check size={14} aria-hidden="true" />
             {s.short} ready
           </Link>
-        ) : (
+        ) : s.norun ? null : (
           <button
             type="button"
             onClick={(e) => {
@@ -298,7 +315,7 @@ function LeadList({
 }: {
   leads: LeadView[]
   stages: Stage[]
-  tab: 'all' | StageKey
+  tab: string
   q: string
   setQ: (v: string) => void
 }) {
@@ -308,8 +325,12 @@ function LeadList({
   const shown = inTab.filter((l) => matchesSearch(l, q))
   const anyFit = shown.some((l) => l.fit)
   const eyebrow = stage ? stage.name : 'All'
-  const title = stage ? `In ${stage.name.toLowerCase()}, prep: ${stage.doc.toLowerCase()}` : 'Every prospect in Catalyst'
-  const byKey = Object.fromEntries(stages.map((s) => [s.key, s])) as Record<StageKey, Stage>
+  const title = stage
+    ? stage.doc
+      ? `In ${stage.name.toLowerCase()}, prep: ${stage.doc.toLowerCase()}`
+      : `In ${stage.name.toLowerCase()}`
+    : 'Every prospect in Catalyst'
+  const byKey: Record<string, Stage> = Object.fromEntries(stages.map((s) => [s.key, s]))
 
   return (
     <section aria-label={title} className="rounded-lg border border-line bg-panel shadow-card">
@@ -339,7 +360,7 @@ function LeadList({
           </thead>
           <tbody>
             {shown.map((l) => {
-              const s = byKey[viewStage(l)]
+              const s = byKey[viewStage(l)] ?? stages[0]
               return (
                 <tr
                   key={l.id}
@@ -412,86 +433,5 @@ function LeadList({
         ) : null}
       </div>
     </section>
-  )
-}
-
-function RenameStages({ stages, onClose }: { stages: Stage[]; onClose: () => void }) {
-  const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(stages.map((s) => [s.key, s.name])))
-  const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const save = async () => {
-    const next = stages.map((s) => cleanName(vals[s.key]) || s.defaultName)
-    if (next.every((n, i) => n === stages[i].name)) return onClose()
-    setBusy(true)
-    setMsg({ text: 'Saving…' })
-    const res = await saveStageNames(vals)
-    if (!res.ok) {
-      setBusy(false)
-      setMsg({ text: `Could not save the names: ${res.error}. Try again in a minute.`, bad: true })
-      return
-    }
-    onClose()
-    toast('Saved. The whole team sees the new names.')
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      kicker="Catalyst · Lead pipeline"
-      title="Rename the stages"
-      width={680}
-      footer={
-        <>
-          <span role="status" aria-live="polite" className={`mr-auto text-[13.5px] ${msg?.bad ? 'text-bad' : 'text-ink-2'}`}>
-            {msg?.text ?? ''}
-          </span>
-          <button
-            type="button"
-            onClick={() => setVals(Object.fromEntries(STAGES.map((s) => [s.key, s.defaultName])))}
-            className="rounded-sm px-3 py-2 text-[14px] font-semibold text-ink-2 hover:bg-sunk hover:text-ink"
-          >
-            Use the usual names
-          </button>
-          <button type="button" onClick={onClose} className="rounded-sm border border-line px-3.5 py-2 text-[14px] font-semibold text-ink hover:border-line-2">
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={save}
-            className="inline-flex items-center gap-2 rounded-sm bg-action px-4 py-2 text-[14px] font-semibold text-action-ink hover:bg-action-hover disabled:opacity-60"
-          >
-            <Check size={16} aria-hidden="true" />
-            Save names
-          </button>
-        </>
-      }
-    >
-      <p className="mb-4 text-[14.5px] leading-relaxed text-ink-2">
-        Your names for the meetings, for the whole team: on the board, the tabs and each lead’s page. What each stage writes
-        stays the same.
-      </p>
-      <div className="grid grid-cols-1 gap-x-5 gap-y-3.5 sm:grid-cols-2">
-        {stages.map((s, i) => (
-          <label key={s.key} className="block">
-            <span className="block text-[13.5px] font-semibold text-ink">
-              {i + 1}. {s.defaultName}
-            </span>
-            <small className="mb-1 block text-[12.5px] text-ink-3">Writes {s.what}</small>
-            <input
-              type="text"
-              data-k={s.key}
-              maxLength={STAGE_NAME_MAX}
-              placeholder={s.defaultName}
-              value={vals[s.key] ?? ''}
-              onChange={(e) => setVals((v) => ({ ...v, [s.key]: e.target.value }))}
-              className="h-10 w-full rounded-sm border border-line bg-panel px-3 text-[14.5px] text-ink focus:border-accent focus:outline-none"
-            />
-          </label>
-        ))}
-      </div>
-    </Dialog>
   )
 }

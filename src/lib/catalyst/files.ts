@@ -12,13 +12,3 @@ export const FILE_STAGES: { key: string; label: string }[] = [
   { key: 'growth_plan', label: 'Proposal' },
   { key: 'manual', label: 'General / manual' },
 ]
-
-/** A group's heading in the list. */
-export const FILE_GROUP: Record<string, string> = {
-  lead_research: 'Prospect brief',
-  interview_script: 'Consultation guide',
-  anonymizer: 'Assessment',
-  discovery_call: 'Follow-up guide',
-  growth_plan: 'Proposal',
-  manual: 'General',
-}

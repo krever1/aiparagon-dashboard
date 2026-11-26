@@ -180,7 +180,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
     }
   }
   const marks: ReviewMark[] = rowsOf(rv).map((r) => ({ target: str(r.target_id), action: str(r.action), at: str(r.created_at) }))
-  const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks) : []
+  const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks, pipeline.stages) : []
   const comments: CommentRow[] = rowsOf(cm).map((c) => ({
     id: str(c.id),
     target: str(c.target_key),
@@ -213,7 +213,7 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
       hooks,
       adDecisions,
       leads: waits,
-      names: pipeline?.names ?? {},
+      stages: pipeline?.stages,
       comments,
       leadIds,
       leadNames,

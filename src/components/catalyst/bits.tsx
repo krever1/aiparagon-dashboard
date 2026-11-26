@@ -91,7 +91,7 @@ export function Tabs<K extends string>({
             aria-selected={on}
             data-tab={t.key}
             onClick={() => onPick(t.key)}
-            className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[14px] font-medium transition-colors ${
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-sm px-3 py-1.5 text-[14px] font-medium transition-colors ${
               on ? 'bg-action text-action-ink' : 'text-ink-2 hover:bg-sunk hover:text-ink'
             }`}
           >
@@ -100,7 +100,7 @@ export function Tabs<K extends string>({
                 <span>✓</span>{' '}
               </>
             ) : null}
-            <span>{t.label}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{t.label}</span>
             {t.count !== undefined && t.count !== null && t.count !== '' ? (
               <>
                 {' '}

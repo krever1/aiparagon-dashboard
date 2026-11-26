@@ -7,6 +7,7 @@ import {
   FOCUS_CATS, FOCUS_THEMES, PENDING_MS, TERMS_MAX, type RunRow, type Terms, arr, competitorOf, focusClean, followFor, json, kindOf, linkedinHandle,
   runRows, termsFlat, termsOf, xHandle,
 } from '@/lib/pipeline/intel'
+import { IMPORT_MAX, isRelation, liKey, liUrl, whyLines } from '@/lib/pipeline/intel-replies'
 import { createClient } from '@/lib/supabase/server'
 
 // What the Intel Tracker saves, as the signed-in teammate: a custom run started through n8n (apIrSubmit) and kept for
@@ -266,4 +267,119 @@ export async function termRemove(input: { kind: string; value: string }): Promis
   }
   refresh()
   return { ok: true, toast: 'Removed “' + v + '”.' }
+}
+
+// ---------- replies (v145, v146): who an account is to the firm, why a post got a reply, LinkedIn connections ----------
+
+/** Who an account is to the firm, and whether its posts get replies (competitors.relation, draft_replies; v145FolSet). */
+export async function followReplies(input: { id: string; relation?: string; draftReplies?: boolean }): Promise<Saved> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const id = str(input?.id)
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: 'That is not on the follow list.' }
+  const body: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (input.relation !== undefined) {
+    if (!isRelation(input.relation)) return { ok: false, error: 'That is not one of the choices.' }
+    body.relation = input.relation
+  }
+  if (typeof input.draftReplies === 'boolean') body.draft_replies = input.draftReplies
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('competitors').update(body).eq('id', id).select('name')
+  if (error) return { ok: false, error: 'Could not save: ' + error.message }
+  if (!data?.length) return { ok: false, error: 'Could not save: it is not on the follow list any more' }
+  const name = str(data[0].name) || 'them'
+  refresh()
+  return {
+    ok: true,
+    toast: typeof input.draftReplies === 'boolean' ? (input.draftReplies ? 'Replies on for ' + name + '.' : 'No more replies drafted to ' + name + '.') : 'Saved.',
+  }
+}
+
+/**
+ * Why this post (v145Why, v146): the draft's `why` as the Intel Tracker saved it, the post it answers (by its id, else
+ * its link) and the account it follows (by the post, or for an older draft by the name on it).
+ */
+export async function whyPost(draftId: string): Promise<{ ok: true; lines: string[]; note: string } | { ok: false; error: string }> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
+  if (!/^[0-9a-f-]{36}$/i.test(str(draftId))) return { ok: false, error: 'That is not a reply.' }
+  const supabase = await createClient()
+  const dr = await supabase.from('engagement_drafts').select('why,intel_item_id,source_url,competitor_name').eq('id', draftId).maybeSingle()
+  if (dr.error) return { ok: false, error: dr.error.message }
+  const d = (dr.data ?? {}) as Record<string, unknown>
+  const w = json(d.why)
+  let item: Record<string, unknown> | null = null
+  const q = supabase.from('intel_items').select('competitor_id,source,ad_context_value,engagement_total,score_why,created_at')
+  const it = d.intel_item_id
+    ? await q.eq('id', str(d.intel_item_id)).limit(1)
+    : d.source_url
+      ? await q.eq('url', str(d.source_url)).order('created_at', { ascending: false }).limit(1)
+      : null
+  if (it && !it.error) item = ((it.data ?? [])[0] as Record<string, unknown>) ?? null
+  let account: { name: string; relation: string } | null = null
+  const acc = (rows: unknown[] | null) => {
+    const r = (rows ?? [])[0] as Record<string, unknown> | undefined
+    return r ? { name: str(r.name), relation: str(r.relation) } : null
+  }
+  if (item?.competitor_id) account = acc((await supabase.from('competitors').select('name,relation').eq('id', str(item.competitor_id)).limit(1)).data)
+  if (!account && !w.found && d.competitor_name) account = acc((await supabase.from('competitors').select('name,relation').eq('name', str(d.competitor_name)).limit(1)).data)
+  const eng = item?.engagement_total
+  return {
+    ok: true,
+    ...whyLines({
+      why: w,
+      item: item
+        ? {
+            source: str(item.source),
+            value: str(item.ad_context_value),
+            engagement: eng === null || eng === undefined || eng === '' ? null : Number(eng),
+            scoreWhy: str(item.score_why),
+            followed: !!item.competitor_id,
+          }
+        : null,
+      account,
+    }),
+  }
+}
+
+export type ConnPick = { name: string; url: string; company: string; position: string; replies: boolean }
+
+/**
+ * Import LinkedIn connections (v145ImpGo, v146): the people picked, 50 at a time, followed as people for their posts
+ * only, relation connection, with replies on or off. One already followed (by the same profile, whatever shape its
+ * link was saved in, or the same name) is left out.
+ */
+export async function importConnections(picks: ConnPick[]): Promise<Saved> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: SIGNED_OUT }
+  const list = (Array.isArray(picks) ? picks : []).map((c) => ({ ...c, url: liUrl(c?.url), name: str(c?.name).replace(/\s+/g, ' ').trim() }))
+  if (!list.length) return { ok: false, error: 'Pick someone to follow first.' }
+  if (list.length > IMPORT_MAX) return { ok: false, error: 'Keep it to 50 at a time: each one adds about 12 seconds to every run.' }
+  if (list.some((c) => !c.url || !c.name)) return { ok: false, error: 'That is not a LinkedIn connection.' }
+  const supabase = await createClient()
+  const { data: have } = await supabase.from('competitors').select('name,handle_linkedin').limit(2000)
+  const keys = new Set<string>()
+  for (const r of (have ?? []) as Record<string, unknown>[]) {
+    const k = liKey(r.handle_linkedin)
+    if (k) keys.add(k)
+    keys.add('n:' + str(r.name).toLowerCase())
+  }
+  const rows = list
+    .filter((c) => !keys.has(liKey(c.url)) && !keys.has('n:' + c.name.toLowerCase()))
+    .map((c) => ({
+      name: c.name.slice(0, 120),
+      handle_linkedin: c.url,
+      follow_kind: 'person',
+      follow_for: 'posts',
+      status: 'approved',
+      source: 'linkedin_import',
+      added_by: user.email,
+      relation: 'connection',
+      draft_replies: !!c.replies,
+      notes: [str(c.position), str(c.company)].filter(Boolean).join(' at ').slice(0, 300) || null,
+    }))
+  if (!rows.length) return { ok: false, error: 'You follow everyone picked already.' }
+  const { error } = await supabase.from('competitors').insert(rows)
+  if (error) return { ok: false, error: 'Could not save: ' + error.message }
+  refresh()
+  return { ok: true, toast: 'Following ' + rows.length + ' connection' + (rows.length === 1 ? '' : 's') + '. The next run reads their posts.' }
 }

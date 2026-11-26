@@ -2,7 +2,7 @@
 // v120Docs, v136Plan). Pure functions over the rows read from e1_leads and agent_outputs, so the pages and the tests
 // share them.
 
-import { FOLLOW_UP, STAGES, type StageKey, isStageKey } from './stages'
+import { FOLLOW_UP, STAGES, type Stage } from './stages'
 
 /** A row of e1_leads (the columns the dashboard uses). */
 export type LeadRow = {
@@ -217,16 +217,17 @@ export function docOf(lead: Lead, stage: DocSpec, outs: OutRow[]): Doc | null {
   return best
 }
 
-/** The furthest stage the lead has a document for (Prospect research when none). */
-export function derivedStage(lead: Lead, outs: OutRow[]): StageKey {
-  let k: StageKey = 'research'
-  for (const s of STAGES) if (docOf(lead, s, outs)) k = s.key
+/** The furthest stage on the board the lead has a document for (Prospect research when none; v136Derived). */
+export function derivedStage(lead: Lead, outs: OutRow[], stages: readonly Stage[] = STAGES): string {
+  let k = 'research'
+  for (const s of stages) if (s.agent && docOf(lead, s, outs)) k = s.key
   return k
 }
 
-/** Where a lead sits: the stage the team moved it to (e1_leads.stage), else the furthest stage with a document. */
-export function stageOf(lead: Lead, outs: OutRow[]): StageKey {
-  return isStageKey(lead.stage) ? lead.stage : derivedStage(lead, outs)
+/** Where a lead sits: the stage the team moved it to (e1_leads.stage, when it is on the board), else the furthest stage
+ * with a document. */
+export function stageOf(lead: Lead, outs: OutRow[], stages: readonly Stage[] = STAGES): string {
+  return stages.some((s) => s.key === lead.stage) ? String(lead.stage) : derivedStage(lead, outs, stages)
 }
 
 /** The Google Doc ids the agents saved (data.documentId): what a run of a later stage hands on. */

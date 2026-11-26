@@ -32,7 +32,7 @@ export function CallQuestion({
   onDone: () => void
 }) {
   const cur = viewStage(lead)
-  const nx = nextStageKey(cur)
+  const nx = nextStageKey(stages, cur)
   const same = nx === cur
   const st = stages.find((s) => s.key === nx)!
   const cst = stages.find((s) => s.key === cur)!
@@ -41,7 +41,7 @@ export function CallQuestion({
   const running = lead.run ? stages.find((s) => s.key === lead.run!.s) : null
   const stop = running
     ? `Catalyst is still writing ${running.what} for ${name}. File the transcript now, and run the next stage once that is done.`
-    : planFor(lead, nx).blocked
+    : planFor(lead, st).blocked
   const [reads, setReads] = useState<ReadsResult | null>(null)
   const [sum, setSum] = useState<string[]>([])
   const [notes, setNotes] = useState('')

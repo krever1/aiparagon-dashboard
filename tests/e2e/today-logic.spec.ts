@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { normCall, normMeta } from '../../src/lib/catalyst/calls'
 import { callItems, crmItems, inboxItems, itemText, recent } from '../../src/lib/catalyst/inbox'
+import { stagesNamed } from '../../src/lib/catalyst/stages'
 import type { LeadView } from '../../src/lib/catalyst/view'
 import type { Item, Kind } from '../../src/lib/touchpoint/approvals'
 import {
@@ -131,14 +132,14 @@ test('new transcripts: recorded lately, with a lead among the guests, not filed 
   expect(inboxItems(crm, items).map((x) => x.key)).toEqual(['call:5', 'crm:tom@example.com', 'call:1'])
 
   // what each row says, with the team's name for a stage
-  const names = { consultation: 'Kickoff call' }
+  const names = stagesNamed({ consultation: 'Kickoff call' })
   expect(itemText(crm[0], names, '')).toEqual({ t: 'New client from HubSpot: Tom', s: 'Run the pre-meeting prospect brief?', b: 'Run the brief' })
   expect(itemText(items[0], names, 'Nov 9')).toEqual({
     t: 'New transcript: your call with Nia New on Nov 9',
     s: 'In Prospect research. Run the kickoff call stage?',
     b: 'Run kickoff call',
   })
-  expect(itemText(items[1], {}, 'Nov 11')).toEqual({
+  expect(itemText(items[1], stagesNamed({}), 'Nov 11')).toEqual({
     t: 'New transcript: your call with Ria Review on Nov 11',
     s: 'In Client review. Run the client review brief again with it?',
     b: 'Run it again',

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { stagesNamed } from '../../src/lib/catalyst/stages'
 import { type LeadView, waitsOnStage } from '../../src/lib/catalyst/view'
 import {
   type ApprovalInput, type Campaign, type Item, PAGE, approvalItems, briefHref, clip, commentReview, draftTitle, hookText, isReviewed, kindLabel, leadWaits, parseKey, reviewKey, safeUrl,
@@ -462,7 +463,7 @@ test('part C (v143): a stage document ready for review is marked reviewed from t
     lead({ stored: 'assessment', docs: { assessment: at } }),
     lead({ id: 'dana-6666666666', name: 'Dana Done', email: 'Dana@example.com', emails: ['Dana@example.com'], company: '', stored: 'review', docs: { review: at - D } }),
   ])
-  const items = approvalItems(input({ leads, names: { review: 'Check-in' } }))
+  const items = approvalItems(input({ leads, stages: stagesNamed({ review: 'Check-in' }) }))
   const [lee, dana] = items.filter((x) => x.kind === 'lead')
   expect(lee).toMatchObject({
     key: 'lead:lee.ready@example.com:assessment', title: 'Lee Ready · Ready Example LLC', text: 'Ready for review: Assessment report',

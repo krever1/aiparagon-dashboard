@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { stagesNamed } from '../../src/lib/catalyst/stages'
 import {
   type CallMeta, type CallOutput, type FilingCtx, type FtCall, IN_FOLDER, NO_CLIENT, asFolder, callsByFolder, catButtonsOf, catLabel, cleanNames, filedFolder,
   folderChoices, keptAfterDelete, matchCall, newTypeProblem, normCall, normMeta, normName, normOutput, typeLabel, typeShort, workDomain,
@@ -110,7 +111,7 @@ test('new contacts on calls: recent, not filed, someone from outside who matches
   expect(items.map((x) => x.id)).toEqual(['1'])
   expect(items[0]).toMatchObject({ kind: 'client', key: 'client:1', title: 'Intro', minutes: 0 })
   expect(items[0].people.map((p) => p.email)).toEqual(['nora@newco.com', 'ned@newco.com'])
-  expect(itemText(items[0], {}, 'Nov 24')).toEqual({ t: 'New contact on a call: Nora New, Newco on Nov 24', s: 'Create a client record for them?', b: 'Create client' })
+  expect(itemText(items[0], stagesNamed({}), 'Nov 24')).toEqual({ t: 'New contact on a call: Nora New, Newco on Nov 24', s: 'Create a client record for them?', b: 'Create client' })
 })
 
 test('feedback keys use the current dashboard’s views, and each points where it was left', () => {

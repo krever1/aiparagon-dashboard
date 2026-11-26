@@ -7,11 +7,13 @@ import { Dialog } from '@/components/ui/dialog'
 import { LocalDay, LocalUsDay } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import { planFor } from '@/lib/catalyst/plan'
-import type { Stage, StageKey } from '@/lib/catalyst/stages'
+import type { StageRec } from '@/lib/catalyst/setup'
+import type { Stage } from '@/lib/catalyst/stages'
 import { type LeadView, viewStage } from '@/lib/catalyst/view'
+import { StageNeeds } from './setup-dialogs'
 
 /** A question to put to the team before anything runs: move this lead to a stage, run a stage's document, or both. */
-export type Ask = { lead: LeadView; stage: StageKey; move: boolean }
+export type Ask = { lead: LeadView; stage: string; move: boolean }
 
 const btn = 'rounded-sm border border-line px-3.5 py-2 text-[14px] font-semibold text-ink hover:border-line-2 disabled:opacity-60'
 const primary =
@@ -25,16 +27,32 @@ export function stillWriting(lead: LeadView): boolean {
 }
 
 /**
+ * A stage that runs nothing (v145's v136Ask): moving a lead there is just a move, with no question; asked to run it,
+ * it says so. Returns true when it handled the ask.
+ */
+export function moveOnly(lead: LeadView, st: Stage | undefined, move: boolean): boolean {
+  if (!st?.norun) return false
+  if (!move || viewStage(lead) === st.key) {
+    toast(st.name + ' runs nothing yet. Pick a meeting type in its setup.', 'warn')
+    return true
+  }
+  goStage({ leadId: lead.id, stage: st.key, move: true, run: false, notes: '' })
+    .then((r) => toast(r.ok ? r.toast : 'Could not move the lead: ' + r.error, r.ok ? undefined : 'warn'))
+    .catch(() => toast('Could not move the lead. Try again in a minute.', 'warn'))
+  return true
+}
+
+/**
  * The question before a run (v136Ask, with v137's Reads list): what the stage writes and works from, what the run would
  * read, the meeting notes, and Cancel / Just move it / Move and run it (or Run it, Run it again). Nothing is written
  * before an answer.
  */
-export function StageQuestion({ ask, stages, onClose }: { ask: Ask; stages: Stage[]; onClose: () => void }) {
+export function StageQuestion({ ask, stages, rec, onClose }: { ask: Ask; stages: Stage[]; rec?: StageRec | null; onClose: () => void }) {
   const { lead } = ask
   const st = stages.find((s) => s.key === ask.stage)!
   const cur = viewStage(lead)
   const moving = ask.move && ask.stage !== cur
-  const plan = planFor(lead, ask.stage)
+  const plan = planFor(lead, st)
   const done = plan.doneAt !== null
   const [reads, setReads] = useState<ReadsResult | null>(null)
   const [notes, setNotes] = useState('')
@@ -110,6 +128,7 @@ export function StageQuestion({ ask, stages, onClose }: { ask: Ask; stages: Stag
         </>
       }
     >
+      <StageNeeds rec={rec} />
       <ul aria-label="Meeting stages" className="mb-4 flex flex-wrap gap-1.5">
         {stages.map((s) => {
           const on = s.key === ask.stage

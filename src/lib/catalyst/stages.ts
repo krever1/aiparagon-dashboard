@@ -1,12 +1,22 @@
 // Catalyst's six meeting stages, as the current dashboard has them since v136 (V136_STAGES). Each stage writes one
-// document, the prep for that meeting. Only `name` can be changed by the team (ai_settings `catalyst_stages`); the
-// rest is fixed. Plain data, read on the server and in the browser.
+// document, the prep for that meeting. Since v145 the board's columns are the team's Client Stages: the six built in
+// (renamed, reordered or removed) and stages of the team's own (`cs-…`), which run one of the team's own meeting types
+// through Catalyst · Meeting Prep, or nothing (see setup.ts). Plain data, read on the server and in the browser.
 
 export const STAGE_KEYS = ['research', 'consultation', 'assessment', 'proposal', 'onboarding', 'review'] as const
 export type StageKey = (typeof STAGE_KEYS)[number]
 
 export type Stage = {
-  key: StageKey
+  /** a built-in key, or `cs-…` for a stage of the team's own */
+  key: string
+  /** the built-in stage this is (null for a stage of the team's own) */
+  base: StageKey | null
+  /** a stage of the team's own */
+  custom: boolean
+  /** the meeting type it runs: its own key for a built-in stage, an `mt-…` type, or '' (a stage that runs nothing) */
+  mt: string
+  /** a stage of the team's own with no meeting type: moving a lead there is just a move */
+  norun: boolean
   /** the meeting, as the team names it (the usual name until renamed) */
   name: string
   /** the usual name */
@@ -18,7 +28,7 @@ export type Stage = {
   /** what a run writes, in a sentence: "Writing the consultation guide" */
   what: string
   /** the agent whose agent_outputs row is the stage's document (onboarding and review: meeting_prep, by data.stage) */
-  agent: 'lead_research' | 'interview_script' | 'anonymizer' | 'growth_plan' | 'meeting_prep'
+  agent: 'lead_research' | 'interview_script' | 'anonymizer' | 'growth_plan' | 'meeting_prep' | ''
   /** the lead's column that also counts as the document, when an older run saved only a link */
   urlCol: 'lead_research_url' | 'interview_url' | 'assessment_url' | 'growth_plan_url' | null
   color: string
@@ -28,7 +38,10 @@ export type Stage = {
   role: string
 }
 
-const STAGE_LIST: Stage[] = [
+/** A built-in stage. */
+export type BuiltinStage = Stage & { key: StageKey; base: StageKey }
+
+const RAW: Omit<BuiltinStage, 'base' | 'custom' | 'mt' | 'norun'>[] = [
   {
     key: 'research', name: 'Prospect research', defaultName: 'Prospect research', short: 'Prospect brief',
     doc: 'Pre-meeting prospect brief', what: 'the pre-meeting prospect brief', agent: 'lead_research',
@@ -70,7 +83,10 @@ const STAGE_LIST: Stage[] = [
   },
 ]
 
-export const STAGES: readonly Stage[] = STAGE_LIST
+const STAGE_LIST: BuiltinStage[] = RAW.map((s) => ({ ...s, base: s.key, custom: false, mt: s.key, norun: false }))
+
+/** The six built-in stages, in their usual order. */
+export const STAGES: readonly BuiltinStage[] = STAGE_LIST
 
 /** The stages that count as clients (the strip's Clients tile). */
 export const CLIENT_STAGES: readonly StageKey[] = ['onboarding', 'review']
@@ -78,30 +94,46 @@ export const CLIENT_STAGES: readonly StageKey[] = ['onboarding', 'review']
 /** The team's names, as saved: {stage: name}; an empty or missing name is the usual one. */
 export type StageNames = Partial<Record<StageKey, string>>
 
-export const STAGE_NAME_MAX = 40
+export const STAGE_NAME_MAX = 60
 
 export function isStageKey(k: unknown): k is StageKey {
   return typeof k === 'string' && (STAGE_KEYS as readonly string[]).includes(k)
 }
 
-/** A name as the team typed it: spaces collapsed, trimmed, at most 40 characters. */
+/** A name as the team typed it: spaces collapsed, trimmed, at most 60 characters. */
 export function cleanName(s: unknown): string {
   return String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, STAGE_NAME_MAX)
 }
 
-/** The stages with the team's names. */
-export function stagesNamed(names: StageNames = {}): Stage[] {
+/** The built-in stages with the team's names. */
+export function stagesNamed(names: StageNames = {}): BuiltinStage[] {
   return STAGE_LIST.map((s) => ({ ...s, name: cleanName(names[s.key]) || s.defaultName }))
 }
 
-/** The stage a new call moves a lead to: the next one; in Client review, the review again. */
-export function nextStageKey(cur: StageKey): StageKey {
-  const i = STAGES.findIndex((s) => s.key === cur)
-  return i >= 0 && i < STAGES.length - 1 ? STAGES[i + 1].key : cur
+/** The stage a new call moves a lead to (v137Next): the next one on the board; in the last one, that one again. */
+export function nextStageKey(stages: readonly Pick<Stage, 'key'>[], cur: string): string {
+  const i = stages.findIndex((s) => s.key === cur)
+  return (stages[Math.min(i + 1, stages.length - 1)] ?? stages[0])?.key ?? cur
 }
 
-export function stageOfKey(key: StageKey, names: StageNames = {}): Stage {
-  return stagesNamed(names).find((s) => s.key === key) as Stage
+/** A built-in stage, with the team's name. */
+export function stageOfKey(key: StageKey, names: StageNames = {}): BuiltinStage {
+  return stagesNamed(names).find((s) => s.key === key) as BuiltinStage
+}
+
+/** A stage on the board, by key. */
+export function stageIn<S extends Pick<Stage, 'key'>>(stages: readonly S[], key: unknown): S | undefined {
+  return stages.find((s) => s.key === key)
+}
+
+/** A stage of the team's own: `cs-` and a few letters (the current dashboard's v145Id). */
+export const CUSTOM_STAGE = /^cs-[a-z0-9]{1,16}$/
+/** A meeting type of the team's own. */
+export const CUSTOM_TYPE = /^mt-[a-z0-9]{1,16}$/
+
+/** A stage key as saved: a built-in one or one of the team's own. */
+export function isBoardKey(k: unknown): k is string {
+  return isStageKey(k) || (typeof k === 'string' && CUSTOM_STAGE.test(k))
 }
 
 /** The card's run button: "Run prospect brief", "Run consultation guide", ... */

@@ -89,7 +89,7 @@ export function usesRows(lead: Lead, outs: OutRow[], inUse: InUse, g: Gathered |
 
 /** What the run reads (with the transcripts of the four newest calls when `withText`), and its list. */
 export async function proposalReads(supabase: Supa, lead: Lead, outs: OutRow[], withText: boolean): Promise<{ g: Gathered | null; rows: UseRow[] }> {
-  const [inUse, g] = await Promise.all([sourcesInUse(supabase), gather(supabase, lead, 'proposal', withText).catch(() => null)])
+  const [inUse, g] = await Promise.all([sourcesInUse(supabase), gather(supabase, lead, stageOfKey('proposal'), withText).catch(() => null)])
   return { g, rows: usesRows(lead, outs, inUse, g) }
 }
 

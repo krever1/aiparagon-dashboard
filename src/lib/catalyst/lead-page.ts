@@ -3,7 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { type Chart, checkCharts } from './charts'
 import { type Lead, type OutRow, asObj, buildLeads, docOf, leadEmails } from './leads'
 import { findLead, readCatalyst, toView } from './load'
-import { STAGES, type StageKey, type StageNames } from './stages'
+import { WS_KEY } from './run'
+import { type MeetingType, type StageRec, meetingTypes, objOf, stageRecs, ticksFrom, ticksOf } from './setup'
+import type { Stage, StageNames } from './stages'
+import { type WsMeta, wsMetaOf } from './workspace'
 import { driveId, googleDocId } from './doc-format'
 import { type ProposalData, loadProposal } from './proposal-run'
 import { type LeadView, viewStage } from './view'
@@ -47,7 +50,8 @@ export type E1Doc = {
 }
 
 export type PrepDoc = {
-  key: 'onboarding' | 'review'
+  /** the stage (onboarding, review, or a stage of the team's own) */
+  key: string
   outId: string
   at: string | null
   title: string
@@ -62,6 +66,12 @@ export type FileRow = {
   name: string
   url: string
   source: 'agent' | 'upload'
+  /** lead_files.category (transcript for a transcript added to the client workspace) */
+  category: string
+  /** its file in Storage (lead-files), for an upload */
+  path: string
+  /** an upload the HubSpot sync brought in */
+  hs: boolean
   note: string
   by: string
   at: string | null
@@ -87,9 +97,20 @@ export type LeadPageData =
       lead: LeadView
       firm: { firmSize: string; leadSource: string; aiReadiness: string }
       names: StageNames
-      stage: StageKey
+      /** the board's stages (v145) */
+      stages: Stage[]
+      stage: string
+      /** the setup of the lead's stage, and the ticks on its checklist for this lead (v145) */
+      rec: StageRec | null
+      ticks: Record<string, boolean>
+      /** every stage's setup and the meeting types, for the question and the stage's window */
+      recs: StageRec[]
+      types: MeetingType[]
+      /** the client workspace's folders and items for this lead (ai_settings `catalyst_ws`) */
+      ws: WsMeta
       docs: E1Doc[]
-      prep: Record<'onboarding' | 'review', PrepDoc | null>
+      /** each meeting prep stage's newest document, by stage */
+      prep: Record<string, PrepDoc | null>
       files: { rows: FileRow[]; error: boolean }
       hubspot: { ok: boolean; contact: HubspotContact | null }
       /** What should change? asks on each document of this lead, by agent (v125For) */
@@ -138,28 +159,27 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     const documentId = str(d.documentId)
     return { spec, out, d, url, documentId }
   })
-  const prep0 = (['onboarding', 'review'] as const).map((key) => {
-    const st = STAGES.find((s) => s.key === key)!
-    return { key, doc: docOf(lead, st, outs) }
-  })
+  const prep0 = read.stages.filter((s) => s.agent === 'meeting_prep').map((st) => ({ key: st.key, doc: docOf(lead, st, outs) }))
   const ids = [...docs0.map((x) => x.out?.id), ...prep0.map((x) => x.doc?.out?.id)].filter((x): x is string => !!x)
 
   const askIds = [...new Set(emails.map((e) => e.toLowerCase()))].flatMap((e) => ASK_AGENTS.map((a) => e + ':' + a))
-  const [texts, files, hs, asked, proposal] = await Promise.all([
+  const [texts, files, hs, asked, proposal, extra] = await Promise.all([
     ids.length
       ? supabase.from('agent_outputs').select('id,content_md').in('id', ids)
       : Promise.resolve({ data: [] as { id: string; content_md: string | null }[], error: null }),
     supabase
       .from('lead_files')
-      .select('id,lead_email,file_name,file_url,file_path,stage,source,note,uploaded_by,indexed_at,created_at')
-      .in('lead_email', emails)
+      .select('id,lead_email,file_name,file_url,file_path,stage,source,note,uploaded_by,indexed_at,created_at,category')
+      .in('lead_email', [...new Set(emails.flatMap((e) => [e, e.toLowerCase()]))])
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('hubspot_contacts').select('*').in('email', emails).limit(1),
     // only the changes asked: a document marked reviewed in Approvals (action reviewed or reopened) is not one (v143)
     supabase.from('agent_feedback').select('target_id').eq('target_type', 'e1_document').eq('action', 'changes').in('target_id', askIds).limit(2000),
     loadProposal(supabase, lead).catch(() => ({ view: null, template: null, run: null }) as ProposalData),
+    supabase.from('ai_settings').select('key,value').in('key', ['catalyst_stage_ticks', WS_KEY]),
   ])
+  const setting = (k: string) => ((extra.data ?? []) as { key: string; value: unknown }[]).find((r) => r.key === k)?.value
   const asks: Record<string, number> = {}
   for (const r of (asked.data ?? []) as { target_id: string }[]) {
     const agent = String(r.target_id).split(':').pop() ?? ''
@@ -204,7 +224,7 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
           }
         : null,
     ]),
-  ) as Record<'onboarding' | 'review', PrepDoc | null>
+  ) as Record<string, PrepDoc | null>
 
   // Files: the agents' documents first (the newest of each, by stage), then what the team uploaded.
   const agentRows: FileRow[] = []
@@ -212,14 +232,10 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     if (!x.done) continue
     const base = x.title
     const agent = E1_DOCS.find((s) => s.key === x.key)!.agent
-    if (x.url) agentRows.push({ id: x.key + ':pdf', stage: agent, name: base + ' (PDF)', url: x.url, source: 'agent', note: '', by: '', at: x.at, indexed: false })
-    if (x.documentId)
-      agentRows.push({
-        id: x.key + ':doc', stage: agent, name: base + ' (Google Doc)', url: `https://docs.google.com/document/d/${x.documentId}/edit`,
-        source: 'agent', note: '', by: '', at: x.at, indexed: false,
-      })
-    if (x.gammaDocUrl)
-      agentRows.push({ id: x.key + ':gamma', stage: agent, name: 'Gamma slide notes (Google Doc)', url: x.gammaDocUrl, source: 'agent', note: '', by: '', at: x.at, indexed: false })
+    const a = { source: 'agent' as const, note: '', by: '', at: x.at, indexed: false, category: '', path: '', hs: false }
+    if (x.url) agentRows.push({ ...a, id: x.key + ':pdf', stage: agent, name: base + ' (PDF)', url: x.url })
+    if (x.documentId) agentRows.push({ ...a, id: x.key + ':doc', stage: agent, name: base + ' (Google Doc)', url: `https://docs.google.com/document/d/${x.documentId}/edit` })
+    if (x.gammaDocUrl) agentRows.push({ ...a, id: x.key + ':gamma', stage: agent, name: 'Gamma slide notes (Google Doc)', url: x.gammaDocUrl })
   }
   const uploads: FileRow[] = ((files.data ?? []) as Record<string, unknown>[]).map((f) => ({
     id: str(f.id),
@@ -231,6 +247,9 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     by: str(f.uploaded_by),
     at: str(f.created_at) || null,
     indexed: !!f.indexed_at,
+    category: str(f.category),
+    path: str(f.file_path),
+    hs: str(f.source) === 'hubspot' || /^hubspot\//.test(str(f.file_path)),
   }))
   const order = (a: string) => (a === 'manual' ? 99 : E1_DOCS.findIndex((s) => s.agent === a))
   const rows = [...agentRows, ...uploads].sort((a, b) => order(a.stage) - order(b.stage))
@@ -250,13 +269,20 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
       }
     : null
 
-  const view = toView(lead, outs, read.runs)
+  const view = toView(lead, outs, read.runs, Date.now(), read.stages)
+  const stage = viewStage(view)
   return {
     found: true,
     lead: view,
     firm: { firmSize: str(lead.firm_size), leadSource: str(lead.lead_source), aiReadiness: str(lead.ai_readiness) },
     names: read.names,
-    stage: viewStage(view),
+    stages: read.stages,
+    stage,
+    rec: stageRecs(read.config).find((r) => r.key === stage) ?? null,
+    recs: stageRecs(read.config, true),
+    types: meetingTypes(read.config, true),
+    ticks: ticksOf(ticksFrom(setting('catalyst_stage_ticks')), lead.email, stage),
+    ws: wsMetaOf(objOf(setting(WS_KEY)), lead.email),
     docs,
     prep,
     files: { rows, error: !!files.error },

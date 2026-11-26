@@ -1,8 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { fixtures } from '../stub/fixtures.mjs'
 import { leadId } from '../../src/lib/catalyst/lead-id'
-import { STAGES } from '../../src/lib/catalyst/stages'
-import { TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
+import { serveLogo, signIn, stubCalls, stubHook, stubReset, stubSeed } from './helpers'
 
 // Catalyst: the Lead pipeline (board and list), the Overview and a lead's page, on the stand-in's made-up leads
 // (tests/stub/fixtures.mjs: Pat Example in Proposal, Robin Sample moved to "Kickoff call", Lee Client in Onboarding,
@@ -35,7 +34,7 @@ test.describe('the Lead pipeline', () => {
     await expect(h1(page)).toHaveText('Lead pipeline')
     await expect(page.getByText('Every prospect and client, by meeting stage, with the prep for each meeting.')).toBeVisible()
     await expect(page.getByText('Move a lead to the stage it is in. Catalyst writes that stage’s prep, and asks before it runs anything.')).toBeVisible()
-    await expect(page.locator('[role="group"][data-s] > div:first-child b')).toHaveText([
+    await expect(page.locator('[role="group"][data-s] > div:first-child button')).toHaveText([
       'Prospect research', 'Kickoff call', 'Assessment', 'Proposal', 'Onboarding', 'Client review',
     ])
     for (const name of ['Prospect research, 2 leads', 'Kickoff call, 1 lead', 'Assessment, 0 leads', 'Proposal, 1 lead', 'Onboarding, 1 lead', 'Client review, 1 lead']) {
@@ -119,9 +118,9 @@ test.describe('the Lead pipeline', () => {
   test('the strip and the tabs: their counts, and each opens its view, with the address following', async ({ page }) => {
     await signIn(page, '/lead-pipeline')
     await expect(page.getByRole('tab')).toHaveText([
-      'Board', 'All 6', 'Prospect research 2', 'Kickoff call 1', 'Assessment 0', 'Proposal 1', 'Onboarding 1', 'Client review 1',
+      'Client Stages', 'All 6', 'Prospect research 2', 'Kickoff call 1', 'Assessment 0', 'Proposal 1', 'Onboarding 1', 'Client review 1',
     ])
-    await expect(page.getByRole('tab', { name: 'Board', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'Client Stages', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('button', { name: '4 In the sales stages' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('button', { name: '4 In the sales stages' })).toHaveAttribute('title', 'research to proposal')
 
@@ -153,14 +152,14 @@ test.describe('the Lead pipeline', () => {
     const nav = page.getByRole('navigation', { name: 'Main' })
     await nav.getByRole('link', { name: 'Lead pipeline' }).click()
     await expect(page).toHaveURL(/\/lead-pipeline$/)
-    await expect(page.getByRole('tab', { name: 'Board', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'Client Stages', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('group', { name: 'Proposal, 1 lead' })).toBeVisible()
 
     await page.goto('/engine-1?tab=documents')
     await expect(page.getByRole('heading', { name: 'Stage completion' })).toBeVisible()
     await nav.getByRole('link', { name: 'Overview' }).click()
     await expect(page).toHaveURL(/\/engine-1$/)
-    await expect(page.getByRole('heading', { name: 'Six meetings, prep for each' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Meeting types, prep for each' })).toBeVisible()
     // Back returns to the tab the address had
     await page.goBack()
     await expect(page.getByRole('heading', { name: 'Stage completion' })).toBeVisible()
@@ -221,66 +220,6 @@ test.describe('the Lead pipeline', () => {
     await expect(page).toHaveURL(new RegExp(`/lead-pipeline/${LEE}$`))
   })
 
-  test('rename stages: saved for the whole team, used everywhere, the usual names back', async ({ page }) => {
-    await signIn(page, '/lead-pipeline')
-    await page.getByRole('button', { name: 'Rename stages' }).click()
-    const dlg = page.getByRole('dialog', { name: 'Rename the stages' })
-    await expect(dlg).toBeVisible()
-    await expect(dlg.getByText('Catalyst · Lead pipeline')).toBeVisible()
-    await expect(dlg.getByLabel('1. Prospect research')).toHaveValue('Prospect research')
-    await expect(dlg.getByLabel('2. Discovery consultation')).toHaveValue('Kickoff call')
-    await expect(dlg.getByLabel('2. Discovery consultation')).toHaveAttribute('maxlength', '40')
-    await expect(dlg).toContainText('Writes the assessment report')
-
-    // unchanged: closes, writes nothing
-    await dlg.getByRole('button', { name: 'Save names' }).click()
-    await expect(dlg).toBeHidden()
-    expect(await postsTo('/rest/v1/ai_settings')).toHaveLength(0)
-    // Cancel and Esc write nothing
-    await page.getByRole('button', { name: 'Rename stages' }).click()
-    await dlg.getByLabel('3. Assessment').fill('Never saved')
-    await dlg.getByRole('button', { name: 'Cancel' }).click()
-    await expect(dlg).toBeHidden()
-    await page.getByRole('button', { name: 'Rename stages' }).click()
-    await expect(dlg.getByLabel('3. Assessment')).toHaveValue('Assessment')
-    await page.keyboard.press('Escape')
-    await expect(dlg).toBeHidden()
-    expect(await postsTo('/rest/v1/ai_settings')).toHaveLength(0)
-
-    await page.getByRole('button', { name: 'Rename stages' }).click()
-    await dlg.getByLabel('3. Assessment').fill('  Deep   dive ')
-    await dlg.getByRole('button', { name: 'Save names' }).click()
-    await expect(dlg).toBeHidden()
-    await expect(page.getByTestId('toasts')).toContainText('Saved. The whole team sees the new names.')
-    await expect(page.getByRole('group', { name: 'Deep dive, 0 leads' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Deep dive 0' })).toBeVisible()
-    let row = (await stubRows<{ key: string; value: Record<string, { name: string; by: string; at: string }>; updated_by: string }>('ai_settings')).find((r) => r.key === 'catalyst_stages')!
-    expect(row.updated_by).toBe(TEAM.email)
-    expect(Object.fromEntries(STAGES.map((s) => [s.key, row.value[s.key].name]))).toEqual({
-      research: '', consultation: 'Kickoff call', assessment: 'Deep dive', proposal: '', onboarding: '', review: '',
-    })
-    for (const s of STAGES) {
-      expect(row.value[s.key].by).toBe(TEAM.email)
-      expect(Date.parse(row.value[s.key].at)).toBeGreaterThan(0)
-    }
-
-    // the Overview and a lead's page use the names too
-    await page.goto('/engine-1')
-    await expect(page.locator('li[data-s="assessment"]')).toContainText('Deep dive')
-    await page.goto(`/lead-pipeline/${ROBIN}`)
-    await expect(page.getByText('Stage: Kickoff call · Consultation guide not written yet')).toBeVisible()
-
-    await page.goto('/lead-pipeline')
-    await page.getByRole('button', { name: 'Rename stages' }).click()
-    await dlg.getByRole('button', { name: 'Use the usual names' }).click()
-    await expect(dlg.getByLabel('2. Discovery consultation')).toHaveValue('Discovery consultation')
-    await dlg.getByRole('button', { name: 'Save names' }).click()
-    await expect(dlg).toBeHidden()
-    await expect(page.getByRole('group', { name: 'Discovery consultation, 1 lead' })).toBeVisible()
-    row = (await stubRows<{ key: string; value: Record<string, { name: string }> }>('ai_settings')).find((r) => r.key === 'catalyst_stages')! as typeof row
-    expect(STAGES.map((s) => row.value[s.key].name)).toEqual(['', '', '', '', '', ''])
-  })
-
   test('reads are fresh: a lead moved elsewhere shows in its new stage on the next visit', async ({ page }) => {
     await signIn(page, '/lead-pipeline')
     await expect(card(page, 'review', 'casey-review')).toBeVisible()
@@ -317,23 +256,25 @@ test.describe('the Catalyst Overview', () => {
       'A client moves through six meetings. Catalyst writes the prep for each one when the client gets there, from everything before it, and your team reviews it first.',
     )
     await expect(page.getByText('Every prospect lives in the lead pipeline.')).toBeVisible()
-    await expect(page.getByRole('button', { name: '6 Stages' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: '6 Meeting types' })).toHaveAttribute('aria-pressed', 'true')
     for (const name of ['6 Leads', '2 Strong fit', '2 Clients']) await expect(page.getByRole('button', { name })).toBeVisible()
 
-    await expect(page.getByRole('heading', { name: 'Six meetings, prep for each' })).toBeVisible()
-    const cards = page.locator('li[data-s]')
+    await expect(page.getByRole('tab', { name: 'Meeting Types' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('heading', { name: 'Meeting types, prep for each' })).toBeVisible()
+    const cards = page.locator('li[data-mt]')
     await expect(cards).toHaveCount(6)
-    await expect(cards.locator('b')).toHaveText([
+    await expect(cards.getByTestId('type-doc')).toHaveText([
       'Pre-meeting prospect brief', 'Consultation guide', 'Assessment report', 'Proposal presentation', 'Onboarding plan', 'Client review brief',
     ])
-    await expect(page.locator('li[data-s="research"]')).toContainText('2 leads in this stage')
-    await expect(page.locator('li[data-s="consultation"]')).toContainText('Kickoff call')
-    await expect(page.locator('li[data-s="consultation"]')).toContainText('1 lead in this stage')
-    await expect(page.locator('li[data-s="assessment"]')).toContainText('0 leads in this stage')
-    await expect(page.locator('li[data-s="consultation"]')).toHaveAttribute(
-      'title',
-      'Writes the questions for the discovery consultation, from the brief and the first meeting. Works from the prospect brief and what was said in the first meeting.',
+    await expect(page.locator('li[data-mt="research"]')).toContainText('2 leads in this stage')
+    await expect(page.locator('li[data-mt="consultation"]')).toContainText('Kickoff call')
+    await expect(page.locator('li[data-mt="consultation"]')).toContainText('In Kickoff call')
+    await expect(page.locator('li[data-mt="consultation"]')).toContainText('1 lead in this stage')
+    await expect(page.locator('li[data-mt="assessment"]')).toContainText('0 leads in this stage')
+    await expect(page.locator('li[data-mt="consultation"]')).toContainText(
+      'Writes the questions for the discovery consultation, from the brief and the first meeting.',
     )
+    await expect(page.getByRole('button', { name: /New meeting type/ })).toBeVisible()
 
     await page.getByRole('tab', { name: 'Recent leads 6' }).click()
     await expect(page).toHaveURL(/\/engine-1\?tab=leads$/)
@@ -370,7 +311,7 @@ test.describe('a lead’s page', () => {
       'RIA · $10M to $50M AUM · Source: Landing page · AI readiness High · Strong fit',
     )
     await expect(page.getByRole('tab')).toHaveText([
-      '✓ Prospect brief', '✓ Consultation guide', '✓ Assessment', '✓ Follow-up guide', '✓ Proposal', 'Files 8', 'HubSpot', 'Calls 1',
+      '✓ Prospect brief', '✓ Consultation guide', '✓ Assessment', '✓ Follow-up guide', '✓ Proposal', 'Files 6', 'HubSpot', 'Calls 1',
     ])
     await expect(page.getByRole('tab', { name: '✓ Proposal' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: /5\. Proposal presentation/ })).toBeVisible()
@@ -381,7 +322,7 @@ test.describe('a lead’s page', () => {
     await expect(doc.getByRole('link', { name: 'Open PDF' })).toHaveAttribute('target', '_blank')
 
     await expect(page.getByRole('button', { name: 'Proposal Stage' })).toHaveAttribute('aria-pressed', 'true')
-    await page.getByRole('button', { name: '8 Files' }).click()
+    await page.getByRole('button', { name: '6 Files' }).click()
     await expect(page).toHaveURL(new RegExp(`/lead-pipeline/${PAT}\\?tab=files$`))
     await page.getByRole('button', { name: '5 Documents' }).click()
     await expect(page.getByRole('tab', { name: '✓ Prospect brief' })).toHaveAttribute('aria-selected', 'true')
@@ -485,7 +426,7 @@ test.describe('a lead’s page', () => {
 
   test('the onboarding plan reads inline; a stage with no prep yet says so', async ({ page }) => {
     await signIn(page, `/lead-pipeline/${LEE}`)
-    await expect(page.getByRole('tab')).toHaveText(['Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', '✓ Onboarding plan', 'Files 0', 'HubSpot', 'Calls'])
+    await expect(page.getByRole('tab')).toHaveText(['Prospect brief', 'Consultation guide', 'Assessment', 'Proposal', '✓ Onboarding plan', 'Files 1', 'HubSpot', 'Calls'])
     await expect(page.getByRole('tab', { name: '✓ Onboarding plan' })).toHaveAttribute('aria-selected', 'true')
     const prep = page.getByTestId('prep-card')
     await expect(prep).toContainText('Onboarding plan: Lee Client')
@@ -510,27 +451,32 @@ test.describe('a lead’s page', () => {
 
   test('Files and HubSpot', async ({ page }) => {
     await signIn(page, `/lead-pipeline/${PAT}?tab=files`)
-    const groups = page.locator('#files ~ div p')
-    await expect(page.getByRole('heading', { name: /^Files/ })).toContainText('8')
-    await expect(groups.filter({ hasText: /^📁/ })).toHaveText([
-      '📁 Prospect brief 1', '📁 Consultation guide 1', '📁 Assessment 1', '📁 Follow-up guide 1', '📁 Proposal 3', '📁 General 1',
+    // the Files tab is the client workspace (v145): the documents and the uploads, newest first
+    await expect(page.getByRole('heading', { name: /^Files/ })).toContainText('6')
+    const items = page.getByTestId('ws-item')
+    await expect(items.locator('b').first()).toHaveText('Proposal presentation')
+    await expect(items.locator(':scope > div > b')).toHaveText([
+      'Proposal presentation', 'Follow-up guide', 'Assessment report', 'Consultation guide', 'Intake notes.docx', 'Pre-meeting prospect brief',
     ])
-    await expect(page.getByRole('link', { name: 'Proposal presentation (PDF)' })).toHaveAttribute('href', 'https://drive.google.com/file/d/pdfPatGrowth00000000000001/view')
-    await expect(page.getByRole('link', { name: 'Gamma slide notes (Google Doc)' })).toHaveAttribute('href', 'https://docs.google.com/document/d/docPatGamma000000000000001/edit')
-    await expect(page.getByRole('link', { name: 'Assessment report (Google Doc)' })).toHaveAttribute('href', 'https://docs.google.com/document/d/docPatAssessment00000000001/edit')
-    const upload = page.getByRole('listitem').filter({ hasText: 'Intake notes.docx' })
-    await expect(upload.getByRole('link', { name: 'Intake notes.docx' })).toHaveAttribute('href', 'https://example.com/files/intake-notes.docx')
+    const proposal = items.filter({ hasText: 'Proposal presentation' })
+    await expect(proposal.getByRole('link', { name: 'PDF' })).toHaveAttribute('href', 'https://drive.google.com/file/d/pdfPatGrowth00000000000001/view')
+    await expect(proposal.getByRole('link', { name: 'Slide notes' })).toHaveAttribute('href', 'https://docs.google.com/document/d/docPatGamma000000000000001/edit')
+    await expect(proposal).toContainText('AI generated')
+    await expect(items.filter({ hasText: 'Assessment report' }).getByRole('link', { name: 'Google Doc' })).toHaveAttribute(
+      'href',
+      'https://docs.google.com/document/d/docPatAssessment00000000001/edit',
+    )
+    const upload = items.filter({ hasText: 'Intake notes.docx' })
+    await expect(upload.getByRole('link', { name: 'DOCX' })).toHaveAttribute('href', 'https://example.com/files/intake-notes.docx')
     await expect(upload).toContainText('From the first call')
-    await expect(upload).toContainText('upload · qa.teammate@aiparagonconsulting.com')
-    await expect(upload).toContainText('✦ searchable')
-    await expect(upload).toContainText('uploaded 6 Oct 2026')
-    const search = page.getByRole('searchbox', { name: 'Search files' })
+    await expect(upload).toContainText('qa.teammate@aiparagonconsulting.com')
+    await expect(upload).toContainText('6 Oct')
+    const search = page.getByRole('searchbox', { name: 'Search' })
     await search.fill('intake')
-    await expect(groups.filter({ hasText: /^📁/ })).toHaveText(['📁 General 1'])
-    await search.fill('gamma')
-    await expect(groups.filter({ hasText: /^📁/ })).toHaveText(['📁 Proposal 1'])
+    await expect(items).toHaveCount(1)
     await search.fill('zzz')
-    await expect(page.getByText('No files match that search.')).toBeVisible()
+    await expect(page.getByText('Nothing matches that search.')).toBeVisible()
+    await search.fill('')
 
     await page.getByRole('tab', { name: 'HubSpot' }).click()
     const hs = page.getByRole('region', { name: /HubSpot/ })
@@ -542,8 +488,7 @@ test.describe('a lead’s page', () => {
     await expect(hs.getByRole('link', { name: 'Open in HubSpot ↗' })).toHaveAttribute('href', 'https://app.hubspot.com/contacts')
 
     await page.goto(`/lead-pipeline/${SAM}?tab=files`)
-    await expect(page.getByText('No files yet for this lead.')).toBeVisible()
-    await expect(page.getByRole('searchbox', { name: 'Search files' })).toHaveCount(0)
+    await expect(page.getByTestId('ws-item')).toHaveText([/Pre-meeting prospect brief/])
     await page.getByRole('tab', { name: 'HubSpot' }).click()
     await expect(page.getByText('No HubSpot contact synced for this email yet.')).toBeVisible()
   })
@@ -563,7 +508,7 @@ test.describe('a lead’s page', () => {
     await fresh.goto(`/lead-pipeline/${PAT}?tab=files`)
     await expect(fresh).toHaveURL(/\/login\?next=/)
     await signIn(fresh, `/lead-pipeline/${PAT}?tab=files`)
-    await expect(fresh.getByRole('tab', { name: 'Files 8' })).toHaveAttribute('aria-selected', 'true')
+    await expect(fresh.getByRole('tablist', { name: 'This lead’s documents' }).getByRole('tab', { name: 'Files 6' })).toHaveAttribute('aria-selected', 'true')
     await ctx.close()
   })
 })

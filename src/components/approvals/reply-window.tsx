@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, Copy } from 'lucide-react'
 import { approveReply, rejectReply } from '@/app/(app)/approvals/actions'
+import { whyPost } from '@/app/(app)/intel-tracker/actions'
 import { Dialog } from '@/components/ui/dialog'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
@@ -83,6 +84,7 @@ export function ReplyWindow({
           <ArrowUpRight size={15} aria-hidden="true" />
         </a>
       ) : null}
+      <WhyThis id={r.id} />
       <label className="block">
         <span className="mb-1 block text-[13.5px] font-semibold text-ink-2">
           The drafted {quote ? 'quote post' : 'reply'} <small className="font-normal text-ink-3">edit it before you approve</small>
@@ -97,6 +99,42 @@ export function ReplyWindow({
       </label>
       <p className="mt-2 text-[13px] text-ink-3">Approving does not post it. You copy it and post it yourself.</p>
     </Dialog>
+  )
+}
+
+/**
+ * Why this post (v145Why, v146): how it was found, whose it is, its value and engagement, and how replies are picked,
+ * read once the window is open.
+ */
+function WhyThis({ id }: { id: string }) {
+  const [why, setWhy] = useState<{ lines: string[]; note: string } | 'fail' | null>(null)
+  useEffect(() => {
+    let live = true
+    whyPost(id)
+      .then((r) => live && setWhy(r.ok ? { lines: r.lines, note: r.note } : 'fail'))
+      .catch(() => live && setWhy('fail'))
+    return () => {
+      live = false
+    }
+  }, [id])
+  return (
+    <div role="status" className="mb-3 rounded-md bg-sunk px-3 py-2.5 text-[13px] text-ink" data-testid="why-post">
+      <b className="mb-1 block">Why this post</b>
+      {why === null ? (
+        <span className="text-ink-3">Reading…</span>
+      ) : why === 'fail' ? (
+        <span className="text-ink-3">Could not read how it was picked.</span>
+      ) : (
+        <>
+          <ul className="mb-1.5 list-disc pl-5">
+            {why.lines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          <small className="block text-[12px] text-ink-3">{why.note}</small>
+        </>
+      )}
+    </div>
   )
 }
 

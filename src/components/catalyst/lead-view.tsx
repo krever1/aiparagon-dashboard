@@ -10,7 +10,7 @@ import { usePlaceName } from '@/components/shell/back-store'
 import { useFeedbackLead } from '@/components/shell/feedback-store'
 import { LocalDate, LocalDateTime, LocalUsDay } from '@/components/ui/local-date'
 import type { E1Doc, LeadPageData, PrepDoc } from '@/lib/catalyst/lead-page'
-import { type Stage, type StageKey, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel, stagesNamed } from '@/lib/catalyst/stages'
+import { type Stage, firmSizeLabel, firmTypeLabel, isStageKey, labelCase, runLabel } from '@/lib/catalyst/stages'
 import { type LeadTab, hasDoc, leadTab, safeUrl } from '@/lib/catalyst/view'
 import { pageBySlug } from '@/lib/nav'
 import { INK, TXT, placeCharts } from '@/lib/catalyst/charts'
@@ -21,23 +21,15 @@ import { ChangeAsk } from './change-ask'
 import { ChartFigure } from './chart'
 import { useCheckBack } from './check-back'
 import { DocReader } from './doc-reader'
-import { FilesPanel } from './files-panel'
+import { StageChecklist, StageSetup } from './setup-dialogs'
+import { Workspace } from './workspace'
 import { HubspotLive } from './hubspot-live'
 import { Md } from './markdown'
 import { ProposalCard } from './proposal-card'
-import { type Ask, StageQuestion, stillWriting } from './stage-question'
+import { type Ask, StageQuestion, moveOnly, stillWriting } from './stage-question'
 
 type Found = Extract<LeadPageData, { found: true }>
 
-/** The tab each stage opens on (the board's "✓ … ready" and the Stage tile). */
-const STAGE_TAB: Record<StageKey, LeadTab> = {
-  research: 'research',
-  consultation: 'consultation',
-  assessment: 'assessment',
-  proposal: 'proposal',
-  onboarding: 'onboarding',
-  review: 'review',
-}
 
 const btn =
   'inline-flex items-center gap-1.5 rounded-sm border border-line bg-panel px-3 py-1.5 text-[13.5px] font-semibold text-ink hover:border-line-2'
@@ -51,9 +43,10 @@ const chip = 'inline-flex items-center gap-1 rounded-full bg-sunk px-2.5 py-1 te
  */
 export function LeadView({ data }: { data: Found }) {
   const asked = leadTab(useSearchParams().get('tab'))
-  const stages = useMemo(() => stagesNamed(data.names), [data.names])
-  const byKey = Object.fromEntries(stages.map((s) => [s.key, s])) as Record<StageKey, Stage>
-  const st = byKey[data.stage]
+  const stages = data.stages
+  const byKey = useMemo(() => Object.fromEntries(stages.map((s) => [s.key, s])) as Record<string, Stage>, [stages])
+  const st = byKey[data.stage] ?? stages[0]
+  const [setupOpen, setSetupOpen] = useState(false)
   const ready = hasDoc(data.lead, data.stage)
   const { lead } = data
   // the top bar's Back names this page by the lead (v143)
@@ -67,10 +60,14 @@ export function LeadView({ data }: { data: Found }) {
     if (d.key === 'followup' && !d.done) continue
     tabs.push({ key: d.key, label: d.short, done: d.done })
   }
-  for (const key of ['onboarding', 'review'] as const) {
-    if (data.prep[key] || data.stage === key) tabs.push({ key, label: byKey[key].doc, done: !!data.prep[key] })
+  // every meeting prep stage on the board (v145): onboarding, the client review and the team's own stages
+  for (const s of stages.filter((x) => x.agent === 'meeting_prep')) {
+    if (data.prep[s.key] || data.stage === s.key) tabs.push({ key: s.key as LeadTab, label: s.doc, done: !!data.prep[s.key] })
   }
-  tabs.push({ key: 'files', label: 'Files', count: data.files.rows.length })
+  // the client workspace's Files: the documents, the meeting prep and the uploads (v145)
+  const wsCount =
+    data.docs.filter((d) => d.done).length + Object.values(data.prep).filter(Boolean).length + data.files.rows.filter((f) => f.source === 'upload').length
+  tabs.push({ key: 'files', label: 'Files', count: wsCount })
   if (data.hubspot.ok) tabs.push({ key: 'hubspot', label: 'HubSpot' })
 
   // the calls recorded in Fathom with this lead, read once the page is up (the count shows once they are in)
@@ -88,15 +85,17 @@ export function LeadView({ data }: { data: Found }) {
   }, [lead.id, callsRead])
   tabs.push({ key: 'calls', label: 'Calls', count: calls ? calls.rows.length || '' : '' })
 
-  const home = STAGE_TAB[data.stage]
+  const home: LeadTab = tabs.some((t) => t.key === data.stage) ? (data.stage as LeadTab) : 'research'
   // the address's tab when this lead has it, else the tab of the stage the lead is in
   const tab: LeadTab = asked && tabs.some((t) => t.key === asked) ? asked : home
   const [reading, setReading] = useState<string | null>(null)
   const [ask, setAsk] = useState<Ask | null>(null)
   useCheckBack(!!lead.run)
-  const askFor = (stage: StageKey, move: boolean) => {
-    if (!stillWriting(lead)) setAsk({ lead, stage, move })
+  const askFor = (stage: string, move: boolean) => {
+    if (stillWriting(lead) || moveOnly(lead, byKey[stage], move)) return
+    setAsk({ lead, stage, move })
   }
+  const prepStage = byKey[tab]?.agent === 'meeting_prep' ? byKey[tab] : null
 
   const go = (t: LeadTab) => {
     const u = new URL(window.location.href)
@@ -116,9 +115,9 @@ export function LeadView({ data }: { data: Found }) {
       .join(' · ') || 'No firm details recorded yet.'
 
   const tiles: { n: string | number; label: string; tip: string; to: LeadTab }[] = [
-    { n: st.name, label: 'Stage', tip: ready ? `${st.doc} ready` : 'prep not written yet', to: home },
+    { n: st.name, label: 'Stage', tip: st.norun ? 'runs nothing yet' : ready ? `${st.doc} ready` : 'prep not written yet', to: home },
     { n: lead.docCount, label: 'Documents', tip: 'written for this lead', to: 'research' },
-    { n: data.files.rows.length, label: 'Files', tip: 'attached to this lead', to: 'files' },
+    { n: wsCount, label: 'Files', tip: 'attached to this lead', to: 'files' },
     { n: lead.fit || '—', label: 'Fit', tip: 'rated before the call', to: 'research' },
   ]
   const lit = tiles.findIndex((t) => t.to === tab)
@@ -134,7 +133,7 @@ export function LeadView({ data }: { data: Found }) {
       />
       <Banner
         tag="Lead"
-        text={`Stage: ${st.name} · ${st.doc} ${ready ? 'ready' : 'not written yet'}`}
+        text={st.norun ? `Stage: ${st.name}` : `Stage: ${st.name} · ${st.doc} ${ready ? 'ready' : 'not written yet'}`}
         tip={firm}
         right={
           <>
@@ -145,7 +144,7 @@ export function LeadView({ data }: { data: Found }) {
                 value={data.stage}
                 onChange={(e) => {
                   const s = e.target.value
-                  if (isStageKey(s) && s !== data.stage) askFor(s, true)
+                  if (byKey[s] && s !== data.stage) askFor(s, true)
                 }}
                 className="h-9 max-w-[220px] rounded-sm border border-line bg-panel px-2 text-[14px] font-medium text-ink focus:border-accent focus:outline-none"
               >
@@ -168,6 +167,7 @@ export function LeadView({ data }: { data: Found }) {
           <StripTile key={t.label} n={t.n} label={t.label} tip={t.tip} active={i === lit} onClick={() => go(t.to)} />
         ))}
       </div>
+      <StageChecklist key={data.stage + JSON.stringify(data.ticks)} rec={data.rec} email={lead.email} ticks={data.ticks} onSetup={() => setSetupOpen(true)} />
       <Tabs<LeadTab> label="This lead’s documents" tabs={tabs} active={tab} onPick={go} />
       {data.error ? <ErrorNotice>{data.error}</ErrorNotice> : null}
 
@@ -176,30 +176,31 @@ export function LeadView({ data }: { data: Found }) {
           d={doc}
           reading={reading}
           setReading={setReading}
-          writing={lead.run?.s === doc.key ? byKey[doc.key as StageKey] : null}
+          writing={lead.run?.s === doc.key ? (byKey[doc.key] ?? null) : null}
           ask={{ leadId: lead.id, name: lead.name, count: data.asks[doc.agent] ?? 0 }}
-          stage={isStageKey(doc.key) ? byKey[doc.key] : null}
-          onRun={() => isStageKey(doc.key) && askFor(doc.key, false)}
+          stage={isStageKey(doc.key) ? (byKey[doc.key] ?? null) : null}
+          onRun={() => isStageKey(doc.key) && byKey[doc.key] && askFor(doc.key, false)}
         >
           {doc.key === 'proposal' && (data.proposal.view || data.proposal.run || data.docs.some((x) => x.key === 'assessment' && x.done)) ? (
             <ProposalCard lead={lead} data={data.proposal} asks={data.asks.client_proposal ?? 0} />
           ) : null}
         </DocPanel>
       ) : null}
-      {tab === 'onboarding' || tab === 'review' ? (
+      {prepStage ? (
         <PrepPanel
-          prep={data.prep[tab]}
-          stage={byKey[tab]}
+          prep={data.prep[prepStage.key] ?? null}
+          stage={prepStage}
           leadStage={st}
-          writing={lead.run?.s === tab}
-          onRun={() => askFor(tab as StageKey, false)}
+          writing={lead.run?.s === prepStage.key}
+          onRun={() => askFor(prepStage.key, false)}
         />
       ) : null}
-      {tab === 'files' ? <FilesPanel leadId={lead.id} rows={data.files.rows} error={data.files.error} /> : null}
+      {tab === 'files' ? <Workspace data={data} calls={calls} onCalls={() => setCallsRead((n) => n + 1)} onTab={go} /> : null}
       {tab === 'hubspot' ? <HubspotPanel c={data.hubspot.contact} email={lead.email} /> : null}
       {tab === 'calls' ? <CallsPanel name={lead.name} calls={calls} stages={byKey} onFile={setFileIt} /> : null}
       {fileIt ? <CallQuestion lead={lead} stages={stages} call={fileIt} onClose={() => setFileIt(null)} onDone={() => setCallsRead((n) => n + 1)} /> : null}
-      {ask ? <StageQuestion key={ask.stage} ask={ask} stages={stages} onClose={() => setAsk(null)} /> : null}
+      {ask ? <StageQuestion key={ask.stage} ask={ask} stages={stages} rec={data.recs.find((r) => r.key === ask.stage)} onClose={() => setAsk(null)} /> : null}
+      {setupOpen && data.rec ? <StageSetup rec={data.rec} types={data.types} onClose={() => setSetupOpen(false)} /> : null}
     </>
   )
 }
@@ -502,7 +503,7 @@ function CallsPanel({
 }: {
   name: string
   calls: { rows: LeadCallRow[]; error: string } | null
-  stages: Record<StageKey, Stage>
+  stages: Record<string, Stage>
   onFile: (c: LeadCallRow) => void
 }) {
   return (
@@ -524,7 +525,7 @@ function CallsPanel({
           </p>
           <ul className="divide-y divide-line" data-testid="lead-calls">
             {calls.rows.map((c) => {
-              const st = c.stage && c.stage !== 'none' && isStageKey(c.stage) ? stages[c.stage] : null
+              const st = c.stage && c.stage !== 'none' ? (stages[c.stage] ?? null) : null
               return (
                 <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
                   <StageDot color={st ? st.color : '#C7CDD6'} />

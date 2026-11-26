@@ -4,7 +4,7 @@
 
 import { isTeamEmail } from '@/lib/config'
 import { type CallMeta, type FilingCtx, type FtCall, type Guest, companyOf, leadOf, matchCall, outsiders } from './calls'
-import { type StageKey, type StageNames, nextStageKey, stageOfKey } from './stages'
+import { STAGES, type Stage, nextStageKey, stageIn } from './stages'
 import { type LeadView, viewStage } from './view'
 
 export const INBOX_DAYS = 14
@@ -54,8 +54,8 @@ export type CallItem = {
   leadId: string
   leadName: string
   /** the stage the lead is in, and the one the call would run */
-  cur: StageKey
-  nx: StageKey
+  cur: string
+  nx: string
   at: string
 }
 /** A recorded call with someone from outside who matches nobody (v144NewCalls). */
@@ -96,7 +96,13 @@ export function crmItems(contacts: InboxContact[], leadEmails: Set<string>, asid
 }
 
 /** New transcripts: recorded calls lately with a lead among the guests that nobody has filed yet. */
-export function callItems(calls: FtCall[], metas: Record<string, CallMeta>, leads: LeadView[], now: number): CallItem[] {
+export function callItems(
+  calls: FtCall[],
+  metas: Record<string, CallMeta>,
+  leads: LeadView[],
+  now: number,
+  stages: readonly Pick<Stage, 'key'>[] = STAGES,
+): CallItem[] {
   const out: CallItem[] = []
   for (const c of calls) {
     const at = c.start
@@ -118,7 +124,7 @@ export function callItems(calls: FtCall[], metas: Record<string, CallMeta>, lead
       leadId: lead.id,
       leadName: lead.name,
       cur,
-      nx: nextStageKey(cur),
+      nx: nextStageKey(stages, cur),
       at,
     })
   }
@@ -163,7 +169,7 @@ export const inboxItems = (crm: CrmItem[], calls: CallItem[], clients: ClientIte
 const lc = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
 
 /** What a row says, and its button (v137ItemText); `day` is the call's day as the page draws it ("Nov 4"). */
-export function itemText(x: InboxItem, names: StageNames, day: string): { t: string; s: string; b: string } {
+export function itemText(x: InboxItem, stages: readonly Stage[], day: string): { t: string; s: string; b: string } {
   if (x.kind === 'crm') {
     return { t: 'New client from HubSpot: ' + x.name + (x.company ? ', ' + x.company : ''), s: 'Run the pre-meeting prospect brief?', b: 'Run the brief' }
   }
@@ -172,8 +178,8 @@ export function itemText(x: InboxItem, names: StageNames, day: string): { t: str
     const co = companyOf(p?.email ?? '')
     return { t: 'New contact on a call: ' + (p?.name || p?.email || '') + (co ? ', ' + co : '') + (day ? ' on ' + day : ''), s: 'Create a client record for them?', b: 'Create client' }
   }
-  const cur = stageOfKey(x.cur, names)
-  const nx = stageOfKey(x.nx, names)
+  const cur = stageIn(stages, x.cur) ?? stages[0]
+  const nx = stageIn(stages, x.nx) ?? cur
   const same = x.nx === x.cur
   return {
     t: 'New transcript: your call with ' + x.leadName + (day ? ' on ' + day : ''),

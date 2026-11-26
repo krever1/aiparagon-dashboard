@@ -23,7 +23,7 @@ const NO_LEAD = 'Could not find this lead any more. Refresh the page.'
 async function leadFor(leadId: string) {
   const read = await readCatalyst()
   const { leads, outs } = buildLeads(read.rows, read.outs)
-  return { lead: findLead(leads, String(leadId)), outs, names: read.names }
+  return { lead: findLead(leads, String(leadId)), outs, stages: read.stages }
 }
 
 /**
@@ -72,7 +72,7 @@ export async function writeProposal(leadId: string): Promise<DocResult> {
   const user = await getCurrentUser()
   if (!user) return { ok: false, error: SIGNED_OUT }
   const supabase = await createClient()
-  const { lead, outs, names } = await leadFor(leadId)
+  const { lead, outs, stages } = await leadFor(leadId)
   if (!lead) return { ok: false, error: NO_LEAD }
   const runs = await proposalRuns(supabase).catch(() => ({}))
   const newest = await supabase
@@ -94,7 +94,7 @@ export async function writeProposal(leadId: string): Promise<DocResult> {
     reads = { g: null, rows: [] }
   }
   const g = reads.g
-  const note = g ? composeNote({ typed: '', crm: g.crm, calls: g.calls, emails: g.emails, names }) : ''
+  const note = g ? composeNote({ typed: '', crm: g.crm, calls: g.calls, emails: g.emails, stages, workspace: g.ws }) : ''
   const call = note ? { id: '', title: '', date: '', transcript: note.slice(0, 60_000) } : null
   const t0 = new Date().toISOString()
   try {

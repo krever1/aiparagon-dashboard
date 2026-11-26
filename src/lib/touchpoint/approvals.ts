@@ -1,7 +1,7 @@
 // Approvals' rules (nwApprovalAll, nwApprovalsHtml and nwRowHtml as v117 and v127 left them): one list of everything
 // waiting for a person, the filter tabs and their counts, and what a tab shows. Pure: the page and the tests both use it.
 
-import { FOLLOW_UP, STAGES, type StageKey, type StageNames, isStageKey, stageOfKey } from '@/lib/catalyst/stages'
+import { CUSTOM_STAGE, FOLLOW_UP, STAGES, type Stage, isBoardKey, isStageKey } from '@/lib/catalyst/stages'
 import { type LeadView, hasDoc, inApprovals, leadHref, viewStage } from '@/lib/catalyst/view'
 import { PORTED, legacyUrl, pageBySlug } from '@/lib/nav'
 import { fbPlace, goHref, whoOf } from './feedback'
@@ -186,7 +186,7 @@ export type LeadWait = {
   email: string
   name: string
   company: string
-  stage: StageKey
+  stage: string
   /** its stage's document is written and nobody has marked it reviewed since */
   ready: boolean
   /** when that document was written (ready), else when the lead last changed */
@@ -199,14 +199,20 @@ export type CommentRow = { id: string; target: string; author: string; body: str
 
 /** A stage document's review key (v143LdKey): `<email>:<agent>`, with `:<stage>` for the meeting prep (one agent writes
  * the onboarding plan and the client review brief). The email in lower case. */
-export function reviewKey(email: string, stage: StageKey): string {
-  const st = stageOfKey(stage)
-  return str(email).trim().toLowerCase() + ':' + st.agent + (st.agent === 'meeting_prep' ? ':' + st.key : '')
+export function reviewKey(email: string, stage: string): string {
+  const agent = reviewAgent(stage)
+  return str(email).trim().toLowerCase() + ':' + agent + (agent === 'meeting_prep' ? ':' + stage : '')
+}
+
+/** The agent whose document a stage is: a built-in stage's own, Meeting Prep for a stage of the team's own (v145). */
+export function reviewAgent(stage: string): string {
+  if (isStageKey(stage)) return STAGES.find((s) => s.key === stage)!.agent
+  return CUSTOM_STAGE.test(stage) ? 'meeting_prep' : ''
 }
 
 /** A lead's stage document counts as reviewed (v143Reviewed) when the newest mark on any of its emails says reviewed and
  * was made at or after the document was written (a new version needs a new read). */
-export function isReviewed(emails: string[], stage: StageKey, docAt: number, marks: ReviewMark[]): boolean {
+export function isReviewed(emails: string[], stage: string, docAt: number, marks: ReviewMark[]): boolean {
   const keys = new Set(emails.map((e) => reviewKey(e, stage)))
   let last: { t: number; a: string } | null = null
   for (const m of marks) {
@@ -220,11 +226,13 @@ export function isReviewed(emails: string[], stage: StageKey, docAt: number, mar
 /** The leads on the board that wait on a person, newest first (v143LdItems): not a weak fit, nothing being written for
  * them, and their own stage's document either not written yet or written and not reviewed since. A document only
  * linked on the lead (no row of its own) waits on neither. */
-export function leadWaits(leads: LeadView[], marks: ReviewMark[] = []): LeadWait[] {
+export function leadWaits(leads: LeadView[], marks: ReviewMark[] = [], stages?: readonly Pick<Stage, 'key' | 'norun'>[]): LeadWait[] {
   const out: LeadWait[] = []
   for (const l of leads) {
     if (!inApprovals(l)) continue
     const stage = viewStage(l)
+    // a stage of the team's own that runs nothing has no document to wait on (v145)
+    if (stages && stages.find((s) => s.key === stage)?.norun) continue
     const base = { id: l.id, email: l.email, name: l.name, company: l.company, stage }
     if (!hasDoc(l, stage)) {
       out.push({ ...base, ready: false, when: l.updatedAt ?? '' })
@@ -277,9 +285,9 @@ export type ApprovalInput = {
   campaigns?: Campaign[]
   hooks?: Record<string, string[]>
   adDecisions?: Record<string, string>
-  /** the leads waiting on their stage's document, or a read of it, newest first (leadWaits); the team's stage names */
+  /** the leads waiting on their stage's document, or a read of it, newest first (leadWaits); the board's stages */
   leads?: LeadWait[]
-  names?: StageNames
+  stages?: readonly Stage[]
   /** open comments, newest first, and each lead's page by its emails (lower case), for a comment on a lead's document */
   comments?: CommentRow[]
   leadIds?: Record<string, string>
@@ -430,7 +438,8 @@ export function approvalItems(x: ApprovalInput): Item[] {
   // leads (v143): a stage document written and not read yet is marked reviewed from the list, or read on the lead's page
   // at its tab; one not written yet opens there, where it runs
   for (const l of x.leads ?? []) {
-    const st = stageOfKey(l.stage, x.names)
+    const st = (x.stages ?? STAGES).find((s) => s.key === l.stage)
+    if (!st || st.norun) continue
     const title = l.name + (l.company ? ' · ' + l.company : '')
     if (l.ready) {
       out.push({
@@ -588,7 +597,7 @@ export type Key =
   | { kind: 'reply'; id: string }
   | { kind: 'ad'; runId: string; file: string }
   | { kind: 'comment'; id: string }
-  | { kind: 'lead'; email: string; stage: StageKey }
+  | { kind: 'lead'; email: string; stage: string }
 
 const EMAIL = /^[^\s:@<>"'`]{1,120}@[^\s:@<>"'`]{1,200}$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -606,7 +615,7 @@ export function parseKey(k: unknown): Key | null {
   if (p[0] === 'reply' && p.length === 2 && UUID.test(p[1])) return { kind: 'reply', id: p[1] }
   if (p[0] === 'cmt' && p.length === 2 && UUID.test(p[1])) return { kind: 'comment', id: p[1] }
   // a lead's stage document, marked reviewed: lead:<email>:<stage> ("lead:<email>" alone waits on a run, not a read)
-  if (p[0] === 'lead' && p.length === 3 && EMAIL.test(p[1]) && isStageKey(p[2])) return { kind: 'lead', email: p[1].toLowerCase(), stage: p[2] }
+  if (p[0] === 'lead' && p.length === 3 && EMAIL.test(p[1]) && isBoardKey(p[2])) return { kind: 'lead', email: p[1].toLowerCase(), stage: p[2] }
   // an ad image: its campaign's run, then its file (the decision's target_id, as nwApproveOne keeps it)
   if (p[0] === 'ad' && AD_RUN.test(p[1] ?? '')) {
     const file = p.slice(2).join(':')

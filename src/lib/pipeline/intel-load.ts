@@ -141,7 +141,7 @@ export async function loadIntel(asked: string | null, now = Date.now()): Promise
       .limit(14),
     supabase
       .from('competitors')
-      .select('id,name,handle_linkedin,handle_x,meta_page_id,website,status,follow_kind,follow_for,added_by,created_at,notes')
+      .select('id,name,handle_linkedin,handle_x,meta_page_id,website,status,follow_kind,follow_for,added_by,created_at,notes,relation,draft_replies')
       .order('created_at', { ascending: true })
       .limit(500),
     supabase.from('ai_settings').select('key,value').in('key', ['agent_runs', 'intel_focus', 'intel_follow', 'intel_keywords', 'ad_industries', 'intel_runs']),
