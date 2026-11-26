@@ -32,6 +32,8 @@ export type FathomCall = {
   end: string
   invitees: { name: string; email: string }[]
   recorder: string
+  /** its Fathom link (the share link, else the call's own address), or '' */
+  link: string
 }
 
 function normCall(c: unknown): FathomCall {
@@ -45,6 +47,7 @@ function normCall(c: unknown): FathomCall {
     end: str(o.end),
     invitees: inv.map((i) => ({ name: str(i?.name), email: str(i?.email) })),
     recorder: lower(rb.email),
+    link: [str(o.share_url), str(o.url)].find((u) => /^https:\/\/([a-z0-9-]+\.)*fathom\.video\//i.test(u)) ?? '',
   }
 }
 
@@ -79,7 +82,7 @@ function guestsOf(c: FathomCall, m: Meta | undefined): string[] {
   return c.invitees.map((i) => lower(i.email)).filter((e) => e && e !== c.recorder)
 }
 
-export type LeadCall = GatherCall & { type: string; minutes: number; who: string }
+export type LeadCall = GatherCall & { type: string; minutes: number; who: string; link: string }
 
 /**
  * Every recorded call with the lead, newest first: a guest is one of its emails and the call is not filed under
@@ -114,6 +117,7 @@ export async function callsOfLead(supabase: Supa, lead: Lead): Promise<{ calls: 
         stage: str(meta.get(c.id)?.lead_stage),
         type: str(meta.get(c.id)?.meeting_type),
         minutes: a && b && b > a ? Math.round((b - a) / 60000) : 0,
+        link: c.link,
         // who was on it, besides the team (the first three), for the client workspace
         who: c.invitees
           .filter((i) => lower(i.email) !== c.recorder)

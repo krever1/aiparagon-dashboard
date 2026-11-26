@@ -66,20 +66,22 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
   asks for a link back to it. Kser could not reset a password: the link opened http://localhost:3000. See Gotchas.
 - Erica's notes of Nov 24, round 1 (Nov 25, branch `nx/feedback-r1`; the current dashboard's v143): Back in the top bar,
   Tasks' fold a call and remove a task, Approvals' "Ready for review" on a lead's stage document, and Run (or Run
-  again) on every report of a lead's page. Send to Asana stays in the current dashboard. See Touchpoint and Catalyst
+  again) on every report of a lead's page. Send to Asana came later (Nov 26). See Touchpoint and Catalyst
   below. Merged into `dev` (PR #33).
 - Erica's notes of Nov 24, round 2 (Nov 25, branch `nx/feedback-r2`; the current dashboard's v144): folders and call
   types the team can change (Tasks and Calls), Calls' Calendar tab, calls filed by their people, a new contact on a call
   on Today with its question, a lead's HubSpot tab read live, feedback pins (the top bar's Feedback, Approvals), and
-  Tasks' Select and Send to Notion. Send to Asana stays in the current dashboard. See Shell, Catalyst and Touchpoint.
+  Tasks' Select and Send to Notion. Send to Asana came later (Nov 26). See Shell, Catalyst and Touchpoint.
 - Erica's notes of Nov 24, round 3 (Nov 25, branch `nx/feedback-r3`; the current dashboard's v145, with v146's fixes):
   Meeting Types and Client Stages (the board's columns are the team's stages, each with a setup; the Overview's
   Meeting Types, the team's own included; a lead's stage checklist), the client workspace on a lead's Files tab, and
   the Intel Tracker's replies (who each account is, Draft replies, Why this post, Import LinkedIn connections). See
   Catalyst and Pipeline below. Merged into `dev` (PR #35).
 - Erica's notes of Nov 25 (Nov 26, branch `nx/feedback-r4`; the current dashboard's v151): Select in the client
-  workspace and Send to Notion, with In Notion and In Asana on each item's row. Send to Asana stays in the current
-  dashboard, as on Tasks. See Catalyst below.
+  workspace and Send to Notion, with In Notion and In Asana on each item's row. See Catalyst below.
+- Send to Asana (Nov 26, branch `nx/asana`; the current dashboard's v143 and v151): on Tasks' pick bar and the client
+  workspace's, through this browser's Asana token or the team's Integrations · Asana Proxy, with Connect Asana in 3
+  steps when there is neither, and Tasks' Asana card (Connect, Disconnect). See Touchpoint and Catalyst below.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -99,9 +101,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Touchpoint | Today, with Take the tour | here (Touchpoint part 3 and the finishing PR, not released) |
 | Touchpoint | Approvals: briefs, the Intel Tracker's replies, ad images, content drafts, failed requests, leads, comments | here (Touchpoint part 2 and the finishing PR, not released) |
 | Touchpoint | Approvals: a lead's stage document Ready for review, Mark reviewed | here (feedback round 1, not released) |
-| Touchpoint | Tasks (the post-call to-dos; Asana stays in the current dashboard) | here (Touchpoint part 1) |
+| Touchpoint | Tasks (the post-call to-dos) | here (Touchpoint part 1) |
 | Touchpoint | Tasks: fold a call, remove a task with Undo | here (feedback round 1, not released) |
-| Touchpoint | Tasks: Select and Send to Notion, Folders and types (Send to Asana stays in the current dashboard) | here (feedback round 2, not released) |
+| Touchpoint | Tasks: Select and Send to Notion, Folders and types | here (feedback round 2, not released) |
+| Touchpoint | Tasks: Send to Asana, the Asana card (Connect, Disconnect; the open Asana tasks stay in the current dashboard) | here (Send to Asana, not released) |
 | Touchpoint | Today: a new contact on a call; Approvals: feedback notes | here (feedback round 2, not released) |
 | Shell | Back in the top bar | here (feedback round 1, not released) |
 | Shell | Feedback pins (the top bar's Feedback, All feedback) | here (feedback round 2, not released) |
@@ -112,7 +115,8 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | Run, or Run again, on every report of a lead's page | here (feedback round 1, not released) |
 | Catalyst | Meeting Types and Client Stages (Edit stages, each stage's and meeting type's setup, the team's own, a lead's stage checklist) | here (feedback round 3, not released) |
 | Catalyst | A lead's Files tab as the client workspace (folders, star, move, edit, delete, a file or a pasted transcript as a run's source) | here (feedback round 3, not released) |
-| Catalyst | The client workspace's Select and Send to Notion, In Notion and In Asana on each row (Send to Asana stays in the current dashboard) | here (feedback round 4, not released) |
+| Catalyst | The client workspace's Select and Send to Notion, In Notion and In Asana on each row | here (feedback round 4, not released) |
+| Catalyst | The client workspace's Send to Asana | here (Send to Asana, not released) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Intel Tracker replies: who each account is, Draft replies, Why this post, Import LinkedIn connections | here (feedback round 3, not released) |
@@ -379,8 +383,8 @@ signed-in teammate's token, as the current dashboard's do.
   a lead's own Calls tab, where the lead is known, so that case does not come up (the question opens from Today's card);
   a call's live HubSpot read is the tab's own box above the synced copy (the old one was added into the section).
 - Changed on purpose in part 3 (reported to Kser): no Integrations switcher above HubSpot contacts and Calls (the
-  sidebar has them under Catalyst); Send to Asana is not here yet (Tasks' Asana is still in the current dashboard; the
-  team-wide Asana Proxy was never published), and Use as content source came with Pipeline 4c; Refresh from Fathom and
+  sidebar has them under Catalyst); Send to Asana came later (Nov 26, see Touchpoint), and Use as content source came
+  with Pipeline 4c; Refresh from Fathom and
   Key ending sit on the banner line; a HubSpot search with no match says so (the old page said no contacts were
   synced); Follow also saves the website it asks for and who added the company; the Assessment card on a discovery
   call says "Next: the Assessment" (the old one said the Growth Plan over the same button); due dates no longer show the
@@ -450,8 +454,8 @@ signed-in teammate's token, as the current dashboard's do.
     `notionDatabases` in the Tasks actions, `pickedOf`, `sendTitle`, `kindWord` and `sentOf` in `workspace.ts`): Select
     in the workspace's header (aria-pressed, as on Tasks) puts a box before each row and the bar under the header: "2
     items picked" (else "Pick items to send"), All shown (adds the items the list shows, in this view), None, Send to
-    Notion (off until something is picked) and Done. Picks hold across Files and Calls; a transcript in both counts once.
-    The bar's last line says Send to Asana is still in the current dashboard, with a link to its Lead pipeline.
+    Notion (off until something is picked) and Done, with Send to Asana before Send to Notion (below). Picks hold across
+    Files and Calls; a transcript in both counts once.
   - Send to Notion is Tasks' window (`NotionDialog`, the same databases, the one used last, else one with "task" in its
     name, one entry at a time, a stop halfway with Send the rest, the three steps when nothing is shared, the proxy
     switched off): each picked item is a row named "<item> · <client>" (the client is the lead's company, else its
@@ -461,8 +465,15 @@ signed-in teammate's token, as the current dashboard's do.
     `catalyst_ws` entry, read fresh and merged (its other fields, other items and other leads kept); after a stop, the
     ones that went. Once everything went, `notion_tasks_db` is the database used last; `notion_sent` (Tasks', per call)
     is not touched. Then picking ends and the message says "3 entries sent to Notion · <database>".
-  - Each row shows where it went (`sentOf`): "In Asana · <project_name>" (what the current dashboard's v151 wrote:
-    `asana` {at, by, project, project_name, url}) and "In Notion · <database>", the day on hover.
+  - Each row shows where it went (`sentOf`): "In Asana · <project_name>" (`asana` {at, by, project, project_name, url},
+    as both apps write it) and "In Notion · <database>", the day on hover.
+  - Send to Asana (v151Asana, v151AsanaSend; `AsanaDialog` in `asana-send.tsx`, `wsAsanaMark` in `ws-actions.ts`,
+    `asanaNotes` and `itemLink` in `workspace.ts`): Tasks' window (see Touchpoint), one task per picked item, its name
+    "<item> · <client>" editable in the window, its description the kind, "from <client>’s workspace", the folder and
+    the day, "About it: <description>" (else a call's "Summary: …"), and "Open it: <link>" (the file, the Google Doc,
+    the call's Fathom link, which now rides on `LeadCallRow.link`); "Tick at least one item, with a name." Each item
+    sent gets `asana` {at, by, project, project_name, url} on its `catalyst_ws` entry, read fresh and merged; after a
+    stop, the ones that went, and Send the rest. Then picking ends and the message says "2 items sent to <project>."
 - Changed on purpose in part 4 (reported to Kser): deleting a file asks first (the Files page always did); an upload
   whose row cannot be saved takes its stored file back out; Word files are read on the server, not in the browser; an
   upload whose text could not be read says so (the old page said nothing); the question before writing the proposal
@@ -486,9 +497,7 @@ signed-in teammate's token, as the current dashboard's do.
   without it); a lead's Files tab count is the workspace's items (it counted every PDF and Google Doc link); an upload
   from a stage folder whose stage is meeting prep is saved with stage manual (the Files page groups by the older
   agents); the windows' long names wrap on a phone, and so do the tabs' (a long unbroken stage name widened the page).
-- Changed on purpose in feedback round 4 (reported to Kser): Send to Asana stays in the current dashboard (the bar says
-  so and links there, as Tasks' Asana card does), since Asana connects there with a personal token in that browser and
-  the team-wide Asana Proxy was never published; Select stays Select (pressed) with Done in the bar, as on Tasks (the old
+- Changed on purpose in feedback round 4 (reported to Kser): Select stays Select (pressed) with Done in the bar, as on Tasks (the old
   header button turned into Done); after a stop the rows that went say In Notion at once (the old page showed it only
   after the window closed); a failure to save where they went says so (the old page let it pass).
 
@@ -508,8 +517,30 @@ signed-in teammate's token, as the current dashboard's do.
     saved on it, and its folder follows `folderOf` with no call (v121Folder: no people and no folder set means the team's
     own call only when its type is internal or dev). A call Fathom did not list gets a stand-in call for Edit details,
     built from its post-call actions, as apCxEdit does.
-  - The Asana panel (a personal token saved in the current dashboard's browser storage) and Send to Asana stay in the
-    current dashboard, behind a card that links to it. No call had ever been sent to Asana (`call_outputs.asana`, Nov 11).
+  - Send to Asana (v143's apCxAsana and apCxAsanaSend; `src/lib/asana-browser.ts`, `src/components/tasks/asana-send.tsx`,
+    `src/app/(app)/tasks/asana-actions.ts`): Send to Asana on the pick bar, before Send to Notion. The window
+    (`AsanaDialog`, shared with the client workspace): Project (the one used last in this browser, else the first),
+    Assignee (optional; Unassigned and the workspace's people), then a row per task: ticked (the picked ones, else the
+    open ones), its due date (the task's) and its description ("From the call “<call>” on <day>", Owner, Why,
+    Recording: the Fathom link), each editable; Send to Asana makes a task each, one at a time ("Sending 1 of 2…").
+    Then `call_outputs.asana` = {at, project, project_name, url `https://app.asana.com/0/<project>/list`, tasks: [{gid,
+    name, url}]} (`asanaMarkCall`, read fresh; Send the rest adds to it), the call says "in Asana · <project>", picking
+    ends, and the message says "N tasks sent to <project>." A stop halfway says "1 sent, then Asana stopped: <why>
+    Send the rest picks up from there.", saves and unticks the ones that went, and Send the rest sends only the others.
+  - Which way it goes: with an Asana token saved in this browser (localStorage `ap.next.asana.pat`, with
+    `ap.next.asana.ws`, `.project`, `.user`; this app's own keys, as the two apps are on different addresses) the
+    browser calls Asana itself (GET /workspaces, /projects, /users?workspace=, POST /tasks), so the token never reaches
+    the dashboard's server or the database. Otherwise the server asks Integrations · Asana Proxy (`asana-proxy`:
+    projects, users, then create with one task at a time, so a stop knows which went). The proxy saying not_connected,
+    being switched off (404) or having no projects shows Connect Asana in 3 steps (`AsanaSteps`, v143AsSteps: make a
+    token at app.asana.com/0/my-apps, paste it, Connect, which checks it with GET /users/me and keeps it only if Asana
+    takes it), then the window carries on with the token. A saved token Asana refuses (401) is dropped and the steps
+    show: "Asana didn’t accept the saved token. Connect again:". A project with no access says Asana's reason (else
+    "You don’t have access to that project in Asana."); Asana down says "Couldn’t reach Asana. Try again in a minute."
+    The window says which way it sends; with the token it has Disconnect.
+  - The Asana card under the to-dos (`AsanaCard`): Connect Asana (the 3 steps in a window) or, with a token in this
+    browser, Disconnect (asks first: "Disconnect Asana in this browser? Tasks already sent stay in Asana."), and a link
+    to the open Asana tasks, which are still browsed in the current dashboard.
   - Fold and remove (v143): each call has a caret before its title that folds its tasks up, kept in this browser
     (localStorage `ap.tk.shut`, {call id: 1}, the current dashboard's key and shape). Each task has × ("Remove this
     task"; shown on hover, always on a touch screen): `removeTask` reads the row fresh, takes the task out of
@@ -526,10 +557,15 @@ signed-in teammate's token, as the current dashboard's do.
     ("Follow-up: <call> (<day>)") is ticked too. Each becomes an entry (action add, its title "<task> · <call>", 300
     characters at most), one at a time; a stop halfway says how many went, unticks those, keeps the count, and Send the
     rest sends only the others; then "N sent to Notion · <database>". No database shared shows the three steps to share
-    one and Check again; the proxy switched off says so. Send to Asana stays in the current dashboard (the pick bar has no
-    Asana button).
+    one and Check again; the proxy switched off says so.
   - Folders and types (v144) by the heading: see Catalyst.
-- Changed on purpose on Tasks (reported to Kser): Asana stays in the current dashboard (above); the heading line reads
+- Changed on purpose in Send to Asana (reported to Kser): a stop halfway stops and offers Send the rest, as Send to Notion
+  does (the old page went on past a failure and said how many did not go through); the team's connection is asked one
+  task at a time, so it is known which went; the assignee list comes from the team's connection too (the old page
+  offered one only with a token in that browser); the window says which way it sends and has Disconnect for the token;
+  the toast counts every task sent from the window, Send the rest included; Tasks' Asana card no longer lists the open
+  Asana tasks (they are still in the current dashboard, linked from the card).
+- Changed on purpose on Tasks (reported to Kser): the heading line reads
   "Touchpoint · Home and tasks" like every ported page (the old page said "Touchpoint"); the heading's tooltip leaves
   out Send to Asana; a failed read of the post-call actions says so (the old page said "None yet"); the open count is
   the calls shown under the picked button, before and after ticks (the old one changed what it counted after a tick);
@@ -1387,7 +1423,10 @@ signed-in teammate's token, as the current dashboard's do.
   names, filing a call by its people, new contacts on calls, feedback keys and Approvals' feedback rows;
   `folders-types.spec.ts` Folders and types; `calls-calendar.spec.ts` the Calendar tab (calls dated from now);
   `today-client.spec.ts` a new contact on a call; `hubspot-live.spec.ts` a lead's HubSpot tab read live;
-  `feedback.spec.ts` feedback pins; `notion.spec.ts` Select and Send to Notion;
+  `feedback.spec.ts` feedback pins; `notion.spec.ts` Select and Send to Notion; `asana.spec.ts` Send to Asana on Tasks
+  and the client workspace (the proxy stand-in's projects and people, a stop and Send the rest, not connected and
+  switched off, the 3 steps with a bad and a refused token, the token path against Asana's API answered by page.route,
+  no access, Asana down, Disconnect, a phone);
   `approvals-logic.spec.ts` (without a browser) and `approvals.spec.ts` Approvals, on the rows in
   `approvals-fixtures.ts` (times count back from now, so a week and 14 days hold on any day; `approvalRows` empties
   e1_leads and dashboard_comments, so the stand-in's own leads do not wait there, and `catalystRows` seeds leads and
@@ -1487,6 +1526,11 @@ signed-in teammate's token, as the current dashboard's do.
   mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
+- The Send to Asana window (`AsanaDialog`) is shared by Tasks and the client workspace, like the Notion one: run
+  `asana.spec.ts` with it. Asana's token lives only in the browser (`src/lib/asana-browser.ts`): never pass it to a
+  server action or n8n. The proxy stand-in (`asana-proxy`, GET/POST `/__asana`: connected, workspace, projects, users,
+  the tasks made, stopAfter) follows Integrations · Asana Proxy's contract as told on Nov 26; the real workflow was
+  being upgraded then and is not checked against it yet.
 - The Send to Notion window (`NotionDialog`) is shared by Tasks and the client workspace: Tasks' own words live in
   `NotionSend`, the workspace's in `workspace.tsx`. A change to the window reaches both, so run `notion.spec.ts` and
   `ws-send.spec.ts` together. The window reads its `load` once per try (kept in state), so a caller may pass a new

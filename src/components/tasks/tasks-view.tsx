@@ -12,9 +12,10 @@ import { ErrorNotice } from '@/components/catalyst/bits'
 import { LocalUsDate, dueText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import {
-  type CallRow, type FtCall, type Task, type TypeNames, callsByFolder, catLabel, filedFolder, folderChoices, isOutside, keptAfterDelete, leadOf, tagChoices,
+  type CallRow, type FtCall, type Task, type TypeNames, callsByFolder, catLabel, fathomLink, filedFolder, folderChoices, isOutside, keptAfterDelete, leadOf, tagChoices,
   typeLabel, withLine,
 } from '@/lib/catalyst/calls'
+import { AsanaSend } from './asana-send'
 import { NotionSend } from './notion-send'
 import { type TaskCard, openOf, shownCat, taskButtons, taskFolders } from '@/lib/catalyst/tasks'
 import type { TasksData } from '@/lib/catalyst/tasks-load'
@@ -104,6 +105,7 @@ export function TasksView({ data }: { data: TasksData }) {
   const [picking, setPicking] = useState<Record<string, boolean>>({})
   const [sel, setSel] = useState<Record<string, Record<string, boolean>>>({})
   const [notion, setNotion] = useState<{ card: TaskCard; only: string[] } | null>(null)
+  const [asana, setAsana] = useState<{ card: TaskCard; only: string[] } | null>(null)
 
   const setType = useCallback((key: string) => {
     const u = new URL(window.location.href)
@@ -233,6 +235,7 @@ export function TasksView({ data }: { data: TasksData }) {
                       }}
                       onPick={(ids, v) => setSel((x) => ({ ...x, [c.id]: { ...(x[c.id] ?? {}), ...Object.fromEntries(ids.map((id) => [id, v])) } }))}
                       onNotion={() => setNotion({ card: c, only: Object.keys(sel[c.id] ?? {}).filter((k) => sel[c.id]?.[k]) })}
+                      onAsana={() => setAsana({ card: c, only: Object.keys(sel[c.id] ?? {}).filter((k) => sel[c.id]?.[k]) })}
                     />
                   ))}
                 </div>
@@ -332,6 +335,22 @@ export function TasksView({ data }: { data: TasksData }) {
           onClose={() => setNotion(null)}
         />
       ) : null}
+      {asana ? (
+        <AsanaSend
+          outputId={asana.card.out.id}
+          call={asana.card.call?.title || asana.card.out.call_title || 'the call'}
+          start={asana.card.call?.start || asana.card.out.call_start}
+          recording={asana.card.call ? fathomLink(asana.card.call) : ''}
+          tasks={tasksOf(asana.card)}
+          only={asana.only}
+          onDone={() => {
+            const id = asana.card.id
+            setPicking((x) => ({ ...x, [id]: false }))
+            setSel((x) => ({ ...x, [id]: {} }))
+          }}
+          onClose={() => setAsana(null)}
+        />
+      ) : null}
     </section>
     </TypeNamesProvider>
   )
@@ -354,6 +373,7 @@ function TaskCallCard({
   onPicking,
   onPick,
   onNotion,
+  onAsana,
 }: {
   card: TaskCard
   tasks: Task[]
@@ -365,6 +385,7 @@ function TaskCallCard({
   onPicking: () => void
   onPick: (ids: string[], on: boolean) => void
   onNotion: () => void
+  onAsana: () => void
   typeBusy: boolean
   onType: (v: string) => void
   onEdit: () => void
@@ -487,6 +508,9 @@ function TaskCallCard({
           </button>
           <button type="button" className={ghost} onClick={() => onPick(tasks.map((t) => t.id), false)}>
             None
+          </button>
+          <button type="button" className={ghost} onClick={onAsana}>
+            Send to Asana
           </button>
           <button type="button" className={ghost} onClick={onNotion}>
             Send to Notion

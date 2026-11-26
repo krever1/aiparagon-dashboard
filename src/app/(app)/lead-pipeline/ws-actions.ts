@@ -176,6 +176,35 @@ export async function wsDelete(leadId: string, key: string): Promise<WsResult> {
  * read fresh and merged (the item's other fields, other items and other leads kept). Once everything picked went, the
  * database is also kept for the team as the one used last (`notion_tasks_db`, as Tasks keeps it).
  */
+/**
+ * What went where after Send to Asana (v151AsanaSend): each item sent gets `asana` {at, by, project, project_name, url}
+ * on its entry, read fresh and merged (its other fields, other items and other leads kept).
+ */
+export async function wsAsanaMark(leadId: string, keys: string[], project: string, projectName: string): Promise<WsResult> {
+  const c = await ctx(leadId)
+  if ('error' in c) return { ok: false, error: c.error as string }
+  const ks = [...new Set((Array.isArray(keys) ? keys : []).map(String))].filter((k) => KEY.test(k)).slice(0, 200)
+  const p = String(project ?? '').trim()
+  if (!/^[\w-]{1,64}$/.test(p)) return { ok: false, error: 'Pick a project first.' }
+  const rec = {
+    at: new Date().toISOString(),
+    by: c.user.email,
+    project: p,
+    project_name: String(projectName ?? '').slice(0, 200) || 'Asana',
+    url: 'https://app.asana.com/0/' + p + '/list',
+  }
+  try {
+    const ws = ks.length
+      ? await put(c.supabase, c.lead, c.user.email, (m) => {
+          for (const k of ks) m.items[k] = { ...m.items[k], asana: rec }
+        })
+      : c.meta
+    return { ok: true, toast: '', ws }
+  } catch (e) {
+    return { ok: false, error: 'Could not save where they went: ' + msgOf(e) }
+  }
+}
+
 export async function wsNotionMark(leadId: string, keys: string[], db: string, name: string, all: boolean): Promise<WsResult> {
   const c = await ctx(leadId)
   if ('error' in c) return { ok: false, error: c.error as string }
