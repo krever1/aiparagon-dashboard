@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CheckSquare, LayoutGrid, Pencil, Plus, Star, Upload } from 'lucide-react'
 import type { LeadCallRow } from '@/app/(app)/lead-pipeline/actions'
@@ -20,6 +20,8 @@ import {
   type WsFolder, type WsItem, type WsMeta, asanaNotes, kindWord, pickedOf, sendTitle, wsCalls, wsFiles, wsFolders, wsShown,
 } from '@/lib/catalyst/workspace'
 import { plural } from './bits'
+import { WsPreview, WsSuggest } from './ws-preview'
+import { typeLabel } from '@/lib/catalyst/calls'
 
 type Found = Extract<LeadPageData, { found: true }>
 type Msg = { text: string; bad?: boolean } | null
@@ -53,6 +55,8 @@ function DateBlock({ at }: { at: string }) {
  * be deleted. Upload file adds a file or a pasted transcript, with a name, a folder and a description, and whether the
  * stage runs read it. Select (v151) picks items, and the bar sends them to Asana (a task each) or Notion (an entry each),
  * named for the item and the client; what went where shows on each row (In Asana · <project>, In Notion · <database>).
+ * Since v153 an item's name opens it in a preview panel (Preview, Details, Activity), "/" goes to the search, and the
+ * calls with no folder have Review suggestions (a folder each, with why, filed in one go).
  */
 export function Workspace({
   data,
@@ -87,7 +91,27 @@ export function Workspace({
   const [sel, setSel] = useState<Record<string, boolean>>({})
   const [notion, setNotion] = useState<WsItem[] | null>(null)
   const [asana, setAsana] = useState<WsItem[] | null>(null)
+  // v153: the item open in the preview panel, and the folder suggestions for calls
+  const [open, setOpen] = useState<string | null>(null)
+  const [suggest, setSuggest] = useState(false)
+  const search = useRef<HTMLInputElement>(null)
   const hydrated = useHydrated()
+
+  // "/" puts the cursor in the workspace search (not while typing, nor with a window open)
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      if (document.querySelector('dialog[open]')) return
+      const q = search.current
+      if (!q || !q.offsetParent) return
+      e.preventDefault()
+      q.focus()
+    }
+    document.addEventListener('keydown', on)
+    return () => document.removeEventListener('keydown', on)
+  }, [])
 
   const folders = useMemo(() => wsFolders(stages, meta), [stages, meta])
   const files = useMemo(
@@ -114,6 +138,15 @@ export function Workspace({
   const orgCalls = view === 'calls' ? callItems.filter((i) => !i.folder).length : 0
   const picked = pick ? pickedOf(files, callItems, sel) : []
   const client = lead.company || lead.name || lead.email || 'the client'
+  const openItem = open ? (files.find((i) => i.key === open) ?? callItems.find((i) => i.key === open) ?? null) : null
+  // when each stage's document was written (a row of its own; a link saved on the lead has no date), for the suggestions
+  const docAt = useMemo(() => {
+    const out: Record<string, string | null> = {}
+    for (const s of stages) {
+      out[s.key] = s.agent === 'meeting_prep' ? (data.prep[s.key]?.at ?? null) : s.agent ? (data.docs.find((d) => d.agent === s.agent && d.outId)?.at ?? null) : null
+    }
+    return out
+  }, [stages, data.docs, data.prep])
   const stopPicking = () => {
     setPick(false)
     setSel({})
@@ -151,8 +184,16 @@ export function Workspace({
         </span>
       )}
       <div className="min-w-0 flex-1 max-[860px]:basis-[calc(100%-50px)]">
-        <b className="block truncate text-[14px] font-semibold text-ink [overflow-wrap:anywhere]" title={i.name}>
-          {i.name}
+        <b className="block min-w-0 text-[14px] font-semibold text-ink">
+          <button
+            type="button"
+            title="Preview"
+            onClick={() => setOpen(i.key)}
+            data-testid="ws-open"
+            className="block max-w-full cursor-pointer truncate text-left underline-offset-[3px] [overflow-wrap:anywhere] hover:underline focus-visible:underline"
+          >
+            {i.name}
+          </button>
         </b>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
           {i.fm.map((f) =>
@@ -329,17 +370,23 @@ export function Workspace({
         </nav>
         <div className="min-w-0 px-4 py-3">
           {orgCalls ? (
-            <p className="mb-2.5 rounded-md border border-[#efdcab] bg-[#fff8e6] px-3 py-2 text-[13px]">
-              <b>
-                {plural(orgCalls, 'call')} {orgCalls === 1 ? 'needs' : 'need'} a folder.
-              </b>{' '}
-              Choose one on each call; a client stage folder files the call under that stage.
-            </p>
+            <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-[#efdcab] bg-[#fff8e6] px-3 py-2 text-[13px]" data-testid="ws-note">
+              <div className="min-w-0 flex-[1_1_240px]">
+                <b>
+                  {plural(orgCalls, 'call')} {orgCalls === 1 ? 'needs' : 'need'} a folder.
+                </b>
+                <small className="block text-[12.5px] text-[#7a5d17]">A folder is suggested for each one, for you to check.</small>
+              </div>
+              <button type="button" className={btn} onClick={() => setSuggest(true)}>
+                Review suggestions →
+              </button>
+            </div>
           ) : null}
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
             <label className="min-w-0 flex-[1_1_220px]">
               <span className="sr-only">Search</span>
               <input
+                ref={search}
                 type="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -411,6 +458,44 @@ export function Workspace({
           </div>
         </div>
       </div>
+      {openItem ? (
+        <WsPreview
+          data={data}
+          item={openItem}
+          meta={meta.items[openItem.key]}
+          folders={folders}
+          stages={stages}
+          calls={callItems}
+          typeNames={data.typeNames}
+          onClose={() => setOpen(null)}
+          onOpen={setOpen}
+          onStar={star}
+          onMove={move}
+          onSaved={setMeta}
+          onTab={onTab}
+        />
+      ) : null}
+      {suggest ? (
+        <WsSuggest
+          leadId={lead.id}
+          list={callItems.filter((i) => !i.folder)}
+          folders={folders}
+          ctx={{
+            folders,
+            stages,
+            setupType: data.setupTypes,
+            docAt: docAt,
+            current: cur,
+            typeName: (t) => typeLabel(t, data.typeNames),
+            day: (iso) => usDateText(iso, hydrated ? undefined : 'UTC'),
+          }}
+          onClose={() => setSuggest(false)}
+          onDone={(ws) => {
+            if (ws) setMeta(ws)
+            onCalls()
+          }}
+        />
+      ) : null}
       {edit ? (
         <EditItem
           leadId={lead.id}
@@ -551,7 +636,13 @@ function EditItem({
   const save = async () => {
     if (!name.trim()) return setMsg({ text: 'Give it a name.', bad: true })
     setBusy(true)
-    const r = await wsEdit(leadId, item.key, { name, folder, desc, ...(up ? { source } : {}) }).catch(() => fail)
+    // only what changed is sent, so the item's log says only what really changed (v153)
+    const ch: { name?: string; folder?: string; desc?: string; source?: boolean } = {}
+    if (name.trim() !== item.name) ch.name = name
+    if (folder !== item.folder) ch.folder = folder
+    if (desc.trim() !== (item.desc || '')) ch.desc = desc
+    if (up && source !== !!item.source) ch.source = source
+    const r = await wsEdit(leadId, item.key, ch).catch(() => fail)
     if (!r.ok) {
       setBusy(false)
       return setMsg({ text: r.error, bad: true })

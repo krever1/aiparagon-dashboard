@@ -82,6 +82,10 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 - Send to Asana (Nov 26, branch `nx/asana`; the current dashboard's v143 and v151): on Tasks' pick bar and the client
   workspace's, through this browser's Asana token or the team's Integrations · Asana Proxy, with Connect Asana in 3
   steps when there is neither, and Tasks' Asana card (Connect, Disconnect). See Touchpoint and Catalyst below.
+- The workspace's preview panel and folder suggestions (Nov 26, branch `nx/workspace-preview`; the current dashboard's
+  v153, Erica's client workspace mockup): an item's name opens a side panel (Preview, Details, Activity), every change
+  made in the workspace is logged on the item, "/" goes to the search, and the calls with no folder have Review
+  suggestions. See Catalyst below.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -117,6 +121,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | A lead's Files tab as the client workspace (folders, star, move, edit, delete, a file or a pasted transcript as a run's source) | here (feedback round 3, not released) |
 | Catalyst | The client workspace's Select and Send to Notion, In Notion and In Asana on each row | here (feedback round 4, not released) |
 | Catalyst | The client workspace's Send to Asana | here (Send to Asana, not released) |
+| Catalyst | The client workspace's preview panel (Preview, Details, Activity, the change log), "/" to search, folder suggestions for calls | here (v153, not released) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Intel Tracker replies: who each account is, Draft replies, Why this post, Import LinkedIn connections | here (feedback round 3, not released) |
@@ -474,6 +479,42 @@ signed-in teammate's token, as the current dashboard's do.
     the call's Fathom link, which now rides on `LeadCallRow.link`); "Tick at least one item, with a name." Each item
     sent gets `asana` {at, by, project, project_name, url} on its `catalyst_ws` entry, read fresh and merged; after a
     stop, the ones that went, and Send the rest. Then picking ends and the message says "2 items sent to <project>."
+  - The change log (v153; `logChanges` in `workspace.ts`, run by `put` in `ws-actions.ts` on every save): each item
+    keeps `log` [{at, by (the teammate's name), what}], the last 30, the shape the current dashboard writes: "Renamed to
+    “X”", "Moved to <folder>" or "Moved to To organize", "Starred" or "Unstarred", "Description changed" or "Description
+    removed", "Marked as a source for the stage runs" or "No longer a source for the stage runs". An upload's own
+    entry, made with it, is not logged (it is written by `finishUpload`, not `put`, and the rule skips it anyway).
+    Edit sends only what its window changed (`wsEdit` takes each field as optional), so a save logs only real changes.
+  - The preview panel (v153Open, v153Paint; `ws-preview.tsx` `WsPreview`, on `drawer.tsx`): an item's name is a button
+    (inside its `<b>`, so tests that read `:scope > div > b` still do). Head: File preview or Call preview, the folder
+    chip (or To organize), the name, who and when (`byLine`: "Uploaded by X · Updated Oct 2, 2026", "AI generated ·
+    Updated …", a call's "27 min · people · Fathom · Nov 20, 2026"), Star, ✎ Rename (inline; Enter saves, Esc cancels
+    and leaves the panel open) and Move to (the workspace's move, so a call moved to a stage folder is filed under it).
+    Tabs Preview, Details, Activity (a tablist, arrow keys). Preview: a document's own text (`content_md` the lead page
+    already reads, as markdown; one kept as JSON or with none says so), an upload's or transcript's text as read
+    (`wsInfo`, read when the panel opens), a call's post-call summary and next steps (`wsInfo`) and Show the transcript
+    (Fathom through `callText`, only on the click); its formats above. Details: name, kind (`wsKindName`), folder,
+    filed (a call: Filed under <stage>, Set aside: not about this client, Not filed under a stage yet), formats, people,
+    length and call type (`LeadCallRow.type`: the team's, else the AI's pick), who wrote or uploaded it, the date,
+    source, sent to; a Description box and, for an upload, Use it as a source, with Save details (`wsSet`, only what
+    changed; "Nothing changed." otherwise); Delete for an upload. Activity (`activityOf`): recorded, uploaded or
+    written; filed under a stage (call_meta's updated_at and updated_by); post-call actions written; the text read
+    (indexed_at); sent to Asana or Notion; every change logged; then "Renames, moves, stars and description changes are
+    kept from Nov 26 on." Foot: Open <format> (the first web link; a transcript's "Open the transcript file"), Open its
+    tab (a meeting prep), Open in Fathom and Open on Calls (a call), else View related call (`relatedCall`: the newest
+    call in the same folder), which opens that call in the panel.
+  - "/" (not while typing, not with a window open) puts the cursor in the workspace search.
+  - Folder suggestions (v153Suggest, v153Guess, v153SgGo; `WsSuggest`, `guessFolder`, `wsFileMany`): the Calls view's
+    "N calls need a folder." says "A folder is suggested for each one, for you to check." with Review suggestions →. The
+    window lists each call or uploaded transcript with no folder: its name, date · minutes · people · source, a
+    Suggested folder (or Leave in To organize), why, and a tick (on when a folder is suggested). The guess, in order:
+    the title names a folder (its name, a stage's short word, or the first word of a stage folder's name of five letters
+    or more that is not client, meeting, call, team, first, final or kick; the longest wins; review, call, meeting and
+    client never match alone) "Its title says “Proposal”"; its call type is a stage's setup meeting type
+    (`LeadPageData.setupTypes`) "Its call type is Onboarding: the Onboarding stage’s meeting"; the latest stage whose
+    document was written at or before it "Held after the <doc> was written (Oct 5, 2026)"; else "The client is in
+    <stage> now". File N calls files each ticked call put in a stage folder under that stage (call_meta, as a move
+    does), then one save puts every item in its folder, with where each call is filed then; "Filed N calls."
 - Changed on purpose in part 4 (reported to Kser): deleting a file asks first (the Files page always did); an upload
   whose row cannot be saved takes its stored file back out; Word files are read on the server, not in the browser; an
   upload whose text could not be read says so (the old page said nothing); the question before writing the proposal
@@ -500,6 +541,13 @@ signed-in teammate's token, as the current dashboard's do.
 - Changed on purpose in feedback round 4 (reported to Kser): Select stays Select (pressed) with Done in the bar, as on Tasks (the old
   header button turned into Done); after a stop the rows that went say In Notion at once (the old page showed it only
   after the window closed); a failure to save where they went says so (the old page let it pass).
+- Changed on purpose in v153's port (reported to Kser): Edit saves only what its window changed (the old window wrote
+  the name, folder and description every time, so with v153's log a save with nothing changed logged a rename, a move
+  and a new description); a filing that stops halfway still saves the folders of the calls it filed and unticks them,
+  so filing again sends only the others (the old one filed them in call_meta but left the workspace unsaved); the
+  suggestions window keeps its title while the calls behind it change; an uploaded transcript has no Open on Calls
+  (it is not a Fathom call); the panel reads a call's filing and post-call actions from the database when it opens
+  (the old page used what it had loaded).
 
 ## Touchpoint
 - Tasks (part 1, `tasks.ts` pure rules, `tasks-load.ts`, `src/components/tasks/tasks-view.tsx`, `src/app/(app)/tasks`;
@@ -1415,7 +1463,8 @@ signed-in teammate's token, as the current dashboard's do.
   client workspace (an upload, a pasted transcript read by a run, star, folders, move, edit, a call filed by a move,
   delete, a lead whose email has capitals); `ws-send.spec.ts` its Select and Send to Notion (the bar, a send, a stop
   and Send the rest, nothing shared, the saved `catalyst_ws` shape with another lead and an Asana entry kept, the chips,
-  a phone); `setup-logic.spec.ts` (without a browser) and `stages.spec.ts` Meeting Types
+  a phone); `ws-preview-logic.spec.ts` (without a browser) and `ws-preview.spec.ts` its preview panel, change log, "/" and folder suggestions (made-up Fathom calls, files
+  and post-call actions for Pat; a filing stopped halfway with `__refuse`); `setup-logic.spec.ts` (without a browser) and `stages.spec.ts` Meeting Types
   and Client Stages (made-up `catalyst_meeting_types` and `catalyst_client_stages` rows and two knowledge base files);
   `intel-replies.spec.ts` the Intel Tracker's replies (a made-up Connections.csv);
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks (folding a call and removing a task too), on the
@@ -1519,6 +1568,8 @@ signed-in teammate's token, as the current dashboard's do.
   has for Pat Example (`hubspotLive()` in `fixtures.mjs`) and found false for anyone else. dashboard_comments rows get a
   uuid and resolved false, as in the project. `STUB_PORT` moves the stand-in (the helpers read it too), so a second copy
   of the suite can run beside another (build with NEXT_PUBLIC_SUPABASE_URL on that port).
+- A test makes the data stand-in refuse some writes (a database turning them away) by seeding `__refuse` with
+  [{table, col, value}]: a PATCH or POST on that table whose row has that value answers 500 ("stub: refused").
 - Playwright is pinned to 1.56.1: cloud sessions have its Chromium preinstalled. CI runs on `ubuntu-24.04`, since
   `ubuntu-latest` is 26.04, where Playwright 1.56 cannot install Chromium. A newer Playwright would fix that but
   no longer match the sessions' Chromium (launch it with `executablePath: '/opt/pw-browsers/chromium'` then).
@@ -1673,3 +1724,6 @@ signed-in teammate's token, as the current dashboard's do.
 - A controlled checkbox or select whose value comes from the server snaps back until the page's data comes again, and
   Playwright's check() then says the click changed nothing: keep the value in the row's own state and save it
   (`FollowReplies` in `intel-following.tsx`).
+- Playwright matches a role's name as a substring, ignoring case, unless `exact: true`: "Star X" also finds the "Unstar
+  X" button, so a check that the star flipped passes before the save has landed (found in v153's port). Name a
+  toggled button with `exact: true`.

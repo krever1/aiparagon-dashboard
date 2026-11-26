@@ -21,6 +21,13 @@ const stored = async () => (await fetch(STUB + '/__storage')).json() as Promise<
 const posts = async (p: string) => (await stubCalls()).filter((c) => c.method === 'POST' && c.path === p)
 const F = () => fixtures() as unknown as { e1_leads: Record<string, unknown>[]; ai_settings: Record<string, unknown>[] }
 type Ws = Record<string, { folders: { id: string; name: string }[]; items: Record<string, Record<string, unknown>> }>
+// an item without its change log (v153), and what the log says
+const bare = (m: Record<string, unknown> | undefined) => {
+  const { log, ...rest } = m ?? {}
+  void log
+  return rest
+}
+const said = (m: Record<string, unknown> | undefined) => ((m?.log ?? []) as { what: string; by: string }[]).map((l) => l.what)
 async function ws(): Promise<Ws> {
   return ((await stubRows<{ key: string; value: Ws }>('ai_settings')).find((r) => r.key === 'catalyst_ws')?.value ?? {}) as Ws
 }
@@ -150,8 +157,16 @@ test('star, a folder of the team’s own, move, edit; a folder gone is To organi
   await ed.getByRole('button', { name: 'Save' }).click()
   await expect(toasts(page)).toContainText('Saved.')
   const meta = (await ws())['pat.example@example.com']
-  expect(meta.items['f:20000000-0000-4000-8000-000000000001']).toEqual({ star: true, name: 'Intake notes', folder: id, desc: 'The first call, typed up', source: true })
-  expect(meta.items['a:discovery_call']).toEqual({ folder: id })
+  expect(bare(meta.items['f:20000000-0000-4000-8000-000000000001'])).toEqual({ star: true, name: 'Intake notes', folder: id, desc: 'The first call, typed up', source: true })
+  expect(said(meta.items['f:20000000-0000-4000-8000-000000000001'])).toEqual([
+    'Starred',
+    'Renamed to “Intake notes”',
+    'Moved to Contracts',
+    'Description changed',
+    'Marked as a source for the stage runs',
+  ])
+  expect(bare(meta.items['a:discovery_call'])).toEqual({ folder: id })
+  expect(said(meta.items['a:discovery_call'])).toEqual(['Moved to Contracts'])
   await nav.getByRole('button', { name: /^Contracts/ }).click()
   await expect(items(page).locator(':scope > div > b')).toHaveText(['Follow-up guide', 'Intake notes'])
   await expect(item(page, 'Intake notes')).toContainText('Source')
@@ -169,7 +184,7 @@ test('a call moved to a stage folder is filed under that stage; moved to a team 
   await call.getByLabel('Folder for Catch-up with Pat').selectOption({ label: 'Proposal' })
   await expect(toasts(page)).toContainText('Moved to Proposal.')
   await expect.poll(async () => (await stubRows<Record<string, unknown>>('call_meta')).find((r) => r.call_id === '9004')?.lead_stage).toBe('proposal')
-  expect((await ws())['pat.example@example.com'].items['c:9004']).toEqual({ folder: 'proposal', stage: 'proposal' })
+  expect(bare((await ws())['pat.example@example.com'].items['c:9004'])).toEqual({ folder: 'proposal', stage: 'proposal' })
 
   await item(page, 'Catch-up with Pat').getByRole('button', { name: 'Edit Catch-up with Pat' }).click()
   const ed = page.getByRole('dialog', { name: 'Catch-up with Pat' })
@@ -178,7 +193,9 @@ test('a call moved to a stage folder is filed under that stage; moved to a team 
   await ed.getByLabel('Folder').selectOption({ label: 'Deals' })
   await ed.getByRole('button', { name: 'Save' }).click()
   await expect(toasts(page)).toContainText('Saved.')
-  expect((await ws())['pat.example@example.com'].items['c:9004']).toEqual({ folder: 'wf-deals01', stage: 'proposal', name: 'Catch-up, Oct', desc: '' })
+  // only what the window changed is saved (v153): the name and the folder, not the description left as it was
+  expect(bare((await ws())['pat.example@example.com'].items['c:9004'])).toEqual({ folder: 'wf-deals01', stage: 'proposal', name: 'Catch-up, Oct' })
+  expect(said((await ws())['pat.example@example.com'].items['c:9004'])).toEqual(['Moved to Proposal', 'Renamed to “Catch-up, Oct”', 'Moved to Deals'])
   await page.reload()
   await page.getByRole('tablist', { name: 'Workspace' }).getByRole('tab', { name: /^Calls/ }).click()
   await expect(item(page, 'Catch-up, Oct')).toContainText('Deals')

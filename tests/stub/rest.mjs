@@ -3,6 +3,8 @@
 // single-object answers (Accept: application/vnd.pgrst.object+json), counts, PATCH updates, POST inserts and upserts,
 // DELETE. Like the real project's row rules for this app, it answers only a signed-in user (the caller's own token),
 // never the public key alone, so a test fails if the app ever reads or writes without the person's session.
+// A test can make writes to some rows fail (a database refusing them): seed `__refuse` with [{table, col, value}], and
+// a PATCH or POST on that table whose row has that value answers 500.
 
 import { randomUUID } from 'node:crypto'
 
@@ -252,6 +254,10 @@ export function createRest(initial, claimsOf) {
       return send(res, 400, { message: 'stub: body is not JSON' })
     }
     const representation = /return=representation/.test(prefer)
+    // writes a test asked to fail (seeded in __refuse)
+    const refused = (r) => (tables.__refuse || []).some((x) => x.table === name && r && String(r[x.col]) === String(x.value))
+    if (req.method === 'PATCH' && rows.some((r) => matches(r, params) && refused(r))) return send(res, 500, { message: 'stub: refused' })
+    if (req.method === 'POST' && (Array.isArray(body) ? body : [body]).some(refused)) return send(res, 500, { message: 'stub: refused' })
 
     if (req.method === 'PATCH') {
       const hit = rows.filter((r) => matches(r, params))
