@@ -6,8 +6,7 @@ import { STUB, TEAM, serveLogo, signIn, stubHook, stubReset, stubRows, stubSeed 
 // The client workspace sends to Notion (the current dashboard's v151): Select in the workspace's header picks items, and
 // the bar sends them to a Notion database through Dashboard · Notion Proxy, an entry each named "<item> · <client>", plus
 // a follow-up if ticked. What went where is kept on the item in ai_settings catalyst_ws (items[key].notion) and shows on
-// its row, with In Asana for what the current dashboard sent there. Send to Asana stays in the current dashboard, as on
-// Tasks. On the stand-in's made-up Pat Example (Example Ridge Advisors).
+// its row, with In Asana for what was sent there (Send to Asana is in asana.spec.ts). On the stand-in's made-up Pat Example (Example Ridge Advisors).
 
 test.use({ timezoneId: 'UTC', viewport: { width: 1440, height: 900 } })
 
@@ -49,7 +48,7 @@ async function open(page: Page) {
   await page.getByRole('button', { name: 'Select' }).click()
 }
 
-test('Select puts a box on each row and the bar: All shown, None, one by one; Done puts them away; Asana stays in the current dashboard', async ({ page }) => {
+test('Select puts a box on each row and the bar: All shown, None, one by one; Done puts them away', async ({ page }) => {
   await signIn(page, `/lead-pipeline/${PAT}?tab=files`)
   await expect(items(page)).toHaveCount(6)
   await expect(page.getByRole('checkbox', { name: /^Pick / })).toHaveCount(0)
@@ -59,11 +58,9 @@ test('Select puts a box on each row and the bar: All shown, None, one by one; Do
   await expect(select).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('checkbox', { name: /^Pick / })).toHaveCount(6)
   await expect(bar(page).locator('b')).toHaveText('Pick items to send')
-  await expect(bar(page).getByRole('button')).toHaveText(['All shown', 'None', 'Send to Notion', 'Done'])
+  await expect(bar(page).getByRole('button')).toHaveText(['All shown', 'None', 'Send to Asana', 'Send to Notion', 'Done'])
   await expect(bar(page).getByRole('button', { name: 'Send to Notion' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Send to Asana' })).toHaveCount(0)
-  await expect(bar(page).getByTestId('ws-asana')).toContainText('Send to Asana is still in the current dashboard')
-  await expect(bar(page).getByRole('link', { name: 'Open the Lead pipeline there' })).toHaveAttribute('href', 'https://aiparagon.vercel.app/dashboard/lead-pipeline')
+  await expect(bar(page).getByRole('button', { name: 'Send to Asana' })).toBeDisabled()
 
   await bar(page).getByRole('button', { name: 'All shown' }).click()
   await expect(bar(page).locator('b')).toHaveText('6 items picked')
@@ -72,6 +69,7 @@ test('Select puts a box on each row and the bar: All shown, None, one by one; Do
   await page.getByRole('checkbox', { name: 'Pick Intake notes.docx' }).check()
   await expect(bar(page).locator('b')).toHaveText('1 item picked')
   await expect(bar(page).getByRole('button', { name: 'Send to Notion' })).toBeEnabled()
+  await expect(bar(page).getByRole('button', { name: 'Send to Asana' })).toBeEnabled()
 
   // a call picked in the Calls view counts too, and the file stays picked
   await page.getByRole('tablist', { name: 'Workspace' }).getByRole('tab', { name: /^Calls/ }).click()

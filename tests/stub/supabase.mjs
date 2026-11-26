@@ -20,6 +20,9 @@
 // has none); hubspot-file-sync answers synced. e3-autofill fills New draft from what it is sent (Engine 3 · Auto-fill).
 // notion-proxy (databases, add) answers from the databases it shares and keeps what it added (GET/POST /__notion);
 // catalyst-hubspot-contact answers what HubSpot has for a contact (hubspotLive in fixtures.mjs).
+// asana-proxy (status, projects, users, tasks, create) answers as Integrations · Asana Proxy would: connected with a
+// workspace, projects and people, or not connected yet; it keeps the tasks it made and can stop after so many (once, so
+// Send the rest goes on): GET/POST /__asana.
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { createRest } from './rest.mjs'
@@ -60,6 +63,23 @@ const NOTION = () => ({
   stopAfter: null,
 })
 let notion = NOTION()
+// Integrations · Asana Proxy: whether n8n has an Asana login, its workspace, projects and people, the tasks made, and a
+// stop after so many tasks (once)
+const ASANA = () => ({
+  connected: true,
+  workspace: { gid: 'w1', name: 'AI Paragon' },
+  projects: [
+    { gid: 'p1', name: 'Client onboarding' },
+    { gid: 'p2', name: 'Internal' },
+  ],
+  users: [
+    { gid: 'u1', name: 'QA Teammate' },
+    { gid: 'u2', name: 'Erica Example' },
+  ],
+  created: [],
+  stopAfter: null,
+})
+let asana = ASANA()
 const refresh = new Map() // refresh token -> email
 // Storage: path -> {type, body (Buffer)}, lead-files in `store`, the ads' pictures (creatives) in `creatives`; signed
 // upload tokens -> bucket and path
@@ -194,6 +214,7 @@ http
         hooks = {}
         fathom = FATHOM()
         notion = NOTION()
+        asana = ASANA()
         store = new Map()
         signed = new Map()
         creatives = new Map()
@@ -218,6 +239,10 @@ http
       if (url.pathname === '/__notion') {
         if (req.method === 'POST') { notion = { ...notion, ...body }; return send(res, 200, { ok: true }) }
         return send(res, 200, notion)
+      }
+      if (url.pathname === '/__asana') {
+        if (req.method === 'POST') { asana = { ...asana, ...body }; return send(res, 200, { ok: true }) }
+        return send(res, 200, asana)
       }
       if (url.pathname === '/__seed') { rest.seed(body); return send(res, 200, { ok: true }) }
       if (url.pathname === '/__rows') return send(res, 200, rest.dump(url.searchParams.get('table') || undefined))
@@ -315,6 +340,33 @@ http
             return send(res, 200, { results: [{ object: 'page', id: 'page-' + notion.added.length }] })
           }
           return send(res, 200, { object: 'error', message: 'stub: unknown action' })
+        }
+        // Integrations · Asana Proxy: not connected until n8n has an Asana login; a create makes each task in turn
+        if (name === 'asana-proxy') {
+          if (!asana.connected) return send(res, 200, { ok: false, code: 'not_connected', message: 'Asana is not connected in n8n yet.' })
+          const ws = asana.workspace
+          if (body.action === 'status') return send(res, 200, { ok: true, connected: true, name: 'QA Teammate', email: 'qa.teammate@aiparagonconsulting.com', workspaces: [ws] })
+          if (body.action === 'projects') return send(res, 200, { ok: true, workspace: ws, projects: asana.projects })
+          if (body.action === 'users') return send(res, 200, { ok: true, workspace: ws, users: asana.users })
+          if (body.action === 'tasks') return send(res, 200, { ok: true, tasks: asana.created.filter((t) => t.project === body.project) })
+          if (body.action === 'create') {
+            if (!asana.projects.some((p) => p.gid === body.project)) return send(res, 200, { ok: false, code: 'asana_error', message: 'You don’t have access to that project in Asana.' })
+            const created = []
+            let failed = 0
+            for (const t of Array.isArray(body.tasks) ? body.tasks : []) {
+              if (asana.stopAfter !== null && asana.created.length >= asana.stopAfter) {
+                asana.stopAfter = null
+                failed++
+                continue
+              }
+              const gid = 't' + (asana.created.length + 1)
+              asana.created.push({ gid, project: body.project, name: t.text, notes: t.notes, due: t.due, assignee: t.assignee || body.assignee || '' })
+              created.push({ gid, name: t.text, url: 'https://app.asana.com/0/' + body.project + '/' + gid })
+            }
+            if (!created.length) return send(res, 200, { ok: false, code: 'asana_error', message: 'Asana is busy right now.', created, failed })
+            return send(res, 200, { ok: true, created, failed })
+          }
+          return send(res, 200, { ok: false, code: 'bad_action', message: 'stub: unknown action' })
         }
         // Dashboard · HubSpot Contact Proxy: the contact HubSpot has with that email right now (a test gives other answers
         // with stubHook)

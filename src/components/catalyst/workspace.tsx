@@ -2,22 +2,22 @@
 
 import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, ArrowUpRight, CheckSquare, LayoutGrid, Pencil, Plus, Star, Upload } from 'lucide-react'
+import { ArrowRight, CheckSquare, LayoutGrid, Pencil, Plus, Star, Upload } from 'lucide-react'
 import type { LeadCallRow } from '@/app/(app)/lead-pipeline/actions'
 import { finishUpload, indexFile, startUpload } from '@/app/(app)/lead-pipeline/file-actions'
-import { wsDelete, wsEdit, wsMove, wsNewFolder, wsNotionMark, wsStar } from '@/app/(app)/lead-pipeline/ws-actions'
+import { wsAsanaMark, wsDelete, wsEdit, wsMove, wsNewFolder, wsNotionMark, wsStar } from '@/app/(app)/lead-pipeline/ws-actions'
 import { notionDatabases } from '@/app/(app)/tasks/actions'
+import { AsanaDialog } from '@/components/tasks/asana-send'
 import { NotionDialog, entryTitle } from '@/components/tasks/notion-send'
 import { Dialog } from '@/components/ui/dialog'
 import { LocalDay, usDateText, useHydrated } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
-import { LEGACY_DASHBOARD_URL, SUPABASE_ANON_KEY } from '@/lib/config'
-import { legacyUrl, pageBySlug } from '@/lib/nav'
+import { SUPABASE_ANON_KEY } from '@/lib/config'
 import { MAX_UPLOAD } from '@/lib/catalyst/files'
 import type { LeadPageData } from '@/lib/catalyst/lead-page'
 import { type LeadTab, safeUrl, viewStage } from '@/lib/catalyst/view'
 import {
-  type WsFolder, type WsItem, type WsMeta, kindWord, pickedOf, sendTitle, wsCalls, wsFiles, wsFolders, wsShown,
+  type WsFolder, type WsItem, type WsMeta, asanaNotes, kindWord, pickedOf, sendTitle, wsCalls, wsFiles, wsFolders, wsShown,
 } from '@/lib/catalyst/workspace'
 import { plural } from './bits'
 
@@ -51,9 +51,8 @@ function DateBlock({ at }: { at: string }) {
  * folders on the left (All content, Starred, To organize, a folder per client stage and the team's own), stage folder
  * cards, search, a type filter, a sort and a grid. Each item can be starred, moved, renamed and described; uploads can
  * be deleted. Upload file adds a file or a pasted transcript, with a name, a folder and a description, and whether the
- * stage runs read it. Select (v151) picks items, and the bar sends them to Notion, an entry each named for the item and
- * the client; what went where shows on each row (In Notion · <database>, and In Asana · <project> for what the current
- * dashboard sent, where Send to Asana still is, as on Tasks).
+ * stage runs read it. Select (v151) picks items, and the bar sends them to Asana (a task each) or Notion (an entry each),
+ * named for the item and the client; what went where shows on each row (In Asana · <project>, In Notion · <database>).
  */
 export function Workspace({
   data,
@@ -83,10 +82,11 @@ export function Workspace({
   const [edit, setEdit] = useState<WsItem | null>(null)
   const [newFolder, setNewFolder] = useState(false)
   const [upload, setUpload] = useState(false)
-  // Select (v151): picking items to send, the ones picked, and the items in the Send to Notion window
+  // Select (v151): picking items to send, the ones picked, and the items in the Send to Notion and Send to Asana windows
   const [pick, setPick] = useState(false)
   const [sel, setSel] = useState<Record<string, boolean>>({})
   const [notion, setNotion] = useState<WsItem[] | null>(null)
+  const [asana, setAsana] = useState<WsItem[] | null>(null)
   const hydrated = useHydrated()
 
   const folders = useMemo(() => wsFolders(stages, meta), [stages, meta])
@@ -300,19 +300,15 @@ export function Workspace({
           <button type="button" className={btn} onClick={() => setSel({})}>
             None
           </button>
+          <button type="button" className={primary} disabled={!picked.length} onClick={() => setAsana(picked)}>
+            Send to Asana
+          </button>
           <button type="button" className={primary} disabled={!picked.length} onClick={() => setNotion(picked)}>
             Send to Notion
           </button>
           <button type="button" className={btn} onClick={stopPicking}>
             Done
           </button>
-          <p className="w-full text-[12.5px] text-ink-3" data-testid="ws-asana">
-            Send to Asana is still in the current dashboard, where Asana connects with a personal token saved in that browser.{' '}
-            <a href={legacyUrl(LEGACY_DASHBOARD_URL, pageBySlug('lead-pipeline'))} className="inline-flex items-center gap-0.5 font-semibold text-accent-text hover:underline">
-              Open the Lead pipeline there
-              <ArrowUpRight size={13} aria-hidden="true" />
-            </a>
-          </p>
         </div>
       ) : null}
       <div className="grid grid-cols-[220px_minmax(0,1fr)] max-[860px]:grid-cols-[minmax(0,1fr)]">
@@ -467,6 +463,29 @@ export function Workspace({
           doneToast={(n, name) => plural(n, 'entry', 'entries') + ' sent to Notion · ' + name}
           onClose={() => setNotion(null)}
           listTestId="notion-items"
+        />
+      ) : null}
+      {asana ? (
+        <AsanaDialog
+          title="Send to Asana"
+          intro="Each picked item becomes an Asana task in the project you pick, with its link in the description."
+          rows={asana.map((i) => ({
+            id: i.key,
+            title: sendTitle(i.name, client),
+            editable: true,
+            on: true,
+            due: '',
+            notes: asanaNotes(i, client, fname(i.folder), usDateText(i.at)),
+          }))}
+          nothing="Tick at least one item, with a name."
+          onSent={async (x) => {
+            const r = await wsAsanaMark(lead.id, x.made.map((m) => m.id), x.project, x.projectName).catch(() => fail)
+            if (r.ok) setMeta(r.ws)
+            else toast(r.error, 'warn')
+            if (x.all) stopPicking()
+          }}
+          doneToast={(n, p) => plural(n, 'item') + ' sent to ' + p + '.'}
+          onClose={() => setAsana(null)}
         />
       ) : null}
       {upload ? (
