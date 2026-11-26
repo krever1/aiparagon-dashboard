@@ -3,11 +3,14 @@
 // client stage and the team's own), stage folder cards, search, a type filter, a sort, a list or grid. Each item has a
 // name, a folder, a description and a star, kept for the team in ai_settings `catalyst_ws` ({lead email in lower case:
 // {folders: [{id, name}], items: {key: {name, folder, desc, star, source, stage}}}}; keys `a:<agent>`, `p:<stage>`,
-// `f:<lead_files id>`, `c:<call id>`). Pure functions, for the server and the browser.
+// `f:<lead_files id>`, `c:<call id>`). Since v151 an item also keeps what went where: `asana` {at, by, project,
+// project_name, url} and `notion` {at, by, db, name}. Pure functions, for the server and the browser.
 
 import type { Stage } from './stages'
 
-export type WsItemMeta = { name?: string; folder?: string; desc?: string; star?: boolean; source?: boolean; stage?: string }
+export type WsAsana = { at?: string; by?: string; project?: string; project_name?: string; url?: string }
+export type WsNotion = { at?: string; by?: string; db?: string; name?: string }
+export type WsItemMeta = { name?: string; folder?: string; desc?: string; star?: boolean; source?: boolean; stage?: string; asana?: WsAsana; notion?: WsNotion }
 export type WsMeta = { folders: { id: string; name: string }[]; items: Record<string, WsItemMeta> }
 
 export const EMPTY_WS: WsMeta = { folders: [], items: {} }
@@ -57,6 +60,37 @@ export type WsItem = {
   src?: string
   sum?: string
   filed?: boolean
+  /** where it was sent (v151): the Asana project, the Notion database, each with when */
+  sent: WsSent[]
+}
+
+export type WsSent = { to: 'Asana' | 'Notion'; name: string; at: string }
+
+/** What went where for an item (v151Rows): "In Asana · <project>", "In Notion · <database>", once each was sent. */
+export function sentOf(m: WsItemMeta | undefined): WsSent[] {
+  const out: WsSent[] = []
+  const a = obj(m?.asana)
+  const n = obj(m?.notion)
+  if (a.at) out.push({ to: 'Asana', name: str(a.project_name), at: str(a.at) })
+  if (n.at) out.push({ to: 'Notion', name: str(n.name), at: str(n.at) })
+  return out
+}
+
+/** An item's kind as Asana and Notion are told it (v151Kind). */
+export function kindWord(i: Pick<WsItem, 'kind'>): string {
+  return i.kind === 'call' ? 'Call' : i.kind === 'transcript' ? 'Transcript' : i.kind === 'upload' ? 'File' : 'Document'
+}
+
+/** "<item> · <client>", 300 characters at most (v151Title). */
+export function sendTitle(name: string, client: string): string {
+  const s = str(name).trim() + ' · ' + client
+  return s.length > 300 ? s.slice(0, 299) + '…' : s
+}
+
+/** The picked items, once each (a transcript is in both views), in the order they show (v151Picked). */
+export function pickedOf(files: WsItem[], calls: WsItem[], sel: Record<string, boolean>): WsItem[] {
+  const seen = new Set<string>()
+  return [...files, ...calls].filter((i) => sel[i.key] && !seen.has(i.key) && !!seen.add(i.key))
 }
 
 /** The board stage an older agent's document goes in (v145StageOfAgent): the built-in stage it writes, else none. */
@@ -121,7 +155,7 @@ export function wsFiles({
     const m = meta.items[key] ?? {}
     list.push({
       key, kind: 'doc', name: m.name || d.label, fm, folder: m.folder != null ? m.folder : stageOfAgent(stages, d.agent),
-      at: d.at ?? '', by: 'AI generated', desc: m.desc || '', star: !!m.star,
+      at: d.at ?? '', by: 'AI generated', desc: m.desc || '', star: !!m.star, sent: sentOf(m),
     })
   }
   for (const p of prep) {
@@ -131,7 +165,7 @@ export function wsFiles({
     const m = meta.items[key] ?? {}
     list.push({
       key, kind: 'doc', name: m.name || st.doc, fm: [{ l: 'Read', tab: p.key }], folder: m.folder != null ? m.folder : p.key,
-      at: p.at ?? '', by: 'AI generated', desc: m.desc || '', star: !!m.star,
+      at: p.at ?? '', by: 'AI generated', desc: m.desc || '', star: !!m.star, sent: sentOf(m),
     })
   }
   for (const f of uploads) {
@@ -141,7 +175,7 @@ export function wsFiles({
     list.push({
       key, kind: tr ? 'transcript' : 'upload', id: f.id, name: m.name || f.name, fm: [{ l: tr ? 'Transcript' : extOf(f.name), u: f.url }],
       folder: m.folder != null ? m.folder : stageOfAgent(stages, f.stage), at: f.at ?? '', by: f.by, desc: m.desc != null ? m.desc : f.note,
-      star: !!m.star, source: isSource(m, f.category), hs: f.hs,
+      star: !!m.star, source: isSource(m, f.category), hs: f.hs, sent: sentOf(m),
     })
   }
   return folded(list, wsFolders(stages, meta))
@@ -163,7 +197,7 @@ export function wsCalls({ calls, files, stages, meta }: { calls: WsCall[]; files
     const folder = m.folder != null && (m.stage ?? '') === (x.stage ?? '') ? m.folder : filed || m.folder || ''
     return {
       key, kind: 'call', id: x.id, name: m.name || x.title || 'Call', fm: [], folder, at: x.start, by: '', desc: m.desc || '', star: !!m.star,
-      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage,
+      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage, sent: sentOf(m),
     }
   })
   for (const i of files) if (i.kind === 'transcript') out.push({ ...i, src: 'Uploaded' })

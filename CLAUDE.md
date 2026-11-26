@@ -1,6 +1,6 @@
 # AI Paragon internal dashboard (Next.js)
 
-Brief for Claude sessions in this repo. Last reviewed 2026-11-25.
+Brief for Claude sessions in this repo. Last reviewed 2026-11-26.
 
 ## What this is
 The AI Paragon Consulting Group team workspace: Touchpoint (home and tasks), Catalyst (clients and meetings),
@@ -12,7 +12,7 @@ until every page has moved; then aiparagon.vercel.app/dashboard forwards here.
 One repo per project (Kser, Nov 9): this repo is the internal dashboard only. The other projects (care portal, voice
 agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon until they get their own repos.
 
-## Where it stands (as of 2026-11-25)
+## Where it stands (as of 2026-11-26)
 - Phase 1 (Nov 9, on `dev`): sign-in (Supabase Auth, team accounts only), the sidebar by product, the top bar, and
   every current page address. A page not ported yet opens a card that links to it in the current dashboard.
 - Catalyst, in four parts (agreed with Kser Nov 9): 1. reading (the Overview, the Lead pipeline board and list, a lead's
@@ -75,8 +75,11 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 - Erica's notes of Nov 24, round 3 (Nov 25, branch `nx/feedback-r3`; the current dashboard's v145, with v146's fixes):
   Meeting Types and Client Stages (the board's columns are the team's stages, each with a setup; the Overview's
   Meeting Types, the team's own included; a lead's stage checklist), the client workspace on a lead's Files tab, and
-  the Intel Tracker's replies (who each account is, Draft replies, Why this post, Import LinkedIn connections). Sending
-  workspace items to Asana or Notion (v151) is not in it. See Catalyst and Pipeline below.
+  the Intel Tracker's replies (who each account is, Draft replies, Why this post, Import LinkedIn connections). See
+  Catalyst and Pipeline below. Merged into `dev` (PR #35).
+- Erica's notes of Nov 25 (Nov 26, branch `nx/feedback-r4`; the current dashboard's v151): Select in the client
+  workspace and Send to Notion, with In Notion and In Asana on each item's row. Send to Asana stays in the current
+  dashboard, as on Tasks. See Catalyst below.
 - Next: Content Transformation's video and audio (Pipeline 4f), then part 5 (Marketing Generation), then Atlas,
   Canvas, Settings. Then the cutover.
 - Not checked yet in production: the first calls from Vercel's servers to n8n (a Read here through the Doc Reader, a
@@ -109,6 +112,7 @@ agent Command Center, Advisory demo, website builder) stay in krever1/aiparagon 
 | Catalyst | Run, or Run again, on every report of a lead's page | here (feedback round 1, not released) |
 | Catalyst | Meeting Types and Client Stages (Edit stages, each stage's and meeting type's setup, the team's own, a lead's stage checklist) | here (feedback round 3, not released) |
 | Catalyst | A lead's Files tab as the client workspace (folders, star, move, edit, delete, a file or a pasted transcript as a run's source) | here (feedback round 3, not released) |
+| Catalyst | The client workspace's Select and Send to Notion, In Notion and In Asana on each row (Send to Asana stays in the current dashboard) | here (feedback round 4, not released) |
 | Canvas | Deliverables | current dashboard |
 | Pipeline | Intel Tracker | here (Pipeline part 1a, not released) |
 | Pipeline | Intel Tracker replies: who each account is, Draft replies, Why this post, Import LinkedIn connections | here (feedback round 3, not released) |
@@ -442,6 +446,23 @@ signed-in teammate's token, as the current dashboard's do.
     text at least. Every stage run's notes end with "FILES AND TRANSCRIPTS ADDED TO THE CLIENT WORKSPACE" (8,000
     characters, 3,000 each, `withWorkspace`), the reads list "From the client workspace: …", and they count as
     something to work from. Write the client proposal sends them too.
+  - Select and Send to Notion (v151; `NotionDialog` in `notion-send.tsx`, `wsNotionMark` in `ws-actions.ts`,
+    `notionDatabases` in the Tasks actions, `pickedOf`, `sendTitle`, `kindWord` and `sentOf` in `workspace.ts`): Select
+    in the workspace's header (aria-pressed, as on Tasks) puts a box before each row and the bar under the header: "2
+    items picked" (else "Pick items to send"), All shown (adds the items the list shows, in this view), None, Send to
+    Notion (off until something is picked) and Done. Picks hold across Files and Calls; a transcript in both counts once.
+    The bar's last line says Send to Asana is still in the current dashboard, with a link to its Lead pipeline.
+  - Send to Notion is Tasks' window (`NotionDialog`, the same databases, the one used last, else one with "task" in its
+    name, one entry at a time, a stop halfway with Send the rest, the three steps when nothing is shared, the proxy
+    switched off): each picked item is a row named "<item> · <client>" (the client is the lead's company, else its
+    name; 300 characters at most) with its kind (File, Transcript, Call, Document), plus "Follow-up: <client>" (not
+    ticked to start with), and the note that Notion gets the names only. Entries go in the order the items are listed.
+  - What went where (`wsNotionMark`): each item sent gets `notion` {at, by (the teammate's email), db, name} on its
+    `catalyst_ws` entry, read fresh and merged (its other fields, other items and other leads kept); after a stop, the
+    ones that went. Once everything went, `notion_tasks_db` is the database used last; `notion_sent` (Tasks', per call)
+    is not touched. Then picking ends and the message says "3 entries sent to Notion · <database>".
+  - Each row shows where it went (`sentOf`): "In Asana · <project_name>" (what the current dashboard's v151 wrote:
+    `asana` {at, by, project, project_name, url}) and "In Notion · <database>", the day on hover.
 - Changed on purpose in part 4 (reported to Kser): deleting a file asks first (the Files page always did); an upload
   whose row cannot be saved takes its stored file back out; Word files are read on the server, not in the browser; an
   upload whose text could not be read says so (the old page said nothing); the question before writing the proposal
@@ -465,6 +486,11 @@ signed-in teammate's token, as the current dashboard's do.
   without it); a lead's Files tab count is the workspace's items (it counted every PDF and Google Doc link); an upload
   from a stage folder whose stage is meeting prep is saved with stage manual (the Files page groups by the older
   agents); the windows' long names wrap on a phone, and so do the tabs' (a long unbroken stage name widened the page).
+- Changed on purpose in feedback round 4 (reported to Kser): Send to Asana stays in the current dashboard (the bar says
+  so and links there, as Tasks' Asana card does), since Asana connects there with a personal token in that browser and
+  the team-wide Asana Proxy was never published; Select stays Select (pressed) with Done in the bar, as on Tasks (the old
+  header button turned into Done); after a stop the rows that went say In Notion at once (the old page showed it only
+  after the window closed); a failure to save where they went says so (the old page let it pass).
 
 ## Touchpoint
 - Tasks (part 1, `tasks.ts` pure rules, `tasks-load.ts`, `src/components/tasks/tasks-view.tsx`, `src/app/(app)/tasks`;
@@ -1351,7 +1377,9 @@ signed-in teammate's token, as the current dashboard's do.
   HubSpot contacts; `calls.spec.ts` Calls and a lead's Calls tab; `proposal.spec.ts` the client proposal;
   `lead-docs.spec.ts` What should change? and the meeting prep charts; `workspace.spec.ts` a lead's Files tab as the
   client workspace (an upload, a pasted transcript read by a run, star, folders, move, edit, a call filed by a move,
-  delete, a lead whose email has capitals); `setup-logic.spec.ts` (without a browser) and `stages.spec.ts` Meeting Types
+  delete, a lead whose email has capitals); `ws-send.spec.ts` its Select and Send to Notion (the bar, a send, a stop
+  and Send the rest, nothing shared, the saved `catalyst_ws` shape with another lead and an Asana entry kept, the chips,
+  a phone); `setup-logic.spec.ts` (without a browser) and `stages.spec.ts` Meeting Types
   and Client Stages (made-up `catalyst_meeting_types` and `catalyst_client_stages` rows and two knowledge base files);
   `intel-replies.spec.ts` the Intel Tracker's replies (a made-up Connections.csv);
   `tasks-logic.spec.ts` (without a browser) and `tasks.spec.ts` Tasks (folding a call and removing a task too), on the
@@ -1459,6 +1487,12 @@ signed-in teammate's token, as the current dashboard's do.
   mirror, which the runner could not reach for hours on Nov 11, and the runner image already has what Chromium needs.
 
 ## Gotchas
+- The Send to Notion window (`NotionDialog`) is shared by Tasks and the client workspace: Tasks' own words live in
+  `NotionSend`, the workspace's in `workspace.tsx`. A change to the window reaches both, so run `notion.spec.ts` and
+  `ws-send.spec.ts` together. The window reads its `load` once per try (kept in state), so a caller may pass a new
+  function on every draw.
+- A git worktree needs its own `node_modules` (a copy, `cp -al` from the main checkout, works): Turbopack refuses a
+  symlinked one ("Could not find the Next.js package").
 - A server action started as a page loads (on mount) holds up the page's own navigations until it answers: with the
   top bar's Feedback reading its notes by a server action, a run picked on the Intel Tracker or a version on the briefs
   right after a page load kept its old address. Reads that every page makes on load go through a Route Handler

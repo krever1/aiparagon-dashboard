@@ -170,3 +170,34 @@ export async function wsDelete(leadId: string, key: string): Promise<WsResult> {
   refresh()
   return { ok: true, toast: name + ' deleted.', ws }
 }
+
+/**
+ * What went to Notion (v151Put, v151NotionSend): each item sent gets `notion` {at, by, db, name} on its workspace entry,
+ * read fresh and merged (the item's other fields, other items and other leads kept). Once everything picked went, the
+ * database is also kept for the team as the one used last (`notion_tasks_db`, as Tasks keeps it).
+ */
+export async function wsNotionMark(leadId: string, keys: string[], db: string, name: string, all: boolean): Promise<WsResult> {
+  const c = await ctx(leadId)
+  if ('error' in c) return { ok: false, error: c.error as string }
+  const ks = [...new Set((Array.isArray(keys) ? keys : []).map(String))].filter((k) => KEY.test(k)).slice(0, 200)
+  const id = String(db ?? '').trim()
+  if (!id || id.length > 100) return { ok: false, error: 'Pick a database first.' }
+  const at = new Date().toISOString()
+  const rec = { at, by: c.user.email, db: id, name: String(name ?? '').slice(0, 200) || 'Untitled database' }
+  try {
+    let ws = c.meta
+    if (ks.length)
+      ws = await put(c.supabase, c.lead, c.user.email, (m) => {
+        for (const k of ks) m.items[k] = { ...m.items[k], notion: rec }
+      })
+    if (all) {
+      const { error } = await c.supabase
+        .from('ai_settings')
+        .upsert({ key: 'notion_tasks_db', value: { id, name: rec.name, by: rec.by, at }, updated_by: c.user.email, updated_at: at }, { onConflict: 'key' })
+      if (error) throw new Error(error.message)
+    }
+    return { ok: true, toast: '', ws }
+  } catch (e) {
+    return { ok: false, error: 'Could not save where they went: ' + msgOf(e) }
+  }
+}
