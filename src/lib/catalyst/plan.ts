@@ -2,7 +2,7 @@
 // run sends and the request each workflow takes. Pure functions: the server builds requests with them and the tests
 // check them.
 
-import { type StageKey, type StageNames, isStageKey, stageOfKey } from './stages'
+import { type Stage, type StageKey, isBoardKey, isStageKey } from './stages'
 
 /** What a stage's run reads unless the team changed it on Templates (V137_TPL, with v138's emails and charts). */
 export const STAGE_SETUP: Record<
@@ -25,11 +25,19 @@ export const STAGE_SETUP: Record<
 
 export type StageSetup = { type: string; calls: boolean; crm: boolean; questions: boolean | null; emails: boolean; charts: boolean | null }
 
-/** A stage's setup: the team's choices (ai_settings `catalyst_stage_setup`) over the defaults. */
-export function setupOf(stage: StageKey, saved: unknown): StageSetup {
+/** What a meeting type of the team's own reads unless the team changed it (v145's V137_TPL for it). */
+const CUSTOM_SETUP = { kind: '', type: '', calls: true, crm: true, questions: null, charts: null, reads: '' }
+
+/** Whose setup a stage follows (v145's v137Setup): a stage of the team's own follows its meeting type's. */
+export function setupKeyOf(st: Pick<Stage, 'key' | 'custom' | 'mt'>): string {
+  return st.custom && st.mt ? st.mt : st.key
+}
+
+/** A stage's (or a meeting type's) setup: the team's choices (ai_settings `catalyst_stage_setup`) over the defaults. */
+export function setupOf(stage: string, saved: unknown): StageSetup {
   const all = saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Record<string, unknown>) : {}
   const o = (all[stage] && typeof all[stage] === 'object' ? all[stage] : {}) as Record<string, unknown>
-  const d = STAGE_SETUP[stage]
+  const d = isStageKey(stage) ? STAGE_SETUP[stage] : CUSTOM_SETUP
   const pick = (k: string, def: boolean) => (typeof o[k] === 'boolean' ? (o[k] as boolean) : def)
   return {
     type: typeof o.type === 'string' ? o.type : d.type,
@@ -54,15 +62,25 @@ export type Plan = {
 }
 
 export type PlanInput = {
-  docs: Partial<Record<StageKey, number>>
+  docs: Partial<Record<string, number>>
   /** whether the agents saved a Google Doc of the prospect brief, the consultation guide and the assessment */
   ids: { research: boolean; interview: boolean; anonymized: boolean }
 }
 
 export const PROPOSAL_BLOCKED = 'The proposal works from the assessment report, and this lead has none yet. Run the assessment first.'
 
-export function planFor(l: PlanInput, stage: StageKey): Plan {
+/** Why a stage of the team's own with no meeting type cannot run (v145's v136Plan). */
+export const NORUN_BLOCKED = 'This stage runs nothing yet. Pick a meeting type in its setup (click its name on the board).'
+
+export function planFor(l: PlanInput, st: Pick<Stage, 'key' | 'custom' | 'mt'>): Plan {
+  const stage = st.key
   const p: Plan = { doneAt: l.docs[stage] ?? null, blocked: '', need: '', notes: stage !== 'research' }
+  if (st.custom) {
+    p.notes = true
+    if (!st.mt) p.blocked = NORUN_BLOCKED
+    else if (!Object.keys(l.docs).length) p.need = 'documents'
+    return p
+  }
   if (stage === 'consultation' && !l.ids.research) p.need = 'prospect brief'
   if (stage === 'assessment' && (!l.ids.research || !l.ids.interview)) p.need = !l.ids.interview ? 'consultation guide' : 'prospect brief'
   if (stage === 'proposal' && !l.ids.anonymized) p.blocked = PROPOSAL_BLOCKED
@@ -153,13 +171,53 @@ export function composeNote({
   crm,
   calls,
   emails,
-  names,
+  stages,
+  workspace = [],
 }: {
   typed: string
   crm: Contact | null
   calls: GatherCall[]
   emails: GatherEmail[]
-  names: StageNames
+  /** the board's stages, to say where a call is filed */
+  stages: readonly Pick<Stage, 'key' | 'name'>[]
+  /** the client workspace's sources (v145): uploads ticked "Use it as a source" */
+  workspace?: WsSource[]
+}): string {
+  return withWorkspace(baseNote({ typed, crm, calls, emails, stages }), workspace)
+}
+
+/** A file or transcript from the client workspace a run reads (v145WsSources). */
+export type WsSource = { name: string; text: string; kind: 'transcript' | 'file'; at: string; desc: string }
+
+export const WS_BUDGET = 8_000
+export const WS_ONE = 3_000
+
+/** The workspace's sources after everything else (v145's v137Note): 8,000 characters at most, 3,000 each. */
+export function withWorkspace(out: string, list: WsSource[]): string {
+  if (!list.length) return out
+  let left = WS_BUDGET
+  const parts: string[] = []
+  for (const x of list) {
+    if (left < 300) continue
+    const t = x.text.slice(0, Math.min(WS_ONE, left))
+    parts.push((x.kind === 'transcript' ? 'Transcript' : 'File') + ': ' + x.name + (x.desc ? ' (' + x.desc + ')' : '') + '\n' + t)
+    left -= t.length
+  }
+  return (out ? out + '\n\n' : '') + 'FILES AND TRANSCRIPTS ADDED TO THE CLIENT WORKSPACE\n' + parts.join('\n\n')
+}
+
+function baseNote({
+  typed,
+  crm,
+  calls,
+  emails,
+  stages,
+}: {
+  typed: string
+  crm: Contact | null
+  calls: GatherCall[]
+  emails: GatherEmail[]
+  stages: readonly Pick<Stage, 'key' | 'name'>[]
 }): string {
   const t = str(typed).trim()
   const line = crm ? crmLine(crm) : ''
@@ -174,7 +232,8 @@ export function composeNote({
   const out: string[] = []
   for (const x of said) {
     if (left < 300) continue
-    const filed = isStageKey(x.stage) ? ' (filed under ' + stageOfKey(x.stage, names).name + ')' : ''
+    const at = stages.find((st) => st.key === x.stage)
+    const filed = at ? ' (filed under ' + at.name + ')' : ''
     const head = 'Call on ' + noteDay(x.start) + ': ' + (x.title || 'untitled') + filed
     let body = str(x.text)
     if (head.length + body.length + 2 > left) body = body.slice(0, Math.max(0, left - head.length - 60)) + '\n[the rest of this call is left out]'
@@ -255,9 +314,15 @@ export function customBody(
   return { ...baseFields(l), ...ids, entry: ENTRY[stage]!, transcript: note || '', extraDoc: '', from: 'board', only: true, stage }
 }
 
-/** The onboarding plan or the client review brief (Catalyst · Meeting Prep). */
-export function prepBody(l: RunLead, emails: string[], stage: 'onboarding' | 'review', names: StageNames, note: string) {
-  const st = stageOfKey(stage, names)
+/** The onboarding plan, the client review brief or a stage of the team's own (Catalyst · Meeting Prep), with v145's
+ * sections and purpose when there are any. */
+export function prepBody(
+  l: RunLead,
+  emails: string[],
+  st: Pick<Stage, 'key' | 'name' | 'doc'>,
+  note: string,
+  extra: { sections?: string[]; purpose?: string } = {},
+) {
   return {
     leadEmail: l.email,
     email: l.email,
@@ -267,11 +332,12 @@ export function prepBody(l: RunLead, emails: string[], stage: 'onboarding' | 're
     companyName: str(l.company_name),
     firmType: str(l.firm_type),
     firmSize: str(l.firm_size),
-    stage,
+    stage: st.key,
     stageName: st.name,
     docName: st.doc,
     transcript: note || '',
     from: 'board',
+    ...extra,
   }
 }
 
@@ -281,28 +347,31 @@ export function prepBody(l: RunLead, emails: string[], stage: 'onboarding' | 're
 export const RUN_STALE_MS = 45 * 60 * 1000
 
 /** A run started from the dashboard, kept for the whole team (ai_settings `catalyst_runs`, by the lead's email). */
-export type RunEntry = { s: StageKey; t0: string; seen: number; by?: string }
+export type RunEntry = { s: string; t0: string; seen: number; by?: string }
 
 export function runsFromSetting(value: unknown): Record<string, RunEntry> {
   const out: Record<string, RunEntry> = {}
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out
   for (const [email, v] of Object.entries(value as Record<string, unknown>)) {
     const r = v as Record<string, unknown>
-    if (!r || !isStageKey(r.s) || !Date.parse(str(r.t0))) continue
-    out[email] = { s: r.s, t0: str(r.t0), seen: Number(r.seen) || 0, by: str(r.by) || undefined }
+    if (!r || !isBoardKey(r.s) || !Date.parse(str(r.t0))) continue
+    out[email] = { s: str(r.s), t0: str(r.t0), seen: Number(r.seen) || 0, by: str(r.by) || undefined }
   }
   return out
 }
 
-/** The run in progress for a lead, if any: not stale, and its stage's document not written since it started. */
+/** The run in progress for a lead, if any: its stage on the board, not stale, and its stage's document not written
+ * since it started. */
 export function runOf(
-  l: { emails: string[]; docs: Partial<Record<StageKey, number>> },
+  l: { emails: string[]; docs: Partial<Record<string, number>> },
   runs: Record<string, RunEntry>,
   now: number,
-): { s: StageKey; t0: string } | null {
+  stages?: readonly Pick<Stage, 'key'>[],
+): { s: string; t0: string } | null {
   const email = l.emails.find((e) => runs[e])
   const r = email ? runs[email] : null
   if (!r) return null
+  if (stages && !stages.some((s) => s.key === r.s)) return null
   if (now - Date.parse(r.t0) > RUN_STALE_MS) return null
   const d = l.docs[r.s]
   if (d !== undefined && d > r.seen) return null

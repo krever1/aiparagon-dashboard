@@ -72,7 +72,7 @@ export function approvalRows(now = Date.now()) {
 }
 
 /** Where the made-up ad images live: the stand-in's address, which the browser tests answer with a tiny picture. */
-export const IMG = 'http://127.0.0.1:54399/storage/v1/object/public/creatives/'
+export const IMG = 'http://127.0.0.1:' + (process.env.STUB_PORT || '54399') + '/storage/v1/object/public/creatives/'
 export const RUN1 = 'agent3_2026-11-08_1000'
 export const RUN2 = 'agent3_2026-11-05_0900'
 export const RUN3 = 'agent3_2026-11-02_0800'
@@ -148,8 +148,8 @@ export const CM = (n: number) => `73000000-0000-4000-8000-${String(n).padStart(1
 
 /**
  * Leads and comments for Approvals. Lee is in Assessment with his prospect brief and consultation guide: he waits on the
- * assessment report. Wes is a weak fit, Dana has her client review brief, and Max's consultation guide is being
- * written, so none of them waits. Two open comments (one on Lee's consultation guide, one on a brief; one saved with
+ * assessment report. Dana's client review brief is written, so it waits for a read (v143: Ready for review). Wes is a
+ * weak fit and Max's consultation guide is being written, so neither waits. Two open comments (one on Lee's consultation guide, one on a brief; one saved with
  * resolved left empty) and a resolved one.
  */
 export function catalystRows(now = Date.now()) {

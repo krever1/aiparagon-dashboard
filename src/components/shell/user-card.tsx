@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { LogOut } from 'lucide-react'
 import { getCurrentUser } from '@/lib/auth'
+import { SignOutButton } from './sign-out'
 
 function initials(name: string) {
   return name
@@ -26,11 +26,7 @@ export async function UserCard() {
           <small className="block truncate text-[12px] text-ink-3">{user.email}</small>
         </span>
       </Link>
-      <form action="/auth/signout" method="post">
-        <button type="submit" className="grid h-9 w-9 place-items-center rounded-sm text-ink-2 hover:bg-sunk hover:text-ink" title="Sign out" aria-label="Sign out">
-          <LogOut size={17} strokeWidth={1.75} aria-hidden="true" />
-        </button>
-      </form>
+      <SignOutButton />
     </div>
   )
 }

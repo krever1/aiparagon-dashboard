@@ -77,6 +77,17 @@ test('What should change? on a finished document: a sentence or two, saved for A
   expect(await stubRows('agent_feedback')).toHaveLength(4)
 })
 
+test('v143: a document marked reviewed in Approvals (or undone) is not a change asked', async ({ page }) => {
+  const row = (id: string, action: string, feedback: string) => ({
+    id, agent: 'lead_research', target_type: 'e1_document', target_id: 'pat.example@example.com:lead_research', action, feedback, author: TEAM.email,
+  })
+  await stubSeed({
+    agent_feedback: [row('r1', 'reviewed', 'Reviewed in Approvals'), row('r2', 'reopened', 'Undone in Approvals'), row('r3', 'changes', 'Lead with the custodian move.')],
+  })
+  await signIn(page, `/lead-pipeline/${PAT}?tab=research`)
+  await expect(page.getByTestId('doc-card').getByTestId('asks')).toHaveText('1 change asked')
+})
+
 test('a document that is only a link saved on the lead has What should change? too; a stage not run has none', async ({ page }) => {
   await signIn(page, `/lead-pipeline/${ROBIN}?tab=research`)
   await expect(page.getByTestId('doc-card')).toContainText('Document on file')

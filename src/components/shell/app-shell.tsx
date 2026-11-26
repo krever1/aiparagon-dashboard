@@ -1,11 +1,13 @@
 'use client'
 
-import { type ReactNode, Suspense, useState } from 'react'
-import { usePathname } from 'next/navigation'
-import { ChevronRight, Menu, X } from 'lucide-react'
+import { type ReactNode, Suspense, useEffect, useState, useSyncExternalStore } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
 import { Icon } from '@/components/icon'
 import { Toaster } from '@/components/ui/toast'
 import { pageForPath, productOf } from '@/lib/nav'
+import { previousPlace, recordPlace, subscribePlaces, takeBack } from './back-store'
+import { FeedbackButton, FeedbackLayer } from './feedback'
 import { Sidebar } from './sidebar'
 
 /**
@@ -45,7 +47,7 @@ export function AppShell({ userCard, children }: { userCard: ReactNode; children
       ) : null}
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:px-6">
+        <header data-topbar="" className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg/90 px-4 backdrop-blur sm:px-6">
           <button
             type="button"
             aria-label="Open the menu"
@@ -54,14 +56,22 @@ export function AppShell({ userCard, children }: { userCard: ReactNode; children
           >
             <Menu size={20} aria-hidden="true" />
           </button>
+          {/* Back reads the search too, so it has a boundary of its own: the breadcrumb stays in the static shell */}
+          <Suspense fallback={null}>
+            <Back />
+          </Suspense>
           <Suspense fallback={null}>
             <Crumb />
           </Suspense>
+          <FeedbackButton />
         </header>
         <main id="main" className="w-full max-w-[1280px] px-4 py-6 sm:px-8 sm:py-8">
           {children}
         </main>
         <Toaster />
+        <Suspense fallback={null}>
+          <FeedbackLayer />
+        </Suspense>
       </div>
     </div>
   )
@@ -85,5 +95,43 @@ function Crumb() {
         {page.label}
       </span>
     </nav>
+  )
+}
+
+/** A lead's own page (/lead-pipeline/<lead>): it names itself by the lead's name once it shows. */
+const LEAD_PAGE = /^\/lead-pipeline\/[^/]+\/?$/
+
+/**
+ * Back (v143): the page before this one in this browser tab, a lead's own page included. It records where each page
+ * settles (a page kept alive by Next comes back without mounting again, so the address is what counts), and going
+ * back takes the place off the list first, so arriving there adds nothing. Hidden on the first page; on a phone only
+ * the arrow shows.
+ */
+function Back() {
+  const pathname = usePathname()
+  const search = useSearchParams().toString()
+  const router = useRouter()
+  useEffect(() => {
+    const name = LEAD_PAGE.test(pathname) ? 'the lead' : (pageForPath(pathname)?.title ?? 'the last page')
+    recordPlace(pathname, pathname + (search ? '?' + search : ''), name)
+  }, [pathname, search])
+  const prev = useSyncExternalStore(subscribePlaces, previousPlace, () => null)
+  if (!prev) return null
+  const label = 'Back to ' + (prev.name || 'the last page')
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      data-testid="back"
+      onClick={() => {
+        const to = takeBack()
+        if (to) router.push(to.href)
+      }}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-[9px] border border-line bg-panel py-1.5 pl-2 pr-2 text-[13px] font-semibold text-ink-2 hover:border-accent hover:text-ink sm:pr-3"
+    >
+      <ChevronLeft size={15} strokeWidth={2} aria-hidden="true" />
+      <span className="hidden sm:inline">Back</span>
+    </button>
   )
 }

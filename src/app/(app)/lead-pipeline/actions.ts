@@ -7,52 +7,12 @@ import { buildLeads } from '@/lib/catalyst/leads'
 import { findLead, readCatalyst, toView } from '@/lib/catalyst/load'
 import { ENTRY, RUN_HOOKS, type ReadRow, composeNote, planFor } from '@/lib/catalyst/plan'
 import {
-  type Gathered, callsOfLead, fathomList, fathomTranscript, fileCall, fileUsed, gather, readRows, readSetting, recordRun, setStage, startStage,
+  type Gathered, callsOfLead, fathomList, fathomTranscript, fileCall, fileUsed, gather, kbText, readRows, readSetting, recordRun, setStage, startStage,
 } from '@/lib/catalyst/run'
-import { STAGES, type StageNames, cleanName, isStageKey, namesFromSetting, nextStageKey, stageOfKey } from '@/lib/catalyst/stages'
+import { type Stage, nextStageKey, stageIn, stageOfKey } from '@/lib/catalyst/stages'
 import { viewStage } from '@/lib/catalyst/view'
 import { callN8n, startN8n } from '@/lib/n8n'
 import { createClient } from '@/lib/supabase/server'
-
-export type SaveNamesResult = { ok: true; names: StageNames } | { ok: false; error: string }
-
-const asObject = (v: unknown): Record<string, unknown> => {
-  let x = v
-  if (typeof x === 'string') {
-    try {
-      x = JSON.parse(x)
-    } catch {
-      x = null
-    }
-  }
-  return x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : {}
-}
-
-/**
- * Rename stages: the team's names for the six meetings, for everyone (ai_settings `catalyst_stages`). The row is read
- * fresh and merged, so another teammate's save in between is not lost; each stage keeps who named it and when. A name
- * that is the usual one is stored empty, as the current dashboard does.
- */
-export async function saveStageNames(input: Record<string, string>): Promise<SaveNamesResult> {
-  const user = await getCurrentUser()
-  if (!user) return { ok: false, error: 'you are signed out, so sign in again' }
-  const supabase = await createClient()
-  const cur = await supabase.from('ai_settings').select('value').eq('key', 'catalyst_stages').maybeSingle()
-  if (cur.error) return { ok: false, error: cur.error.message }
-  const base = asObject(cur.data?.value)
-  const at = new Date().toISOString()
-  const value: Record<string, unknown> = { ...base }
-  for (const s of STAGES) {
-    const name = cleanName(input?.[s.key]) || s.defaultName
-    value[s.key] = { ...asObject(base[s.key]), name: name === s.defaultName ? '' : name, by: user.email, at }
-  }
-  const { error } = await supabase
-    .from('ai_settings')
-    .upsert({ key: 'catalyst_stages', value, updated_by: user.email, updated_at: at }, { onConflict: 'key' })
-  if (error) return { ok: false, error: error.message }
-  refresh()
-  return { ok: true, names: namesFromSetting(value) }
-}
 
 export type ReadDocResult = { ok: true; kind: 'pdf' | 'doc'; text: string } | { ok: false; error: string }
 
@@ -87,12 +47,14 @@ export type ReadsResult =
 export async function stageReads(leadId: string, stage: string): Promise<ReadsResult> {
   const user = await getCurrentUser()
   if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
-  if (!isStageKey(stage)) return { ok: false, error: 'That is not a stage.' }
   const read = await readCatalyst()
+  const st = stageIn(read.stages, stage)
+  if (!st) return { ok: false, error: 'That is not a stage.' }
+  if (st.norun) return { ok: true, rows: [], found: { calls: 0, emails: 0 } }
   const { leads } = buildLeads(read.rows, read.outs)
   const lead = findLead(leads, leadId)
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
-  const g = await gather(await createClient(), lead, stage, false)
+  const g = await gather(await createClient(), lead, st, false, read.config)
   return { ok: true, rows: readRows(g), found: { calls: g.calls.length, emails: g.emails.length } }
 }
 
@@ -108,32 +70,34 @@ const msgOf = (e: unknown) => (e instanceof Error ? e.message : String(e)) || 's
 export async function goStage(input: { leadId: string; stage: string; move: boolean; run: boolean; notes: string }): Promise<GoResult> {
   const user = await getCurrentUser()
   if (!user) return { ok: false, error: 'You are signed out. Sign in again.' }
-  if (!isStageKey(input?.stage)) return { ok: false, error: 'That is not a stage.' }
-  const stage = input.stage
   const supabase = await createClient()
   const read = await readCatalyst()
+  const st = stageIn(read.stages, input?.stage)
+  if (!st) return { ok: false, error: 'That is not a stage.' }
+  const stage = st.key
   const { leads, outs } = buildLeads(read.rows, read.outs)
   const lead = findLead(leads, String(input.leadId))
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
-  const view = toView(lead, outs, read.runs)
-  const st = stageOfKey(stage, read.names)
+  const view = toView(lead, outs, read.runs, Date.now(), read.stages)
   if (view.run) return { ok: false, error: `Catalyst is still writing for ${view.name}. It shows on the card when it is done.` }
   const was = viewStage(view)
   const moving = !!input.move && stage !== was
-  const run = !!input.run
-  if (!moving && !run) return { ok: false, error: `${view.name} is in ${st.name} already.` }
+  // a stage that runs nothing only moves (v145)
+  const run = !!input.run && !st.norun
+  if (!moving && !run) return { ok: false, error: st.norun ? `${st.name} runs nothing yet. Pick a meeting type in its setup.` : `${view.name} is in ${st.name} already.` }
   const notes = String(input.notes ?? '').trim().slice(0, 200_000)
 
   let g: Gathered | null = null
   if (run) {
-    const plan = planFor(view, stage)
+    const plan = planFor(view, st)
     if (plan.blocked) return { ok: false, error: plan.blocked }
     try {
-      g = await gather(supabase, lead, stage, true)
+      g = await gather(supabase, lead, st, true, read.config)
     } catch {
       g = null
     }
-    const has = !!notes || !!g?.calls.some((c) => c.text) || !!g?.emails.length
+    // the client workspace's files count as something to work from too (v145)
+    const has = !!notes || !!g?.calls.some((c) => c.text) || !!g?.emails.length || !!g?.ws.length
     if (plan.need && !has) {
       return { ok: false, error: `Paste the meeting transcript or your notes first. This lead has no ${plan.need} to work from yet, and no recorded call with it.` }
     }
@@ -146,15 +110,15 @@ export async function goStage(input: { leadId: string; stage: string; move: bool
     }
   }
   if (run) {
-    const note = stage === 'research' ? '' : composeNote({ typed: notes, crm: g?.crm ?? null, calls: g?.calls ?? [], emails: g?.emails ?? [], names: read.names })
+    const note = stage === 'research' ? '' : await runNote(supabase, read, st, notes, g)
     try {
-      await startStage(lead, outs, stage, note, g, read.names)
+      await startStage(lead, outs, st, note, g, read.config)
     } catch (e) {
       if (moving) refresh()
       return { ok: false, error: (moving ? `Moved to ${st.name}, but it could not start: ` : 'Could not start it: ') + msgOf(e) + '. Try again in a minute.' }
     }
     try {
-      await recordRun(supabase, lead, outs, stage, user.email)
+      await recordRun(supabase, lead, outs, st, user.email)
     } catch {
       // the run is under way; only its "Writing" line on the board is missing
     }
@@ -162,6 +126,16 @@ export async function goStage(input: { leadId: string; stage: string; move: bool
   }
   refresh()
   return { ok: true, toast: run ? `Started. ${st.doc} shows up on the card when it is done.` : `Moved to ${st.name}.` }
+}
+
+/**
+ * The notes a stage run sends: the team's notes with the meeting type's knowledge base context after them (v145's
+ * v137Start), then the CRM record, the emails, the transcripts and the client workspace's sources.
+ */
+async function runNote(supabase: Awaited<ReturnType<typeof createClient>>, read: Awaited<ReturnType<typeof readCatalyst>>, st: Stage, notes: string, g: Gathered | null) {
+  const kb = await kbText(supabase, read.config, st).catch(() => '')
+  const typed = kb ? (notes ? notes + '\n\n' : '') + kb : notes
+  return composeNote({ typed, crm: g?.crm ?? null, calls: g?.calls ?? [], emails: g?.emails ?? [], stages: read.stages, workspace: g?.ws ?? [] })
 }
 
 // ---------- New run (the older form: a lead that is not on the board yet) ----------
@@ -221,7 +195,7 @@ export async function newRun(input: NewRunInput): Promise<GoResult> {
     const read = await readCatalyst()
     const { leads, outs } = buildLeads(read.rows, read.outs)
     const lead = leads.find((l) => l.emails.includes(email))
-    if (lead) await recordRun(supabase, lead, outs, entry, user.email)
+    if (lead) await recordRun(supabase, lead, outs, stageOfKey(entry), user.email)
   } catch {
     // the run is under way
   }
@@ -265,7 +239,7 @@ export async function callText(id: string): Promise<{ ok: true; text: string } |
 
 // ---------- a lead's calls, and filing one (v137LeadCalls, v137AskCall, v137CallGo) ----------
 
-export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string }
+export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string }
 
 /** The lead's Calls tab: every recorded call with it, and the stage each is filed under. */
 export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: LeadCallRow[]; error: string } | { ok: false; error: string }> {
@@ -273,8 +247,28 @@ export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: L
   const read = await readCatalyst()
   const lead = findLead(buildLeads(read.rows, read.outs).leads, String(leadId))
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
-  const r = await callsOfLead(await createClient(), lead)
-  return { ok: true, calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage })), error: r.err }
+  const supabase = await createClient()
+  const r = await callsOfLead(supabase, lead)
+  // each call's post-call summary, its first point (the client workspace's Calls)
+  const sums: Record<string, string> = {}
+  if (r.calls.length) {
+    const { data } = await supabase
+      .from('call_outputs')
+      .select('call_id,summary,created_at')
+      .in('call_id', r.calls.map((c) => c.id))
+      .order('created_at', { ascending: false })
+    for (const o of (data ?? []) as Record<string, unknown>[]) {
+      const id = String(o.call_id)
+      if (id in sums) continue
+      const s = Array.isArray(o.summary) ? o.summary[0] : o.summary
+      sums[id] = typeof s === 'string' ? s : s && typeof s === 'object' ? String((s as Record<string, unknown>).text ?? '') : ''
+    }
+  }
+  return {
+    ok: true,
+    calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage, who: c.who, summary: sums[c.id] ?? '' })),
+    error: r.err,
+  }
 }
 
 /** Up to three points of a call's post-call summary, for the question. */
@@ -308,11 +302,11 @@ export async function answerCall(input: { leadId: string; callId: string; action
   let built = buildLeads(read.rows, read.outs)
   let lead = findLead(built.leads, String(input.leadId))
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
-  let view = toView(lead, built.outs, read.runs)
+  let view = toView(lead, built.outs, read.runs, Date.now(), read.stages)
   const cur = viewStage(view)
-  const nx = nextStageKey(cur)
-  const curSt = stageOfKey(cur, read.names)
-  const st = stageOfKey(nx, read.names)
+  const nx = nextStageKey(read.stages, cur)
+  const curSt = stageIn(read.stages, cur) ?? read.stages[0]
+  const st = stageIn(read.stages, nx) ?? curSt
   const meta = await supabase.from('call_meta').select('meeting_type').eq('call_id', callId).maybeSingle()
   const call = { id: callId, type: String(meta.data?.meeting_type ?? '') }
   const saved = await readSetting(supabase, 'catalyst_stage_setup')
@@ -337,17 +331,17 @@ export async function answerCall(input: { leadId: string; callId: string; action
   built = buildLeads(read.rows, read.outs)
   lead = findLead(built.leads, String(input.leadId))
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
-  view = toView(lead, built.outs, read.runs)
-  const plan = planFor(view, nx)
+  view = toView(lead, built.outs, read.runs, Date.now(), read.stages)
+  const plan = planFor(view, st)
   if (plan.blocked) return { ok: false, error: plan.blocked }
   const notes = String(input.notes ?? '').trim().slice(0, 200_000)
   let g: Gathered | null = null
   try {
-    g = await gather(supabase, lead, nx, true)
+    g = await gather(supabase, lead, st, true, read.config)
   } catch {
     g = null
   }
-  if (plan.need && !notes && !(g && (g.calls.some((x) => x.text) || g.emails.length))) {
+  if (plan.need && !notes && !(g && (g.calls.some((x) => x.text) || g.emails.length || g.ws.length))) {
     return { ok: false, error: `The transcript could not be read from Fathom, and this lead has no ${plan.need} to work from. Add your notes from the meeting.` }
   }
   const moving = nx !== cur
@@ -358,19 +352,44 @@ export async function answerCall(input: { leadId: string; callId: string; action
       return { ok: false, error: 'Filed, but the lead could not be moved: ' + msgOf(e) }
     }
   }
-  const note = composeNote({ typed: notes, crm: g?.crm ?? null, calls: g?.calls ?? [], emails: g?.emails ?? [], names: read.names })
+  const note = await runNote(supabase, read, st, notes, g)
   try {
-    await startStage(lead, built.outs, nx, note, g, read.names)
+    await startStage(lead, built.outs, st, note, g, read.config)
   } catch (e) {
     refresh()
     return { ok: false, error: (moving ? `Moved to ${st.name}, but it could not start: ` : 'Could not start it: ') + msgOf(e) + '. Try again in a minute.' }
   }
   try {
-    await recordRun(supabase, lead, built.outs, nx, user.email)
+    await recordRun(supabase, lead, built.outs, st, user.email)
   } catch {
     // the run is under way; only its "Writing" line on the board is missing
   }
   await fileUsed(supabase, lead, g, cur, user.email)
   refresh()
   return { ok: true, toast: `Started. ${st.doc} shows on the Lead pipeline when it is done.` }
+}
+
+// ---------- a lead's HubSpot tab, read live (v144HsLoad) ----------
+
+export type HubspotLiveResult = { ok: true; found: boolean; id: string; contact: Record<string, string>; at: string } | { ok: false; error: string }
+
+/**
+ * What HubSpot has for the lead right now, through Dashboard · HubSpot Contact Proxy (team sign-in only, reads only):
+ * `{ok, found, id, contact, at}`, or why it could not be read.
+ */
+export async function hubspotLive(email: string): Promise<HubspotLiveResult> {
+  if (!(await getCurrentUser())) return { ok: false, error: 'You are signed out. Sign in again.' }
+  const e = String(email ?? '').trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || e === 'contact@deltaadvisory.com') return { ok: false, error: 'That is not a lead’s email.' }
+  let j: Record<string, unknown>
+  try {
+    j = await callN8n('catalyst-hubspot-contact', { email: e }, { what: 'HubSpot Contact', workflow: 'Dashboard · HubSpot Contact Proxy' })
+  } catch (x) {
+    return { ok: false, error: (x instanceof Error && x.message) || 'HubSpot could not be reached.' }
+  }
+  if (!j || j.ok === false) return { ok: false, error: String(j?.message || '') || 'HubSpot did not answer.' }
+  const c = j.contact && typeof j.contact === 'object' ? (j.contact as Record<string, unknown>) : {}
+  const contact: Record<string, string> = {}
+  for (const [k, v] of Object.entries(c)) if (v !== null && v !== undefined && typeof v !== 'object') contact[k] = String(v)
+  return { ok: true, found: !!j.found, id: String(j.id ?? ''), contact, at: String(j.at || '') || new Date().toISOString() }
 }

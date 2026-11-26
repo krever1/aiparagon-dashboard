@@ -36,7 +36,7 @@ export function needChips(items: Item[]): { kind: Kind; word: string; label: str
 
 export const touchLine = (n: number) => (n ? plural(n, 'thing') + ' waiting for you' : 'Nothing waiting for you')
 
-/** "12 leads · 9 waiting on a next stage": leads not a weak fit that are short of the last meeting stage. */
+/** "12 leads · 9 waiting on a next stage": the leads Approvals lists as "Next: …" (their stage's document not written yet). */
 export const catalystLine = (leads: number, next: number) => plural(leads, 'lead') + (next ? ' · ' + next + ' waiting on a next stage' : '')
 
 /** "2 briefs to review · 1 live landing page"; the pages are left out when they could not be read. */

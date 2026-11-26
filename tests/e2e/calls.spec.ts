@@ -42,7 +42,7 @@ test('the calls, newest first: the strip, the tabs, the type buttons, search and
   await expect(page.getByRole('button', { name: /With clients/ })).toHaveText('3 With clients')
   await expect(page.getByRole('button', { name: /This month/ })).toHaveText('1 This month')
   await expect(page.getByRole('button', { name: /Hours recorded/ })).toHaveText('2.1 Hours recorded')
-  await expect(page.getByRole('tablist', { name: 'Calls' }).getByRole('tab')).toHaveText(['All 4', 'Clients 3', 'Internal 1'])
+  await expect(page.getByRole('tablist', { name: 'Calls' }).getByRole('tab')).toHaveText(['All 4', 'Clients 3', 'Internal 1', 'Calendar'])
   await expect(page.getByTestId('calls-stamp')).toHaveText('Checked Fathom just now · new calls show up within a minute')
 
   await expect(rows(page)).toHaveCount(4)

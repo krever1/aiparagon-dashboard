@@ -740,6 +740,9 @@ export type Competitor = {
   addedBy: string
   createdAt: string
   notes: string
+  /** who the account is to the firm (v145; empty reads as a competitor) and whether its posts get replies */
+  relation: string
+  draftReplies: boolean
 }
 
 export const competitorOf = (r: Record<string, unknown>): Competitor => ({
@@ -755,6 +758,8 @@ export const competitorOf = (r: Record<string, unknown>): Competitor => ({
   addedBy: str(r.added_by),
   createdAt: str(r.created_at),
   notes: str(r.notes),
+  relation: str(r.relation),
+  draftReplies: r.draft_replies !== false,
 })
 
 /** A person or a company (v96Kind): as set, else from the LinkedIn link, else an X handle alone is a person. */

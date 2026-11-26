@@ -1,9 +1,10 @@
 // Approvals' rules (nwApprovalAll, nwApprovalsHtml and nwRowHtml as v117 and v127 left them): one list of everything
 // waiting for a person, the filter tabs and their counts, and what a tab shows. Pure: the page and the tests both use it.
 
-import { FOLLOW_UP, STAGES, type StageKey, stageOfKey } from '@/lib/catalyst/stages'
-import { type LeadView, leadHref, nextDocOf, waitsOnNext } from '@/lib/catalyst/view'
-import { legacyUrl, pageBySlug } from '@/lib/nav'
+import { CUSTOM_STAGE, FOLLOW_UP, STAGES, type Stage, isBoardKey, isStageKey } from '@/lib/catalyst/stages'
+import { type LeadView, hasDoc, inApprovals, leadHref, viewStage } from '@/lib/catalyst/view'
+import { PORTED, legacyUrl, pageBySlug } from '@/lib/nav'
+import { fbPlace, goHref, whoOf } from './feedback'
 
 export type Kind = 'brief' | 'ad' | 'draft' | 'reply' | 'lead' | 'comment' | 'failed'
 
@@ -20,7 +21,7 @@ export const KINDS: readonly (readonly [Kind, string, string])[] = [
 
 export type Icon = 'file' | 'megaphone' | 'pen' | 'message' | 'users' | 'alert'
 /** A tag under a row: words, or a day drawn in the viewer's time zone ("5 Nov", "Campaign of 5 Nov"). */
-export type Tag = { text: string; tone?: 'bad' | 'warn' } | { day: string; before?: string }
+export type Tag = { text: string; tone?: 'bad' | 'warn' | 'good' } | { day: string; before?: string }
 /** Where Review goes: the reply window here, or a page (`out`: still in the current dashboard). */
 export type Review = { kind: 'reply' } | { kind: 'link'; href: string; label?: string; out?: boolean }
 
@@ -179,18 +180,69 @@ export type ContentRequest = { id: string; title: string; status: string; error:
 export type ContentDraft = { id: string; title: string; created_at: string; data: Record<string, unknown> }
 /** A book a call or low-ticket campaign (agent_outputs, low_ticket_content): the newest row of a run, data read. */
 export type Campaign = { run_id: string; created_at: string; data: Record<string, unknown> }
-/** A lead waiting on its next document (see leadWaits). */
-export type LeadWait = { id: string; email: string; name: string; company: string; next: StageKey; updatedAt: string }
+/** A lead waiting on a person (see leadWaits): its own stage's document to write (`ready` false), or to read (`ready`). */
+export type LeadWait = {
+  id: string
+  email: string
+  name: string
+  company: string
+  stage: string
+  /** its stage's document is written and nobody has marked it reviewed since */
+  ready: boolean
+  /** when that document was written (ready), else when the lead last changed */
+  when: string
+}
+/** A document marked reviewed, or that undone: agent_feedback e1_document with action reviewed or reopened. */
+export type ReviewMark = { target: string; action: string; at: string }
 /** An open comment (dashboard_comments): what it is about (target_key), who wrote it and what it says. */
 export type CommentRow = { id: string; target: string; author: string; body: string; createdAt: string }
 
-/** The leads on the board that wait on a person, newest first: not a weak fit, their next document not written, nothing
- * being written for them (nwApprovalAll's leads, by the six stages). */
-export function leadWaits(leads: LeadView[]): LeadWait[] {
-  return leads
-    .filter(waitsOnNext)
-    .map((l) => ({ id: l.id, email: l.email, name: l.name, company: l.company, next: nextDocOf(l)!, updatedAt: l.updatedAt ?? '' }))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+/** A stage document's review key (v143LdKey): `<email>:<agent>`, with `:<stage>` for the meeting prep (one agent writes
+ * the onboarding plan and the client review brief). The email in lower case. */
+export function reviewKey(email: string, stage: string): string {
+  const agent = reviewAgent(stage)
+  return str(email).trim().toLowerCase() + ':' + agent + (agent === 'meeting_prep' ? ':' + stage : '')
+}
+
+/** The agent whose document a stage is: a built-in stage's own, Meeting Prep for a stage of the team's own (v145). */
+export function reviewAgent(stage: string): string {
+  if (isStageKey(stage)) return STAGES.find((s) => s.key === stage)!.agent
+  return CUSTOM_STAGE.test(stage) ? 'meeting_prep' : ''
+}
+
+/** A lead's stage document counts as reviewed (v143Reviewed) when the newest mark on any of its emails says reviewed and
+ * was made at or after the document was written (a new version needs a new read). */
+export function isReviewed(emails: string[], stage: string, docAt: number, marks: ReviewMark[]): boolean {
+  const keys = new Set(emails.map((e) => reviewKey(e, stage)))
+  let last: { t: number; a: string } | null = null
+  for (const m of marks) {
+    if (!keys.has(str(m.target).toLowerCase()) || (m.action !== 'reviewed' && m.action !== 'reopened')) continue
+    const t = Date.parse(m.at) || 0
+    if (!last || t > last.t) last = { t, a: m.action }
+  }
+  return !!last && last.a === 'reviewed' && last.t >= docAt
+}
+
+/** The leads on the board that wait on a person, newest first (v143LdItems): not a weak fit, nothing being written for
+ * them, and their own stage's document either not written yet or written and not reviewed since. A document only
+ * linked on the lead (no row of its own) waits on neither. */
+export function leadWaits(leads: LeadView[], marks: ReviewMark[] = [], stages?: readonly Pick<Stage, 'key' | 'norun'>[]): LeadWait[] {
+  const out: LeadWait[] = []
+  for (const l of leads) {
+    if (!inApprovals(l)) continue
+    const stage = viewStage(l)
+    // a stage of the team's own that runs nothing has no document to wait on (v145)
+    if (stages && stages.find((s) => s.key === stage)?.norun) continue
+    const base = { id: l.id, email: l.email, name: l.name, company: l.company, stage }
+    if (!hasDoc(l, stage)) {
+      out.push({ ...base, ready: false, when: l.updatedAt ?? '' })
+      continue
+    }
+    const at = l.docs[stage] ?? 0
+    if (!at || isReviewed(l.emails.length ? l.emails : [l.email], stage, at, marks)) continue
+    out.push({ ...base, ready: true, when: new Date(at).toISOString() })
+  }
+  return out.sort((a, b) => b.when.localeCompare(a.when))
 }
 
 /** The lead page's tab for a document's agent (the comment keys say e1:<email>:<agent>). */
@@ -233,11 +285,14 @@ export type ApprovalInput = {
   campaigns?: Campaign[]
   hooks?: Record<string, string[]>
   adDecisions?: Record<string, string>
-  /** the leads waiting on their next document, newest first (leadWaits) */
+  /** the leads waiting on their stage's document, or a read of it, newest first (leadWaits); the board's stages */
   leads?: LeadWait[]
+  stages?: readonly Stage[]
   /** open comments, newest first, and each lead's page by its emails (lower case), for a comment on a lead's document */
   comments?: CommentRow[]
   leadIds?: Record<string, string>
+  /** each lead's name by its emails (lower case), for where a feedback note was left */
+  leadNames?: Record<string, string>
   /** the current dashboard's address, where the briefs page still lives */
   legacy: string
   now: number
@@ -380,22 +435,58 @@ export function approvalItems(x: ApprovalInput): Item[] {
       reply: r,
     })
   }
-  // leads waiting on their next document: opened on their page, at that document's tab, where it runs
+  // leads (v143): a stage document written and not read yet is marked reviewed from the list, or read on the lead's page
+  // at its tab; one not written yet opens there, where it runs
   for (const l of x.leads ?? []) {
-    out.push({
-      key: 'lead:' + l.email.toLowerCase(),
-      kind: 'lead',
-      icon: 'users',
-      title: l.name + (l.company ? ' · ' + l.company : ''),
-      text: 'Next: ' + stageOfKey(l.next).doc,
-      tags: [{ text: 'Lead' }, { text: 'Catalyst' }],
-      approve: false,
-      review: { kind: 'link', href: leadHref(l.id, l.next), label: 'Open lead' },
-      when: l.updatedAt,
-    })
+    const st = (x.stages ?? STAGES).find((s) => s.key === l.stage)
+    if (!st || st.norun) continue
+    const title = l.name + (l.company ? ' · ' + l.company : '')
+    if (l.ready) {
+      out.push({
+        key: 'lead:' + l.email.toLowerCase() + ':' + st.key,
+        kind: 'lead',
+        icon: 'users',
+        title,
+        text: 'Ready for review: ' + st.doc,
+        tags: [{ text: 'Ready for review', tone: 'good' }, { text: st.name }],
+        approve: true,
+        approveLabel: 'Mark reviewed',
+        review: { kind: 'link', href: leadHref(l.id, st.key), label: 'Review' },
+        when: l.when,
+      })
+    } else {
+      out.push({
+        key: 'lead:' + l.email.toLowerCase(),
+        kind: 'lead',
+        icon: 'users',
+        title,
+        text: 'Next: ' + st.doc,
+        tags: [{ text: 'Lead' }, { text: st.name }],
+        approve: false,
+        review: { kind: 'link', href: leadHref(l.id, st.key), label: 'Open lead' },
+        when: l.when,
+      })
+    }
   }
   // open comments: resolved from the list, or opened where they were left
   for (const c of x.comments ?? []) {
+    // a feedback note (v144): "Feedback from <name>", where it was left, and Go to it opens the page at the note
+    if (str(c.target).startsWith('fb:')) {
+      const place = fbPlace(c.target, (e) => (x.leadIds?.[e] ? { id: x.leadIds[e], name: x.leadNames?.[e] ?? '' } : null), PORTED)
+      out.push({
+        key: 'cmt:' + c.id,
+        kind: 'comment',
+        icon: 'message',
+        title: 'Feedback from ' + whoOf(c.author).replace(/^Someone$/, 'someone'),
+        text: c.body,
+        tags: [{ text: 'Feedback' }, { text: place.where }],
+        approve: true,
+        approveLabel: 'Resolve',
+        review: { kind: 'link', href: goHref(place, c.id), label: 'Go to it', ...(place.out ? { out: true } : {}) },
+        when: c.createdAt,
+      })
+      continue
+    }
     out.push({
       key: 'cmt:' + c.id,
       kind: 'comment',
@@ -506,7 +597,9 @@ export type Key =
   | { kind: 'reply'; id: string }
   | { kind: 'ad'; runId: string; file: string }
   | { kind: 'comment'; id: string }
+  | { kind: 'lead'; email: string; stage: string }
 
+const EMAIL = /^[^\s:@<>"'`]{1,120}@[^\s:@<>"'`]{1,200}$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const RUN = /^[\w.:-]{1,120}$/
 const AD_RUN = /^[\w.-]{1,120}$/
@@ -521,6 +614,8 @@ export function parseKey(k: unknown): Key | null {
   }
   if (p[0] === 'reply' && p.length === 2 && UUID.test(p[1])) return { kind: 'reply', id: p[1] }
   if (p[0] === 'cmt' && p.length === 2 && UUID.test(p[1])) return { kind: 'comment', id: p[1] }
+  // a lead's stage document, marked reviewed: lead:<email>:<stage> ("lead:<email>" alone waits on a run, not a read)
+  if (p[0] === 'lead' && p.length === 3 && EMAIL.test(p[1]) && isBoardKey(p[2])) return { kind: 'lead', email: p[1].toLowerCase(), stage: p[2] }
   // an ad image: its campaign's run, then its file (the decision's target_id, as nwApproveOne keeps it)
   if (p[0] === 'ad' && AD_RUN.test(p[1] ?? '')) {
     const file = p.slice(2).join(':')

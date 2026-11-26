@@ -3,10 +3,11 @@ import { callN8n, startN8n } from '@/lib/n8n'
 import { createClient } from '@/lib/supabase/server'
 import { type Lead, type OutRow, docIds, docOf, leadEmails } from './leads'
 import {
-  type Contact, type GatherCall, type GatherEmail, type ReadRow, type RunEntry, type StageSetup, RUN_HOOKS, RUN_STALE_MS, STAGE_SETUP,
-  contactName, crmLine, customBody, prepBody, researchBody, runsFromSetting, setupOf,
+  type Contact, type GatherCall, type GatherEmail, type ReadRow, type RunEntry, type StageSetup, type WsSource, RUN_HOOKS, RUN_STALE_MS, STAGE_SETUP,
+  contactName, crmLine, customBody, prepBody, researchBody, runsFromSetting, setupKeyOf, setupOf,
 } from './plan'
-import { type StageKey, type StageNames, stageOfKey } from './stages'
+import { type CatalystConfig, EMPTY_CONFIG, customAlways, customSecs, objOf, prepExtras, typeOfStage } from './setup'
+import type { Stage } from './stages'
 
 // What a stage run reads, and the run itself, as the current dashboard does it (v136Go, v137Gather, v137Start,
 // v137FileUsed, v138MailLoad), on the server: the n8n calls carry the teammate's token, the writes go out as them.
@@ -78,7 +79,7 @@ function guestsOf(c: FathomCall, m: Meta | undefined): string[] {
   return c.invitees.map((i) => lower(i.email)).filter((e) => e && e !== c.recorder)
 }
 
-export type LeadCall = GatherCall & { type: string; minutes: number }
+export type LeadCall = GatherCall & { type: string; minutes: number; who: string }
 
 /**
  * Every recorded call with the lead, newest first: a guest is one of its emails and the call is not filed under
@@ -113,6 +114,12 @@ export async function callsOfLead(supabase: Supa, lead: Lead): Promise<{ calls: 
         stage: str(meta.get(c.id)?.lead_stage),
         type: str(meta.get(c.id)?.meeting_type),
         minutes: a && b && b > a ? Math.round((b - a) / 60000) : 0,
+        // who was on it, besides the team (the first three), for the client workspace
+        who: c.invitees
+          .filter((i) => lower(i.email) !== c.recorder)
+          .map((i) => i.name || i.email)
+          .slice(0, 3)
+          .join(' + '),
       }
     })
     .sort((a, b) => b.start.localeCompare(a.start))
@@ -193,7 +200,11 @@ export async function templatesInUse(supabase: Supa, kinds: string[]): Promise<R
 // ---------- what a run reads ----------
 
 export type Gathered = {
-  stage: StageKey
+  stage: Stage
+  /** for a stage of the team's own: how many sections its meeting type writes, and what it always reads */
+  custom: { secs: number; always: string } | null
+  /** the client workspace's uploads the run reads (v145) */
+  ws: WsSource[]
   setup: StageSetup
   /** the team's setup for every stage, as saved (filing a call takes its stage's meeting type from it) */
   saved: unknown
@@ -209,12 +220,24 @@ export type Gathered = {
 }
 
 /** What a stage's run reads for a lead; with `withText`, the transcripts of the four newest calls too. */
-export async function gather(supabase: Supa, lead: Lead, stage: StageKey, withText: boolean): Promise<Gathered> {
-  const kind = STAGE_SETUP[stage].kind
-  const [setupRaw, uses] = await Promise.all([readSetting(supabase, 'catalyst_stage_setup'), templatesInUse(supabase, [kind, 'discovery_template'])])
-  const setup = setupOf(stage, setupRaw)
+export async function gather(
+  supabase: Supa,
+  lead: Lead,
+  st: Stage,
+  withText: boolean,
+  config: CatalystConfig = EMPTY_CONFIG,
+): Promise<Gathered> {
+  const kind = st.base ? STAGE_SETUP[st.base].kind : ''
+  const [setupRaw, uses, ws] = await Promise.all([
+    readSetting(supabase, 'catalyst_stage_setup'),
+    kind ? templatesInUse(supabase, [kind, 'discovery_template']) : Promise.resolve({} as Record<string, string>),
+    wsSources(supabase, lead).catch(() => [] as WsSource[]),
+  ])
+  const setup = setupOf(setupKeyOf(st), setupRaw)
+  const t = st.custom ? typeOfStage(config, st) : null
   const g: Gathered = {
-    stage, setup, saved: setupRaw, template: uses[kind] ?? null, questions: setup.questions && uses.discovery_template ? uses.discovery_template : null,
+    stage: st, custom: st.custom ? { secs: customSecs(t).length, always: customAlways(t) } : null, ws,
+    setup, saved: setupRaw, template: (kind && uses[kind]) || null, questions: setup.questions && uses.discovery_template ? uses.discovery_template : null,
     crm: null, calls: [], ftErr: '', emails: [], emErr: '', who: {},
   }
   const contact = setup.crm || setup.emails ? await leadContact(supabase, lead) : null
@@ -256,8 +279,9 @@ export async function gather(supabase: Supa, lead: Lead, stage: StageKey, withTe
 
 export function readRows(g: Gathered): ReadRow[] {
   const u: ReadRow[] = []
-  const s = g.stage
-  u.push(g.template ? { ok: true, text: 'Template: ' + g.template } : { ok: false, text: 'No template for this stage yet, so the usual sections. Add one on Templates.' })
+  const s = g.stage.key
+  if (g.custom) u.push({ ok: true, text: 'Template: the meeting type’s sections (' + g.custom.secs + ')' })
+  else u.push(g.template ? { ok: true, text: 'Template: ' + g.template } : { ok: false, text: 'No template for this stage yet, so the usual sections. Add one on Templates.' })
   if (s !== 'research' && g.setup.calls) {
     if (g.ftErr && !g.calls.length) u.push({ ok: false, text: 'Call transcripts: Fathom could not be read (' + g.ftErr + ').' })
     else if (!g.calls.length) u.push({ ok: false, text: 'No recorded calls with this lead yet.' })
@@ -283,8 +307,72 @@ export function readRows(g: Gathered): ReadRow[] {
     u.push(g.crm ? { ok: true, text: 'The CRM record: ' + crmLine(g.crm) } : { ok: false, text: 'No HubSpot contact with this lead’s email.' })
   }
   if (g.questions) u.push({ ok: true, text: 'Your discovery call questions: ' + g.questions })
-  u.push({ ok: true, text: STAGE_SETUP[s].reads })
+  u.push({ ok: true, text: g.custom ? g.custom.always : g.stage.base ? STAGE_SETUP[g.stage.base].reads : '' })
+  if (g.ws.length) {
+    const more = g.ws.length - 4
+    u.push({ ok: true, text: 'From the client workspace: ' + g.ws.slice(0, 4).map((x) => x.name).join(', ') + (more > 0 ? ' and ' + more + ' more' : '') })
+  }
   return u
+}
+
+// ---------- the client workspace and the knowledge base (v145) ----------
+
+/** The workspace's settings row: {lead email, lowercase: {folders, items}}. */
+export const WS_KEY = 'catalyst_ws'
+
+/**
+ * What a stage run reads from the client workspace (v145WsSources, with v146's fix): the lead's uploads with text, under
+ * any of its emails as stored or in lower case, that are a source (ticked "Use it as a source"; a transcript unless
+ * unticked), newest first; a file with less than 20 characters of text is left out.
+ */
+export async function wsSources(supabase: Supa, lead: Lead): Promise<WsSource[]> {
+  const em: string[] = []
+  for (const e of leadEmails(lead)) for (const x of [str(e).trim(), lower(e)]) if (x && !em.includes(x)) em.push(x)
+  if (!em.length) return []
+  const [{ data, error }, meta] = await Promise.all([
+    supabase
+      .from('lead_files')
+      .select('id,file_name,file_text,category,created_at,lead_email')
+      .in('lead_email', em)
+      .not('file_text', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(40),
+    readSetting(supabase, WS_KEY),
+  ])
+  if (error) return []
+  const items = objOf(objOf(objOf(meta)[lower(lead.email)]).items) as Record<string, { name?: string; desc?: string; source?: boolean }>
+  return ((data ?? []) as Record<string, unknown>[])
+    .filter((r) => {
+      const m = objOf(items['f:' + str(r.id)]) as { source?: boolean }
+      return m.source === true || (m.source !== false && r.category === 'transcript')
+    })
+    .map((r): WsSource => {
+      const m = objOf(items['f:' + str(r.id)]) as { name?: string; desc?: string }
+      return { name: str(m.name) || str(r.file_name), text: str(r.file_text), kind: r.category === 'transcript' ? 'transcript' : 'file', at: str(r.created_at), desc: str(m.desc) }
+    })
+    .filter((x) => x.text.trim().length >= 20)
+}
+
+/**
+ * A stage's knowledge base context (v145KbText): its meeting type's note, then the text of its knowledge base files
+ * (6,000 characters in all, 3,000 each), headed for the run. Empty when the type has neither.
+ */
+export async function kbText(supabase: Supa, config: CatalystConfig, st: Stage): Promise<string> {
+  const t = typeOfStage(config, st)
+  if (!t || (!t.kb && !t.kbFiles.length)) return ''
+  const parts: string[] = []
+  if (t.kb) parts.push(t.kb)
+  if (t.kbFiles.length) {
+    const { data } = await supabase.from('guide_files').select('id,file_name,file_text').in('id', t.kbFiles)
+    let left = 6000
+    for (const f of (data ?? []) as Record<string, unknown>[]) {
+      if (left < 300 || !f.file_text) continue
+      const x = str(f.file_text).replace(/\s+\n/g, '\n').slice(0, Math.min(3000, left))
+      parts.push((str(f.file_name) || 'A file') + ':\n' + x)
+      left -= x.length
+    }
+  }
+  return 'KNOWLEDGE BASE CONTEXT FOR ' + t.name.toUpperCase() + '\n' + parts.join('\n\n')
 }
 
 // ---------- the writes ----------
@@ -293,7 +381,7 @@ export function readRows(g: Gathered): ReadRow[] {
  * Moves a lead: the stage on every e1_leads row of the person (not the anonymizer's placeholder row, which other leads
  * share), or a new row when it has none.
  */
-export async function setStage(supabase: Supa, lead: Lead, stage: StageKey): Promise<void> {
+export async function setStage(supabase: Supa, lead: Lead, stage: string): Promise<void> {
   const now = new Date().toISOString()
   let n = 0
   for (const em of leadEmails(lead)) {
@@ -315,7 +403,7 @@ export async function fileCall(
   supabase: Supa,
   call: { id: string; type: string },
   email: string,
-  stage: StageKey | 'none',
+  stage: string,
   by: string,
   saved: unknown = null,
 ) {
@@ -331,7 +419,7 @@ export async function fileCall(
 }
 
 /** The calls a run read that were not filed yet go under the stage the lead was in (a failure is left for later). */
-export async function fileUsed(supabase: Supa, lead: Lead, g: Gathered | null, stage: StageKey, by: string) {
+export async function fileUsed(supabase: Supa, lead: Lead, g: Gathered | null, stage: string, by: string) {
   for (const x of (g?.calls ?? []).filter((c) => c.text && !c.stage)) {
     try {
       await fileCall(supabase, x, lead.email, stage, by, g?.saved ?? null)
@@ -341,8 +429,9 @@ export async function fileUsed(supabase: Supa, lead: Lead, g: Gathered | null, s
   }
 }
 
-/** Starts the stage's workflow, only that stage. */
-export async function startStage(lead: Lead, outs: OutRow[], stage: StageKey, note: string, g: Gathered | null, names: StageNames) {
+/** Starts the stage's workflow, only that stage: Meeting Prep with v145's sections and purpose for a meeting prep stage. */
+export async function startStage(lead: Lead, outs: OutRow[], st: Stage, note: string, g: Gathered | null, config: CatalystConfig = EMPTY_CONFIG) {
+  const stage = st.key
   if (stage === 'research') {
     const c = g?.crm
     const l = c
@@ -350,21 +439,22 @@ export async function startStage(lead: Lead, outs: OutRow[], stage: StageKey, no
       : lead
     return startN8n(RUN_HOOKS.full, researchBody(l))
   }
-  if (stage === 'onboarding' || stage === 'review') return startN8n(RUN_HOOKS.prep, prepBody(lead, leadEmails(lead), stage, names, note))
-  return startN8n(RUN_HOOKS.custom, customBody(lead, stage, note, docIds(lead, outs)))
+  if (st.agent === 'meeting_prep') return startN8n(RUN_HOOKS.prep, prepBody(lead, leadEmails(lead), st, note, prepExtras(config, st)))
+  if (stage === 'consultation' || stage === 'assessment' || stage === 'proposal') return startN8n(RUN_HOOKS.custom, customBody(lead, stage, note, docIds(lead, outs)))
+  throw new Error('this stage runs nothing yet')
 }
 
 /**
  * Keeps the run for the whole team (ai_settings `catalyst_runs`): the board shows "Writing …" on every computer until
  * the stage's document lands, or for 45 minutes. Runs older than that are dropped as the list is written.
  */
-export async function recordRun(supabase: Supa, lead: Lead, outs: OutRow[], stage: StageKey, by: string) {
+export async function recordRun(supabase: Supa, lead: Lead, outs: OutRow[], st: Stage, by: string) {
   const now = Date.now()
   const cur = runsFromSetting(await readSetting(supabase, 'catalyst_runs'))
   const next: Record<string, RunEntry> = {}
   for (const [e, r] of Object.entries(cur)) if (now - Date.parse(r.t0) <= RUN_STALE_MS) next[e] = r
   for (const e of leadEmails(lead)) delete next[e]
-  next[lead.email] = { s: stage, t0: new Date(now).toISOString(), seen: docOf(lead, stageOfKey(stage), outs)?.at ?? 0, by }
+  next[lead.email] = { s: st.key, t0: new Date(now).toISOString(), seen: st.agent ? (docOf(lead, st, outs)?.at ?? 0) : 0, by }
   const at = new Date(now).toISOString()
   const { error } = await supabase.from('ai_settings').upsert({ key: 'catalyst_runs', value: next, updated_by: by, updated_at: at }, { onConflict: 'key' })
   if (error) throw new Error(error.message)

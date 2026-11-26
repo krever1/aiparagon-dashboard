@@ -1,17 +1,18 @@
 import 'server-only'
 import { loadPipeline } from '@/lib/catalyst/load'
-import type { PipelineData } from '@/lib/catalyst/view'
+import { type PipelineData, hasDoc, inApprovals, viewStage } from '@/lib/catalyst/view'
 import { LEGACY_DASHBOARD_URL } from '@/lib/config'
 import { createClient } from '@/lib/supabase/server'
 import {
   type AdsBrief, type Campaign, type CommentRow, type ContentDraft, type ContentRequest, type IntelBrief, type Item, type ReplyRow, adImages,
-  approvalItems, hookText, leadWaits, snapItems,
+  type ReviewMark, approvalItems, hookText, leadWaits, reviewKey, snapItems,
 } from './approvals'
 
 // Approvals' data, read as the signed-in teammate (apCfLoad, v97LtLoad, e9SnapLoad and apLoad, the parts Approvals
 // uses): the newest organic and ads briefs with their decisions and snapshots, failed content requests, content drafts
 // not marked ready, the ad images of the three newest campaigns with their decisions, the replies waiting, the leads
-// on the board waiting on their next document, and the open comments. Read fresh on every visit.
+// on the board waiting on their stage's document or a read of it (with the marks that say it was read), and the open
+// comments. Read fresh on every visit.
 
 export type ApprovalsData = {
   items: Item[]
@@ -116,7 +117,15 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
   // campaigns' hooks and their images' decisions
   const runs = [intel?.run_id, ads?.run_id].filter((r): r is string => !!r)
   const none = Promise.resolve({ data: [] as Row[], error: null })
-  const [fb, sn, rd, pk, ad] = await Promise.all([
+  // the review keys of the leads whose stage document is written (only those can be marked reviewed)
+  const reviewIds = [
+    ...new Set(
+      (pipeline && !pipeline.error ? pipeline.leads : [])
+        .filter((l) => inApprovals(l) && hasDoc(l, viewStage(l)))
+        .flatMap((l) => (l.emails.length ? l.emails : [l.email]).map((e) => reviewKey(e, viewStage(l)))),
+    ),
+  ]
+  const [fb, sn, rd, pk, ad, rv] = await Promise.all([
     runs.length
       ? supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'brief_approval').in('target_id', runs).order('created_at', { ascending: false }).limit(100)
       : none,
@@ -132,8 +141,18 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
     files.length
       ? supabase.from('agent_feedback').select('target_id,action,created_at').eq('target_type', 'ad_image_variant').in('target_id', files).order('created_at', { ascending: false }).limit(300)
       : none,
+    reviewIds.length
+      ? supabase
+          .from('agent_feedback')
+          .select('target_id,action,created_at')
+          .eq('target_type', 'e1_document')
+          .in('action', ['reviewed', 'reopened'])
+          .in('target_id', reviewIds)
+          .order('created_at', { ascending: false })
+          .limit(1000)
+      : none,
   ])
-  for (const r of [fb, rd, pk, ad]) if (r.error) errors.push(r.error.message)
+  for (const r of [fb, rd, pk, ad, rv]) if (r.error) errors.push(r.error.message)
 
   const decisions: Record<string, { action: string }[]> = {}
   for (const r of rowsOf(fb)) (decisions[str(r.target_id)] ??= []).push({ action: str(r.action) })
@@ -149,11 +168,19 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
   const adDecisions: Record<string, string> = {}
   for (const r of rowsOf(ad)) if (!(str(r.target_id) in adDecisions)) adDecisions[str(r.target_id)] = str(r.action)
 
-  // the board's leads: the ones waiting on their next document (only from a whole read: without the documents every
-  // lead would look as if it had none), and every lead's page by its emails (a comment on a lead's document opens there)
+  // the board's leads: the ones waiting on their stage's document or a read of it (only from a whole read: without the
+  // documents every lead would look as if it had none, and without the marks every document as if nobody had read it),
+  // and every lead's page by its emails (a comment on a lead's document opens there)
   const leadIds: Record<string, string> = {}
-  for (const l of pipeline?.leads ?? []) for (const e of l.emails) leadIds[e.trim().toLowerCase()] ??= l.id
-  const waits = pipeline && !pipeline.error ? leadWaits(pipeline.leads) : []
+  const leadNames: Record<string, string> = {}
+  for (const l of pipeline?.leads ?? []) {
+    for (const e of l.emails) {
+      leadIds[e.trim().toLowerCase()] ??= l.id
+      leadNames[e.trim().toLowerCase()] ??= l.name
+    }
+  }
+  const marks: ReviewMark[] = rowsOf(rv).map((r) => ({ target: str(r.target_id), action: str(r.action), at: str(r.created_at) }))
+  const waits = pipeline && !pipeline.error && !rv.error ? leadWaits(pipeline.leads, marks, pipeline.stages) : []
   const comments: CommentRow[] = rowsOf(cm).map((c) => ({
     id: str(c.id),
     target: str(c.target_key),
@@ -186,8 +213,10 @@ export async function loadApprovals(opts: { pipeline?: Promise<PipelineData | nu
       hooks,
       adDecisions,
       leads: waits,
+      stages: pipeline?.stages,
       comments,
       leadIds,
+      leadNames,
       legacy: LEGACY_DASHBOARD_URL,
       now: Date.now(),
     }),

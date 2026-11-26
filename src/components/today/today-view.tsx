@@ -8,11 +8,12 @@ import { useSkips } from '@/components/approvals/skips'
 import { CallQuestion } from '@/components/catalyst/call-question'
 import { Icon } from '@/components/icon'
 import { dayText, usDayText, useHydrated } from '@/components/ui/local-date'
-import { type CallItem, type CrmItem, type InboxItem, itemText } from '@/lib/catalyst/inbox'
-import { stageOfKey, stagesNamed } from '@/lib/catalyst/stages'
+import { type CallItem, type ClientItem, type CrmItem, type InboxItem, itemText } from '@/lib/catalyst/inbox'
+import { stageOfKey } from '@/lib/catalyst/stages'
 import { PRODUCTS, type ProductKey } from '@/lib/nav'
 import { ATLAS_LINE, CANVAS_LINE, agoWords, catalystLine, hello, needLine, pipelineLine, todayText, touchLine, waiting } from '@/lib/touchpoint/today'
 import type { TodayData } from '@/lib/touchpoint/today-load'
+import { ClientQuestion } from './client-question'
 import { CrmQuestion } from './crm-question'
 import { Card, Empty, NeedsYou, OUT_TIP, Runs, linkBtn, out, row } from './cards'
 import { TourButton } from './tour'
@@ -94,13 +95,13 @@ function CatalystCard({ data, tz }: { data: TodayData; tz: string | undefined })
   const [open, setOpen] = useState<InboxItem | null>(null)
   const items = data.inbox.items
   const shown = all ? items : items.slice(0, SHOWN)
-  const stages = stagesNamed(data.names)
+  const stages = data.stages
   const callLead = open?.kind === 'call' ? data.inbox.leads.find((l) => l.id === (open as CallItem).leadId) : null
   return (
     <Card w={3} title="Catalyst · Before your next meetings" testid="catalyst-inbox">
       <ul className="grid gap-1">
         {shown.map((x) => {
-          const t = itemText(x, data.names, x.kind === 'call' ? usDayText(x.at, tz) : '')
+          const t = itemText(x, stages, x.kind !== 'crm' ? usDayText(x.at, tz) : '')
           return (
             <li key={x.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md px-2.5 py-2 hover:bg-sunk/60" data-testid="inbox-item" data-key={x.key}>
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-sunk text-ink-2">
@@ -129,12 +130,13 @@ function CatalystCard({ data, tz }: { data: TodayData; tz: string | undefined })
           </button>
         </div>
       ) : null}
+      {open?.kind === 'client' ? <ClientQuestion item={open as ClientItem} research={stageOfKey('research', data.names)} onClose={() => setOpen(null)} /> : null}
       {open?.kind === 'crm' ? <CrmQuestion item={open as CrmItem} research={stageOfKey('research', data.names)} onClose={() => setOpen(null)} /> : null}
       {open?.kind === 'call' && callLead ? (
         <CallQuestion
           lead={callLead}
           stages={stages}
-          call={{ id: open.id, title: open.title, start: open.start, minutes: open.minutes, stage: '' }}
+          call={{ id: open.id, title: open.title, start: open.start, minutes: open.minutes, stage: '', who: '', summary: '' }}
           onClose={() => setOpen(null)}
           onDone={() => {}}
         />

@@ -3,8 +3,8 @@
 // yet. Today shows them first, each with its question. Pure: the page and the tests both use it.
 
 import { isTeamEmail } from '@/lib/config'
-import { type CallMeta, type FtCall, leadOf } from './calls'
-import { type StageKey, type StageNames, nextStageKey, stageOfKey } from './stages'
+import { type CallMeta, type FilingCtx, type FtCall, type Guest, companyOf, leadOf, matchCall, outsiders } from './calls'
+import { STAGES, type Stage, nextStageKey, stageIn } from './stages'
 import { type LeadView, viewStage } from './view'
 
 export const INBOX_DAYS = 14
@@ -54,11 +54,23 @@ export type CallItem = {
   leadId: string
   leadName: string
   /** the stage the lead is in, and the one the call would run */
-  cur: StageKey
-  nx: StageKey
+  cur: string
+  nx: string
   at: string
 }
-export type InboxItem = CrmItem | CallItem
+/** A recorded call with someone from outside who matches nobody (v144NewCalls). */
+export type ClientItem = {
+  kind: 'client'
+  key: string
+  id: string
+  title: string
+  start: string
+  minutes: number
+  /** the people from outside, the first one first */
+  people: Guest[]
+  at: string
+}
+export type InboxItem = CrmItem | CallItem | ClientItem
 
 /** New clients: contacts first seen lately that are not a lead, not set aside and not the team's. */
 export function crmItems(contacts: InboxContact[], leadEmails: Set<string>, aside: Record<string, unknown>, now: number): CrmItem[] {
@@ -84,7 +96,13 @@ export function crmItems(contacts: InboxContact[], leadEmails: Set<string>, asid
 }
 
 /** New transcripts: recorded calls lately with a lead among the guests that nobody has filed yet. */
-export function callItems(calls: FtCall[], metas: Record<string, CallMeta>, leads: LeadView[], now: number): CallItem[] {
+export function callItems(
+  calls: FtCall[],
+  metas: Record<string, CallMeta>,
+  leads: LeadView[],
+  now: number,
+  stages: readonly Pick<Stage, 'key'>[] = STAGES,
+): CallItem[] {
   const out: CallItem[] = []
   for (const c of calls) {
     const at = c.start
@@ -106,25 +124,62 @@ export function callItems(calls: FtCall[], metas: Record<string, CallMeta>, lead
       leadId: lead.id,
       leadName: lead.name,
       cur,
-      nx: nextStageKey(cur),
+      nx: nextStageKey(stages, cur),
       at,
     })
   }
   return out
 }
 
-/** Both, newest first. */
-export const inboxItems = (crm: CrmItem[], calls: CallItem[]): InboxItem[] => [...crm, ...calls].sort((a, b) => b.at.localeCompare(a.at))
+/**
+ * New contacts on calls (v144NewCalls): a recorded call from the last 14 days with someone from outside the team on it,
+ * not filed, with no folder or client set and not set aside (catalyst_inbox.calls), whose people match no lead, lead's
+ * company, HubSpot contact or folder, and none of whom is a new client from HubSpot already.
+ */
+export function clientItems(calls: FtCall[], metas: Record<string, CallMeta>, ctx: FilingCtx, crmEmails: Set<string>, aside: Record<string, unknown>, now: number): ClientItem[] {
+  const out: ClientItem[] = []
+  for (const c of calls) {
+    const at = c.start
+    if (!recent(at, now)) continue
+    const m = metas[c.id]
+    if (m?.folder || m?.client || m?.lead_stage || aside[c.id]) continue
+    const ext = outsiders(c, m)
+    if (!ext.length || ext.some((p) => crmEmails.has(lower(p.email)))) continue
+    if (matchCall(c, m, ctx)) continue
+    const a = Date.parse(c.start)
+    const b = Date.parse(c.end)
+    out.push({
+      kind: 'client',
+      key: 'client:' + c.id,
+      id: c.id,
+      title: m?.title || c.title,
+      start: c.start,
+      minutes: a && b && b > a ? Math.round((b - a) / 60000) : 0,
+      people: ext,
+      at,
+    })
+  }
+  return out
+}
+
+/** All of them, newest first. */
+export const inboxItems = (crm: CrmItem[], calls: CallItem[], clients: ClientItem[] = []): InboxItem[] =>
+  [...crm, ...calls, ...clients].sort((a, b) => b.at.localeCompare(a.at))
 
 const lc = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
 
 /** What a row says, and its button (v137ItemText); `day` is the call's day as the page draws it ("Nov 4"). */
-export function itemText(x: InboxItem, names: StageNames, day: string): { t: string; s: string; b: string } {
+export function itemText(x: InboxItem, stages: readonly Stage[], day: string): { t: string; s: string; b: string } {
   if (x.kind === 'crm') {
     return { t: 'New client from HubSpot: ' + x.name + (x.company ? ', ' + x.company : ''), s: 'Run the pre-meeting prospect brief?', b: 'Run the brief' }
   }
-  const cur = stageOfKey(x.cur, names)
-  const nx = stageOfKey(x.nx, names)
+  if (x.kind === 'client') {
+    const p = x.people[0]
+    const co = companyOf(p?.email ?? '')
+    return { t: 'New contact on a call: ' + (p?.name || p?.email || '') + (co ? ', ' + co : '') + (day ? ' on ' + day : ''), s: 'Create a client record for them?', b: 'Create client' }
+  }
+  const cur = stageIn(stages, x.cur) ?? stages[0]
+  const nx = stageIn(stages, x.nx) ?? cur
   const same = x.nx === x.cur
   return {
     t: 'New transcript: your call with ' + x.leadName + (day ? ' on ' + day : ''),

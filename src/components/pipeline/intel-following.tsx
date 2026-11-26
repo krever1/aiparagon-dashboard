@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Building2, Check, ChevronDown, Plus, X } from 'lucide-react'
-import { followAdd, followSet, saveFocus, saveIndustry, termAdd, termRemove } from '@/app/(app)/intel-tracker/actions'
+import { followAdd, followReplies, followSet, saveFocus, saveIndustry, termAdd, termRemove } from '@/app/(app)/intel-tracker/actions'
 import { Dialog } from '@/components/ui/dialog'
 import { dayText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
@@ -11,7 +11,9 @@ import {
   type Competitor, FOCUS_CATS, FOCUS_THEMES, type Focus, TERMS_MAX, type Terms, focusAddProblem, focusClean, followFor, kindOf, linksOf, termsFlat,
   themeLabel,
 } from '@/lib/pipeline/intel'
+import { RELATIONS, relationOf } from '@/lib/pipeline/intel-replies'
 import { btn, ghost, inputCls, linkCls, primary } from './bits'
+import { ImportConnections } from './intel-import'
 import { InfoButton } from './intel-info'
 import type { Ctx } from './intel-view'
 
@@ -245,6 +247,7 @@ const TERM: Record<keyof Terms, { l: string; hint: string; ph: string }> = {
 function Follows({ ctx }: { ctx: Ctx }) {
   const { data, tz } = ctx
   const [add, setAdd] = useState<'person' | 'company' | null>(null)
+  const [importing, setImporting] = useState(false)
   const [termErr, setTermErr] = useState('')
   const rows = data.follow.rows
   const T = data.follow.terms
@@ -322,6 +325,7 @@ function Follows({ ctx }: { ctx: Ctx }) {
             </button>
           </span>
         )}
+        {stopped ? null : <FollowReplies c={c} />}
       </li>
     )
   }
@@ -379,10 +383,15 @@ function Follows({ ctx }: { ctx: Ctx }) {
           ] as const
         ).map(([title, list, kind, any, none, label]) => (
           <section key={kind} className="rounded-md border border-line p-3" data-testid={'follow-' + kind}>
-            <div className="mb-1 flex items-center gap-2">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
               <b className="text-[14.5px] text-ink">{title}</b>
               <span className="text-[13px] text-ink-3">{list.length}</span>
               <span className="grow" />
+              {kind === 'person' ? (
+                <button type="button" className={btn} onClick={() => setImporting(true)}>
+                  Import LinkedIn connections
+                </button>
+              ) : null}
               <button type="button" className={btn} onClick={() => setAdd(kind)}>
                 {label}
               </button>
@@ -447,7 +456,58 @@ function Follows({ ctx }: { ctx: Ctx }) {
         </details>
       ) : null}
       {add ? <FollowDialog kind={add} onClose={() => setAdd(null)} /> : null}
+      {importing ? <ImportConnections followed={rows} onClose={() => setImporting(false)} /> : null}
     </section>
+  )
+}
+
+/** Who the account is to the firm, and whether its posts get replies (v145FolSet): saved at once, for the team. */
+function FollowReplies({ c }: { c: Competitor }) {
+  const [rel, setRel] = useState(relationOf(c.relation))
+  const [rep, setRep] = useState(c.draftReplies)
+  const save = async (patch: { relation?: string; draftReplies?: boolean }, undo: () => void) => {
+    const r = await followReplies({ id: c.id, ...patch }).catch(() => ({ ok: false as const, error: 'Could not save: the dashboard could not be reached' }))
+    if (!r.ok) {
+      undo()
+      return toast(r.error, 'warn')
+    }
+    toast(r.toast)
+  }
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2.5 text-[12.5px]" data-testid="follow-replies">
+      <label className="min-w-0">
+        <span className="sr-only">Who {c.name || 'they are'} is</span>
+        <select
+          aria-label={'Who ' + (c.name || 'they are') + ' is to you'}
+          value={rel}
+          onChange={(e) => {
+            const was = rel
+            const v = relationOf(e.target.value)
+            setRel(v)
+            void save({ relation: v }, () => setRel(was))
+          }}
+          className="max-w-full rounded-sm border border-line bg-panel px-1.5 py-1 text-[12.5px] text-ink"
+        >
+          {RELATIONS.map(([k, l]) => (
+            <option key={k} value={k}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="inline-flex items-center gap-1.5 whitespace-nowrap text-ink-2">
+        <input
+          type="checkbox"
+          checked={rep}
+          onChange={(e) => {
+            const on = e.target.checked
+            setRep(on)
+            void save({ draftReplies: on }, () => setRep(!on))
+          }}
+        />{' '}
+        Draft replies
+      </label>
+    </div>
   )
 }
 

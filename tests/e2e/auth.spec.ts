@@ -45,6 +45,8 @@ test('only team accounts can sign in, and Supabase is not even asked for another
 
 test('a session that is not a team account is signed out and turned away', async ({ page }) => {
   await signIn(page, '/today')
+  // (the top bar's Feedback reads its notes once the page is up: let that finish as the teammate first)
+  await page.waitForLoadState('networkidle')
   // the shared Supabase project also has care portal and voice agent accounts: one of those must not get in
   await stubActAs(OUTSIDER)
   await page.goto('/calls')
