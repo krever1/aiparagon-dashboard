@@ -48,6 +48,19 @@ const json = (v: unknown): Record<string, unknown> => {
   }
 }
 
+/** The databases Notion shares with the dashboard, sorted by nothing (the dialog sorts them). */
+async function sharedDbs(): Promise<NotionDb[]> {
+  return (await nt('databases'))
+    .map((d) => (d ?? {}) as Record<string, unknown>)
+    .filter((d) => (d.object === 'database' || !d.object) && d.id)
+    .map((d) => ({ id: str(d.id), name: dbName(d) }))
+}
+
+const readErr = (e: unknown) => {
+  const m = msgOf(e)
+  return /switched off|404/i.test(m) ? 'The Notion connection is switched off in n8n.' : 'Notion could not be read: ' + m + '.'
+}
+
 /** The databases Notion shares with the dashboard, the one used last, and what this call sent before. */
 export async function notionStart(callId: string): Promise<Res<{ dbs: NotionDb[]; pick: string; sent: NotionSent | null }>> {
   if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
@@ -62,15 +75,27 @@ export async function notionStart(callId: string): Promise<Res<{ dbs: NotionDb[]
     pick = str(by.notion_tasks_db?.id)
     const s = json(by.notion_sent?.[str(callId)])
     if (s.db || s.n) sent = { db: str(s.db), name: str(s.name), n: Number(s.n) || 0, at: str(s.at), by: str(s.by) }
-    dbs = (await nt('databases'))
-      .map((d) => (d ?? {}) as Record<string, unknown>)
-      .filter((d) => (d.object === 'database' || !d.object) && d.id)
-      .map((d) => ({ id: str(d.id), name: dbName(d) }))
+    dbs = await sharedDbs()
   } catch (e) {
-    const m = msgOf(e)
-    return { ok: false, error: /switched off|404/i.test(m) ? 'The Notion connection is switched off in n8n.' : 'Notion could not be read: ' + m + '.' }
+    return { ok: false, error: readErr(e) }
   }
   return { ok: true, dbs, pick, sent }
+}
+
+/** The databases Notion shares with the dashboard and the one used last, for a send that is not a call's (v151Notion). */
+export async function notionDatabases(): Promise<Res<{ dbs: NotionDb[]; pick: string; sent: null }>> {
+  if (!(await getCurrentUser())) return { ok: false, error: SIGNED_OUT }
+  const supabase = await createClient()
+  let dbs: NotionDb[]
+  let pick = ''
+  try {
+    const { data } = await supabase.from('ai_settings').select('value').eq('key', 'notion_tasks_db').maybeSingle()
+    pick = str(json(data?.value).id)
+    dbs = await sharedDbs()
+  } catch (e) {
+    return { ok: false, error: readErr(e) }
+  }
+  return { ok: true, dbs, pick, sent: null }
 }
 
 /** One entry in the database, named by its title. */

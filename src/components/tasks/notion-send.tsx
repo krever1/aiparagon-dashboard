@@ -1,15 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { type NotionDb, type NotionSent, notionAdd, notionMark, notionStart } from '@/app/(app)/tasks/actions'
 import { Dialog } from '@/components/ui/dialog'
 import { usDateText } from '@/components/ui/local-date'
 import { toast } from '@/components/ui/toast'
 import type { Task } from '@/lib/catalyst/calls'
 
-// Send tasks to Notion (v144Notion, v144NotionSend): each ticked task becomes an entry in the database picked, named for
-// the task and the call, plus a follow-up entry for the call if ticked. A stop halfway says how many went, and Send the
-// rest sends only the others.
+// Send to Notion (v144Notion, v144NotionSend, and v151's for the client workspace): each ticked row becomes an entry in the
+// database picked, named by its title, plus a follow-up entry if ticked. A stop halfway says how many went, and Send the
+// rest sends only the others. `NotionDialog` is the window both use; `NotionSend` is Tasks' (a call's tasks).
 
 const ghost = 'rounded-sm border border-line px-3.5 py-2 text-[14px] font-semibold text-ink hover:border-line-2 disabled:opacity-60'
 const primary = 'rounded-sm bg-action px-4 py-2 text-[14px] font-semibold text-action-ink hover:bg-action-hover disabled:opacity-60'
@@ -43,36 +43,66 @@ export function ShareHelp() {
 }
 
 type Load = { kind: 'loading' } | { kind: 'error'; error: string } | { kind: 'ready'; dbs: NotionDb[]; pick: string; sent: NotionSent | null }
+type Started = { ok: true; dbs: NotionDb[]; pick: string; sent: NotionSent | null } | { ok: false; error: string }
 
-export function NotionSend({
-  callId,
-  call,
-  start,
-  tasks,
-  only,
+export type NotionRow = {
+  id: string
+  /** the entry's name in Notion ('' leaves the row out of a send) */
+  title: string
+  /** what the row says in the window */
+  label: ReactNode
+  /** ticked to start with */
+  on: boolean
+}
+
+/** What went: the rows sent (by id), whether the follow-up went, how many entries, and whether that was everything. */
+export type NotionSentInfo = { ids: string[]; followUp: boolean; n: number; db: string; name: string; all: boolean }
+
+/**
+ * The Send to Notion window: the databases shared with the n8n connection (the one used last picked, else one with
+ * "task" in its name), the rows to tick, a follow-up entry, then an entry each, one at a time. `onSent` is told what
+ * went when everything went, and when a stop halfway left some sent.
+ */
+export function NotionDialog({
+  title,
+  load: start,
+  intro,
+  rows,
+  followUp,
+  note,
+  nothing,
+  onSent,
+  doneToast,
   onClose,
+  listTestId,
 }: {
-  callId: string
-  /** the call's title as Fathom (or its post-call actions) has it */
-  call: string
-  start: string
-  tasks: Task[]
-  /** the tasks picked (Select), else the open ones */
-  only: string[]
+  title: string
+  load: () => Promise<Started>
+  intro: ReactNode
+  rows: NotionRow[]
+  followUp: { title: string; label: string; on: boolean }
+  note?: ReactNode
+  /** said when nothing is ticked */
+  nothing: string
+  onSent: (info: NotionSentInfo) => Promise<void> | void
+  doneToast: (n: number, name: string) => string
   onClose: () => void
+  listTestId: string
 }) {
+  // the first `load` given is the one used: a redraw's new function is not a new read
+  const [read] = useState(() => start)
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [tries, setTries] = useState(0)
   const [db, setDb] = useState('')
-  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(tasks.map((t) => [t.id, only.length ? only.includes(t.id) : !t.done])))
-  const [fu, setFu] = useState(true)
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map((r) => [r.id, r.on])))
+  const [fu, setFu] = useState(followUp.on)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState('')
   const [rest, setRest] = useState(false)
 
   useEffect(() => {
     let live = true
-    notionStart(callId)
+    read()
       .then((r) => {
         if (!live) return
         if (!r.ok) return setLoad({ kind: 'error', error: r.error })
@@ -84,40 +114,48 @@ export function NotionSend({
     return () => {
       live = false
     }
-  }, [callId, tries])
+  }, [read, tries])
 
   const name = load.kind === 'ready' ? (load.dbs.find((d) => d.id === db)?.name ?? 'Untitled database') : ''
-  const callName = call || 'the call'
 
   const send = async () => {
     setErr('')
     if (!db) return setErr('Pick a database first.')
-    const picked = tasks.filter((t) => on[t.id] && t.text)
-    if (!picked.length && !fu) return setErr('Tick at least one task, or the follow-up.')
-    const titles = picked.map((t) => entryTitle(t.text, callName))
-    if (fu) titles.push(entryTitle('Follow-up: ' + callName + (start ? ' (' + usDateText(start) + ')' : ''), ''))
-    let n = 0
-    for (const t of titles) {
-      setBusy('Sending ' + (n + 1) + ' of ' + titles.length + '…')
-      const r = await notionAdd(db, t).catch(() => ({ ok: false as const, error: 'no answer' }))
+    const picked = rows.filter((r) => on[r.id] && r.title)
+    if (!picked.length && !fu) return setErr(nothing)
+    const list: { id: string; title: string }[] = picked.map((r) => ({ id: r.id, title: r.title }))
+    if (fu) list.push({ id: '', title: followUp.title })
+    const done: typeof list = []
+    const info = (all: boolean): NotionSentInfo => ({
+      ids: done.filter((x) => x.id).map((x) => x.id),
+      followUp: done.some((x) => !x.id),
+      n: done.length,
+      db,
+      name,
+      all,
+    })
+    for (const t of list) {
+      setBusy('Sending ' + (done.length + 1) + ' of ' + list.length + '…')
+      const r = await notionAdd(db, t.title).catch(() => ({ ok: false as const, error: 'no answer' }))
       if (!r.ok) {
+        const n = done.length
         setBusy('')
         setRest(true)
         setErr((n ? n + ' sent, then ' : '') + 'Notion stopped: ' + r.error + (n ? ' Send the rest picks up from there.' : ''))
         if (n) {
-          await notionMark(callId, db, name, n).catch(() => null)
-          const gone = picked.slice(0, Math.min(n, picked.length)).map((x) => x.id)
+          await Promise.resolve(onSent(info(false))).catch(() => null)
+          const gone = done.filter((x) => x.id).map((x) => x.id)
           setOn((x) => ({ ...x, ...Object.fromEntries(gone.map((id) => [id, false])) }))
-          if (n > picked.length) setFu(false)
+          if (done.some((x) => !x.id)) setFu(false)
         }
         return
       }
-      n++
+      done.push(t)
     }
-    await notionMark(callId, db, name, n).catch(() => null)
+    await Promise.resolve(onSent(info(true))).catch(() => null)
     setBusy('')
     onClose()
-    toast(n + ' sent to Notion · ' + name)
+    toast(doneToast(done.length, name))
   }
 
   let body: React.ReactNode
@@ -163,7 +201,7 @@ export function NotionSend({
     const s = load.sent
     body = (
       <div className="grid gap-3">
-        <p className="text-[14px] text-ink-2">Each ticked task becomes an entry in the database you pick, named for the task and the call.</p>
+        <p className="text-[14px] text-ink-2">{intro}</p>
         {s ? (
           <p className="rounded-md bg-warn-soft px-3 py-2 text-[13px] text-ink" data-testid="notion-was">
             Already sent {s.n} to “{s.name || 'Notion'}” on {usDateText(s.at)}
@@ -189,21 +227,19 @@ export function NotionSend({
           <summary className="cursor-pointer font-semibold text-accent-text">Database not in the list?</summary>
           <ShareHelp />
         </details>
-        <div className="grid gap-1" data-testid="notion-tasks">
-          {tasks.map((t) => (
-            <label key={t.id} className="flex cursor-pointer items-start gap-2 py-1 text-[14px] text-ink">
-              <input type="checkbox" className="mt-1" checked={!!on[t.id]} onChange={(e) => setOn((x) => ({ ...x, [t.id]: e.target.checked }))} />
-              <span>
-                {t.text}
-                {t.owner ? <small className="text-ink-3"> · {t.owner}</small> : null}
-              </span>
+        <div className="grid gap-1" data-testid={listTestId}>
+          {rows.map((r) => (
+            <label key={r.id} className="flex min-w-0 cursor-pointer items-start gap-2 py-1 text-[14px] text-ink">
+              <input type="checkbox" className="mt-1 shrink-0" checked={!!on[r.id]} onChange={(e) => setOn((x) => ({ ...x, [r.id]: e.target.checked }))} />
+              <span className="min-w-0 [overflow-wrap:anywhere]">{r.label}</span>
             </label>
           ))}
         </div>
-        <label className="flex cursor-pointer items-start gap-2 border-t border-line pt-2.5 text-[14px] text-ink">
-          <input type="checkbox" className="mt-1" checked={fu} onChange={(e) => setFu(e.target.checked)} />
-          <span>Add a follow-up entry: “Follow-up: {callName}”</span>
+        <label className="flex min-w-0 cursor-pointer items-start gap-2 border-t border-line pt-2.5 text-[14px] text-ink">
+          <input type="checkbox" className="mt-1 shrink-0" checked={fu} onChange={(e) => setFu(e.target.checked)} />
+          <span className="min-w-0 [overflow-wrap:anywhere]">{followUp.label}</span>
         </label>
+        {note}
       </div>
     )
     footer = (
@@ -222,8 +258,59 @@ export function NotionSend({
   }
 
   return (
-    <Dialog open onClose={onClose} title="Send tasks to Notion" width={700} footer={footer}>
+    <Dialog open onClose={onClose} title={title} width={700} footer={footer}>
       {body}
     </Dialog>
+  )
+}
+
+/** Tasks' Send to Notion: a call's tasks, named for the task and the call, and a follow-up for the call. */
+export function NotionSend({
+  callId,
+  call,
+  start,
+  tasks,
+  only,
+  onClose,
+}: {
+  callId: string
+  /** the call's title as Fathom (or its post-call actions) has it */
+  call: string
+  start: string
+  tasks: Task[]
+  /** the tasks picked (Select), else the open ones */
+  only: string[]
+  onClose: () => void
+}) {
+  const callName = call || 'the call'
+  return (
+    <NotionDialog
+      title="Send tasks to Notion"
+      load={() => notionStart(callId)}
+      intro="Each ticked task becomes an entry in the database you pick, named for the task and the call."
+      rows={tasks.map((t) => ({
+        id: t.id,
+        title: t.text ? entryTitle(t.text, callName) : '',
+        on: only.length ? only.includes(t.id) : !t.done,
+        label: (
+          <>
+            {t.text}
+            {t.owner ? <small className="text-ink-3"> · {t.owner}</small> : null}
+          </>
+        ),
+      }))}
+      followUp={{
+        title: entryTitle('Follow-up: ' + callName + (start ? ' (' + usDateText(start) + ')' : ''), ''),
+        label: 'Add a follow-up entry: “Follow-up: ' + callName + '”',
+        on: true,
+      }}
+      nothing="Tick at least one task, or the follow-up."
+      onSent={async (x) => {
+        await notionMark(callId, x.db, x.name, x.n)
+      }}
+      doneToast={(n, name) => n + ' sent to Notion · ' + name}
+      onClose={onClose}
+      listTestId="notion-tasks"
+    />
   )
 }
