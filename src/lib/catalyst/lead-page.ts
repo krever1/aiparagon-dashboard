@@ -5,6 +5,8 @@ import { type Lead, type OutRow, asObj, buildLeads, docOf, leadEmails } from './
 import { findLead, readCatalyst, toView } from './load'
 import { WS_KEY } from './run'
 import { type MeetingType, type StageRec, meetingTypes, objOf, stageRecs, ticksFrom, ticksOf } from './setup'
+import { type TypeNames, cleanNames } from './calls'
+import { setupKeyOf, setupOf } from './plan'
 import type { Stage, StageNames } from './stages'
 import { type WsMeta, wsMetaOf } from './workspace'
 import { driveId, googleDocId } from './doc-format'
@@ -108,6 +110,10 @@ export type LeadPageData =
       types: MeetingType[]
       /** the client workspace's folders and items for this lead (ai_settings `catalyst_ws`) */
       ws: WsMeta
+      /** each board stage's meeting type (its setup on Templates), for v153's folder suggestions */
+      setupTypes: Record<string, string>
+      /** the team's names for the call types (call_type_names) */
+      typeNames: TypeNames
       docs: E1Doc[]
       /** each meeting prep stage's newest document, by stage */
       prep: Record<string, PrepDoc | null>
@@ -177,7 +183,7 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     // only the changes asked: a document marked reviewed in Approvals (action reviewed or reopened) is not one (v143)
     supabase.from('agent_feedback').select('target_id').eq('target_type', 'e1_document').eq('action', 'changes').in('target_id', askIds).limit(2000),
     loadProposal(supabase, lead).catch(() => ({ view: null, template: null, run: null }) as ProposalData),
-    supabase.from('ai_settings').select('key,value').in('key', ['catalyst_stage_ticks', WS_KEY]),
+    supabase.from('ai_settings').select('key,value').in('key', ['catalyst_stage_ticks', WS_KEY, 'catalyst_stage_setup', 'call_type_names']),
   ])
   const setting = (k: string) => ((extra.data ?? []) as { key: string; value: unknown }[]).find((r) => r.key === k)?.value
   const asks: Record<string, number> = {}
@@ -283,6 +289,8 @@ export async function loadLeadPage(id: string): Promise<LeadPageData> {
     types: meetingTypes(read.config, true),
     ticks: ticksOf(ticksFrom(setting('catalyst_stage_ticks')), lead.email, stage),
     ws: wsMetaOf(objOf(setting(WS_KEY)), lead.email),
+    setupTypes: Object.fromEntries(read.stages.map((s) => [s.key, setupOf(setupKeyOf(s), setting('catalyst_stage_setup')).type])),
+    typeNames: cleanNames(setting('call_type_names')),
     docs,
     prep,
     files: { rows, error: !!files.error },

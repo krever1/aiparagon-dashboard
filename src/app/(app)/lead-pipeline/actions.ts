@@ -239,7 +239,18 @@ export async function callText(id: string): Promise<{ ok: true; text: string } |
 
 // ---------- a lead's calls, and filing one (v137LeadCalls, v137AskCall, v137CallGo) ----------
 
-export type LeadCallRow = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string; link?: string }
+export type LeadCallRow = {
+  id: string
+  title: string
+  start: string
+  minutes: number
+  stage: string
+  who: string
+  summary: string
+  link?: string
+  /** the call's type: the team's (call_meta.meeting_type), else the AI's pick on its post-call actions */
+  type?: string
+}
 
 /** The lead's Calls tab: every recorded call with it, and the stage each is filed under. */
 export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: LeadCallRow[]; error: string } | { ok: false; error: string }> {
@@ -249,24 +260,28 @@ export async function leadCallsFor(leadId: string): Promise<{ ok: true; calls: L
   if (!lead) return { ok: false, error: 'Could not find this lead any more. Refresh the page.' }
   const supabase = await createClient()
   const r = await callsOfLead(supabase, lead)
-  // each call's post-call summary, its first point (the client workspace's Calls)
+  // each call's post-call summary, its first point (the client workspace's Calls), and the AI's pick of its type
   const sums: Record<string, string> = {}
+  const picks: Record<string, string> = {}
   if (r.calls.length) {
     const { data } = await supabase
       .from('call_outputs')
-      .select('call_id,summary,created_at')
+      .select('call_id,summary,meeting_type,created_at')
       .in('call_id', r.calls.map((c) => c.id))
       .order('created_at', { ascending: false })
     for (const o of (data ?? []) as Record<string, unknown>[]) {
       const id = String(o.call_id)
       if (id in sums) continue
+      picks[id] = String(o.meeting_type ?? '')
       const s = Array.isArray(o.summary) ? o.summary[0] : o.summary
       sums[id] = typeof s === 'string' ? s : s && typeof s === 'object' ? String((s as Record<string, unknown>).text ?? '') : ''
     }
   }
   return {
     ok: true,
-    calls: r.calls.map((c) => ({ id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage, who: c.who, summary: sums[c.id] ?? '', link: c.link })),
+    calls: r.calls.map((c) => ({
+      id: c.id, title: c.title, start: c.start, minutes: c.minutes, stage: c.stage, who: c.who, summary: sums[c.id] ?? '', link: c.link, type: c.type || picks[c.id] || '',
+    })),
     error: r.err,
   }
 }

@@ -4,13 +4,27 @@
 // name, a folder, a description and a star, kept for the team in ai_settings `catalyst_ws` ({lead email in lower case:
 // {folders: [{id, name}], items: {key: {name, folder, desc, star, source, stage}}}}; keys `a:<agent>`, `p:<stage>`,
 // `f:<lead_files id>`, `c:<call id>`). Since v151 an item also keeps what went where: `asana` {at, by, project,
-// project_name, url} and `notion` {at, by, db, name}. Pure functions, for the server and the browser.
+// project_name, url} and `notion` {at, by, db, name}. Since v153 every change made in the workspace is kept on the item
+// as `log` ([{at, by, what}], the last 30), and the preview panel and the folder suggestions for calls read these rules.
+// Pure functions, for the server and the browser.
 
 import type { Stage } from './stages'
 
 export type WsAsana = { at?: string; by?: string; project?: string; project_name?: string; url?: string }
 export type WsNotion = { at?: string; by?: string; db?: string; name?: string }
-export type WsItemMeta = { name?: string; folder?: string; desc?: string; star?: boolean; source?: boolean; stage?: string; asana?: WsAsana; notion?: WsNotion }
+export type WsLog = { at: string; by: string; what: string }
+export type WsItemMeta = {
+  name?: string
+  folder?: string
+  desc?: string
+  star?: boolean
+  source?: boolean
+  stage?: string
+  asana?: WsAsana
+  notion?: WsNotion
+  /** every change made in the workspace from v153 on, the last 30 */
+  log?: WsLog[]
+}
 export type WsMeta = { folders: { id: string; name: string }[]; items: Record<string, WsItemMeta> }
 
 export const EMPTY_WS: WsMeta = { folders: [], items: {} }
@@ -62,6 +76,8 @@ export type WsItem = {
   filed?: boolean
   /** a call's Fathom link, for Send to Asana's Open it */
   link?: string
+  /** a call's type: the team's (call_meta.meeting_type), else the AI's pick (v153's folder suggestions and Details) */
+  type?: string
   /** where it was sent (v151): the Asana project, the Notion database, each with when */
   sent: WsSent[]
 }
@@ -204,7 +220,7 @@ export function wsFiles({
   return folded(list, wsFolders(stages, meta))
 }
 
-export type WsCall = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string; link?: string }
+export type WsCall = { id: string; title: string; start: string; minutes: number; stage: string; who: string; summary: string; link?: string; type?: string }
 
 /**
  * Everything in the Calls view (v145WsCalls, v146): the lead's recorded calls and the transcripts uploaded to the
@@ -220,7 +236,7 @@ export function wsCalls({ calls, files, stages, meta }: { calls: WsCall[]; files
     const folder = m.folder != null && (m.stage ?? '') === (x.stage ?? '') ? m.folder : filed || m.folder || ''
     return {
       key, kind: 'call', id: x.id, name: m.name || x.title || 'Call', fm: [], folder, at: x.start, by: '', desc: m.desc || '', star: !!m.star,
-      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage, link: x.link || '', sent: sentOf(m),
+      mins: x.minutes, who: x.who, src: 'Fathom', sum: x.summary, filed: !!x.stage, link: x.link || '', type: x.type || '', sent: sentOf(m),
     }
   })
   for (const i of files) if (i.kind === 'transcript') out.push({ ...i, src: 'Uploaded' })
@@ -251,4 +267,156 @@ export function wsShown(list: WsItem[], w: WsView, folders: WsFolder[]): WsItem[
         ? (a, b) => a.name.localeCompare(b.name)
         : (a, b) => String(b.at).localeCompare(String(a.at)),
   )
+}
+
+// ---------- v153: the change log, the preview panel and the folder suggestions ----------
+
+/**
+ * What changed on each item between two copies of the workspace's items, logged on the item (v153's v145WsPut wrapper):
+ * "Renamed to “X”", "Moved to <folder>" or "Moved to To organize", "Starred" or "Unstarred", "Description changed" or
+ * "Description removed", "Marked as a source for the stage runs" or "No longer a source for the stage runs". An upload's
+ * own entry, made with it (no entry before, with a name and a source), is not a change. Each item keeps the last 30.
+ * Changes `after` in place and returns it.
+ */
+export function logChanges(
+  before: Record<string, WsItemMeta>,
+  after: Record<string, WsItemMeta>,
+  folderName: (id: string) => string,
+  at: string,
+  by: string,
+): Record<string, WsItemMeta> {
+  for (const k of Object.keys(after)) {
+    const a = before[k] ?? {}
+    const b = after[k] ?? {}
+    if (!before[k] && b.source !== undefined && b.name !== undefined) continue
+    const say: string[] = []
+    if (b.name != null && a.name !== b.name) say.push('Renamed to “' + b.name + '”')
+    if (b.folder != null && (a.folder || '') !== (b.folder || '')) say.push(b.folder ? 'Moved to ' + (folderName(b.folder) || 'a folder') : 'Moved to To organize')
+    if (!!a.star !== !!b.star) say.push(b.star ? 'Starred' : 'Unstarred')
+    if (b.desc != null && (a.desc || '') !== (b.desc || '')) say.push(b.desc ? 'Description changed' : 'Description removed')
+    if (b.source != null && a.source !== b.source) say.push(b.source ? 'Marked as a source for the stage runs' : 'No longer a source for the stage runs')
+    if (!say.length) continue
+    const log = Array.isArray(b.log) ? b.log.slice(-29) : []
+    for (const what of say) log.push({ at, by, what })
+    after[k] = { ...b, log: log.slice(-30) }
+  }
+  return after
+}
+
+/** An item's kind, as Details says it (v153Kind). */
+export function wsKindName(i: Pick<WsItem, 'kind'>): string {
+  return i.kind === 'call' ? 'Call' : i.kind === 'transcript' ? 'Transcript' : i.kind === 'upload' ? 'Uploaded file' : 'Document'
+}
+
+/** The newest call in the same folder, for View related call (v153Related); none for a call or an item in no folder. */
+export function relatedCall(i: Pick<WsItem, 'kind' | 'folder'>, calls: WsItem[]): WsItem | null {
+  if (i.kind === 'call' || !i.folder) return null
+  return [...calls].filter((c) => c.kind === 'call' && c.folder === i.folder).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] ?? null
+}
+
+/** The first web link among an item's formats (Open <format> in the panel's foot). */
+export function firstLink(i: Pick<WsItem, 'fm'>): WsFormat | null {
+  return i.fm.find((f) => f.u && /^https?:\/\//i.test(f.u)) ?? null
+}
+
+/** The line under the name: who and when (v153Paint's head), without the date. */
+export function byLine(i: Pick<WsItem, 'kind' | 'mins' | 'who' | 'src' | 'by'>): string {
+  if (i.kind === 'call') return [i.mins ? i.mins + ' min' : '', i.who, i.src].filter(Boolean).join(' · ')
+  if (i.src === 'Uploaded' || i.kind === 'upload' || i.kind === 'transcript') return 'Uploaded' + (i.by ? ' by ' + i.by : '')
+  return i.by
+}
+
+/** What the server says about an item when its panel opens (wsInfo). */
+export type WsInfo = {
+  /** an upload's or a transcript's text as read (lead_files.file_text): '' when none was read */
+  text?: string
+  indexedAt?: string
+  /** a call: its post-call summary and next steps, and when they were written */
+  summary?: string[]
+  tasks?: { text: string; owner: string }[]
+  post?: { at: string; done: boolean } | null
+  /** a call: where it is filed (call_meta), when and by whom */
+  filed?: { stage: string; at: string; by: string } | null
+}
+
+export type WsEvent = { at: string; what: string; by: string }
+
+/**
+ * The Activity tab (v153Activity), newest first: recorded, uploaded or written; a call filed under a stage and its
+ * post-call actions; an upload's text read; sent to Asana or Notion; and every change logged on the item.
+ */
+export function activityOf(i: WsItem, m: WsItemMeta | undefined, info: WsInfo | null, stages: readonly Pick<Stage, 'key' | 'name'>[]): WsEvent[] {
+  const ev: WsEvent[] = []
+  const up = i.kind === 'upload' || i.kind === 'transcript'
+  if (i.at) ev.push({ at: i.at, what: i.kind === 'call' ? 'Recorded on Fathom' : up ? 'Uploaded' + (i.by ? ' by ' + i.by : '') : 'Written by Catalyst', by: '' })
+  if (i.kind === 'call' && info) {
+    const f = info.filed
+    if (f && f.stage && f.stage !== 'none') ev.push({ at: f.at, what: 'Filed under ' + (stages.find((s) => s.key === f.stage)?.name || f.stage), by: f.by })
+    if (info.post?.done && info.post.at) ev.push({ at: info.post.at, what: 'Post-call actions written', by: '' })
+  }
+  if (up && info?.indexedAt) ev.push({ at: info.indexedAt, what: 'Text read for the Ask bot and the stage runs', by: '' })
+  const a = obj(m?.asana)
+  const n = obj(m?.notion)
+  if (a.at) ev.push({ at: str(a.at), what: 'Sent to Asana · ' + str(a.project_name), by: str(a.by) })
+  if (n.at) ev.push({ at: str(n.at), what: 'Sent to Notion · ' + str(n.name), by: str(n.by) })
+  for (const l of Array.isArray(m?.log) ? m!.log! : []) ev.push({ at: str(l?.at), what: str(l?.what), by: str(l?.by) })
+  return ev.sort((x, y) => String(y.at).localeCompare(String(x.at)))
+}
+
+const norm = (t: string) => ' ' + str(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' '
+
+export type GuessCtx = {
+  folders: WsFolder[]
+  stages: readonly Pick<Stage, 'key' | 'name' | 'short' | 'doc'>[]
+  /** each stage's setup meeting type (catalyst_stage_setup, by stage) */
+  setupType: Record<string, string>
+  /** when each stage's document was written (null when none, or only a link was saved) */
+  docAt: Record<string, string | null>
+  /** the stage the client is in now */
+  current: string
+  /** a call type's name ("Onboarding") */
+  typeName: (t: string) => string
+  /** a day as "Oct 1, 2026" */
+  day: (iso: string) => string
+}
+
+/**
+ * The folder suggested for a call or an uploaded transcript with none (v153Guess), with why, in this order: its title
+ * names a folder (the longest name that fits wins; a stage's short word, or the first word of its name when that has
+ * five letters or more and is not a word every meeting has); its call type is a stage's meeting type; the latest stage
+ * whose document was written at or before it; else the stage the client is in now.
+ */
+export function guessFolder(i: Pick<WsItem, 'kind' | 'name' | 'at' | 'type'>, x: GuessCtx): { folder: string; why: string } {
+  const title = norm(i.name)
+  let best: { k: string; id: string; n: string } | null = null
+  for (const f of x.folders) {
+    const names = [f.name]
+    const s = x.stages.find((st) => st.key === f.id)
+    if (s) {
+      if (s.short) names.push(s.short)
+      const w = str(f.name).split(/\s+/)[0]
+      if (w.length >= 5 && !/^(client|clients|meeting|calls?|team|first|final|kick)$/i.test(w)) names.push(w)
+    }
+    for (const n of names) {
+      const k = norm(n)
+      if (k.trim().length >= 5 && !/^ (review|call|meeting|client) $/.test(k) && title.includes(k) && (!best || k.length > best.k.length)) best = { k, id: f.id, n: n.trim() }
+    }
+  }
+  if (best) return { folder: best.id, why: 'Its title says “' + best.n + '”' }
+  if (i.kind === 'call' && i.type) {
+    const s = x.stages.find((st) => x.setupType[st.key] === i.type)
+    if (s) return { folder: s.key, why: 'Its call type is ' + x.typeName(i.type) + ': the ' + s.name + ' stage’s meeting' }
+  }
+  const t = Date.parse(i.at) || 0
+  if (t) {
+    let last: { at: number; s: (typeof x.stages)[number]; iso: string } | null = null
+    for (const s of x.stages) {
+      const iso = x.docAt[s.key]
+      const at = iso ? Date.parse(iso) || 0 : 0
+      if (at && at <= t && (!last || at > last.at)) last = { at, s, iso: iso! }
+    }
+    if (last) return { folder: last.s.key, why: 'Held after the ' + (last.s.doc || last.s.name) + ' was written (' + x.day(last.iso) + ')' }
+  }
+  const cs = x.stages.find((s) => s.key === x.current) ?? x.stages[0]
+  return cs ? { folder: cs.key, why: 'The client is in ' + cs.name + ' now' } : { folder: '', why: '' }
 }
