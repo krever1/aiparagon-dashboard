@@ -3,7 +3,7 @@ import { spanText } from '../../src/components/pipeline/dates'
 import { dayText } from '../../src/components/ui/local-date'
 import { nextRun, scheduleOf } from '../../src/lib/pipeline/intel'
 import { whenText } from '../../src/lib/touchpoint/today'
-import { LEGACY, TEAM, serveLogo, signIn, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
+import { LEGACY, TEAM, serveLogo, signIn, untilHydrated, stubCalls, stubHook, stubReset, stubRows, stubSeed } from './helpers'
 import { C, P, R, RUN_A, RUN_B, RUN_C, U, intelRows } from './intel-fixtures'
 
 // The Intel Tracker: the run on screen with its posts, filters and the address, a post in full and why it is in the
@@ -251,7 +251,8 @@ test('the run library, another run whose posts are not stored, and one that did 
   await expect(page.getByText('No takeaways for this run')).toBeVisible()
   await page.goto(`/intel-tracker?run=${RUN_C}`)
   await expect(page.getByText('No posts in this run')).toBeVisible()
-  // back to the newest: the address names no run again
+  // back to the newest: the address names no run again (on a page just loaded, once React has it)
+  await untilHydrated(page.getByLabel('Pick a run'))
   await page.getByLabel('Pick a run').selectOption(RUN_A)
   await expect(page).toHaveURL(/\/intel-tracker$/)
   await expect(cards(page)).toHaveCount(6)
